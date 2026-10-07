@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <!-- 동적 조건 + iterate + $정렬$ : 동적 태그 안 컬럼도 FROM 기준으로 변환, 프로퍼티명은 유지 -->
+  <select id="searchOrders" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO AS ordNo, H.TOT_AMT AS totAmt, H.ORD_STAT_CD AS ordStatCd
+      FROM TB_ORD_H H
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="custNo" prepend="AND">
+        H.CUST_NO = #custNo#
+      </isNotEmpty>
+      <isNotEmpty property="fromDt" prepend="AND">
+        <![CDATA[ H.ORD_DT >= #fromDt# ]]>
+      </isNotEmpty>
+      <isEqual property="onlyBig" compareValue="Y" prepend="AND">
+        TOT_AMT &gt; 100000
+      </isEqual>
+      <isNotEmpty property="statList" prepend="AND">
+        H.ORD_STAT_CD IN
+        <iterate property="statList" open="(" close=")" conjunction=",">#statList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+    ORDER BY $sortColumn$ $sortDir$
+  </select>
+
+</sqlMap>

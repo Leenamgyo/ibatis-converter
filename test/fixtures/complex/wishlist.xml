@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="wishlist">
+
+  <resultMap id="WishlistItemResult" class="WishlistItem">
+    <result property="wishlistItemId" column="WISHLIST_ITEM_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="productId" column="PRODUCT_ID"/>
+  </resultMap>
+
+  <resultMap id="WishlistItemDetailResult" class="WishlistItemDetail" extends="WishlistItemResult">
+    <result property="productName" column="PRODUCT_NAME"/>
+    <result property="price" column="PRICE"/>
+  </resultMap>
+
+  <select id="getWishlistForUser" parameterClass="int" resultMap="WishlistItemDetailResult">
+    SELECT
+        W.WISHLIST_ITEM_ID, W.USER_ID, W.PRODUCT_ID,
+        P.PRODUCT_NAME,
+        P.PRICE
+    FROM WISHLIST_ITEMS W
+    INNER JOIN PRODUCTS P
+        ON W.PRODUCT_ID = P.PRODUCT_ID
+    WHERE W.USER_ID = #userId#
+    ORDER BY W.ADDED_AT DESC
+  </select>
+
+  <select id="isProductWishlisted" parameterClass="map" resultClass="int">
+    SELECT COUNT(*)
+    FROM WISHLIST_ITEMS
+    WHERE USER_ID = #userId#
+      AND PRODUCT_ID = #productId#
+  </select>
+
+</sqlMap>

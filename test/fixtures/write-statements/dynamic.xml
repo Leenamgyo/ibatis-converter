@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="dyn">
+
+  <!-- `<dynamic prepend="SET">` — the UPDATE-side counterpart of a
+       dynamic WHERE, and the one shape that must convert to MyBatis
+       `<set>` rather than `<where>`/`<trim>`. Moved out of the sample
+       project when it became SELECT-only. -->
+
+  <update id="updateOrderDynamicSet" parameterClass="map">
+    UPDATE ORDERS
+    <dynamic prepend="SET">
+      <isNotNull property="status" prepend=",">
+        STATUS = #status#
+      </isNotNull>
+      <isNotNull property="totalAmount" prepend=",">
+        TOTAL_AMOUNT = #totalAmount#
+      </isNotNull>
+      <isNotNull property="updatedAt" prepend=",">
+        UPDATED_AT = #updatedAt#
+      </isNotNull>
+    </dynamic>
+    WHERE ORDER_ID = #orderId#
+  </update>
+
+</sqlMap>

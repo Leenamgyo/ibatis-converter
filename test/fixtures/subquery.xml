@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <select id="getOrdersFromDerivedTable" parameterClass="map" resultClass="Order">
+    SELECT T.ORDER_ID
+    FROM (SELECT ORDER_ID FROM ORDERS WHERE STATUS = #status#) T
+    WHERE T.ORDER_ID > #minId#
+  </select>
+
+  <select id="getUsersWithOrders" parameterClass="map" resultClass="User">
+    SELECT USER_ID
+    FROM USER
+    WHERE USER_ID IN (SELECT USER_ID FROM ORDERS WHERE STATUS = #status#)
+  </select>
+
+</sqlMap>

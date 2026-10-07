@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="stat">
+
+  <select id="topCustomers" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.CUST_NO,
+           T.ORD_CNT,
+           (SELECT C.CUST_NM FROM TB_CUST_M C WHERE C.CUST_NO = T.CUST_NO) AS custNm
+      FROM (
+            SELECT CUST_NO, COUNT(*) AS ORD_CNT, SUM(TOT_AMT) AS SUM_AMT
+              FROM TB_ORD_H
+             WHERE ORD_DT &gt;= #{fromDt}
+             GROUP BY CUST_NO
+           ) T
+     WHERE T.SUM_AMT &gt; #{minAmt}
+     ORDER BY T.ORD_CNT DESC
+  
+  </select>
+
+  <select id="recentOrders" resultType="java.util.HashMap">
+
+    SELECT X.ORD_NO AS ordNo, X.ORD_DT AS ordDt
+      FROM (SELECT * FROM TB_ORD_H WHERE ORD_STAT_CD = '90') X
+  
+  </select>
+
+</mapper>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="setops">
+
+  <!-- Scenario 5 — set operations and CTEs: UNION branches are siblings
+       of the main SELECT, a CTE is a named SELECT the main one reads
+       from. Both are separate cluster boxes in the dashboard. -->
+
+  <select id="unionTwoBranches" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME, 'LIVE' AS SOURCE
+    FROM CUSTOMER C
+    WHERE C.STATUS = #status#
+    UNION ALL
+    SELECT A.CUSTOMER_ID, A.CUSTOMER_NAME, 'ARCHIVE' AS SOURCE
+    FROM ARCHIVED_CUSTOMER A
+    WHERE A.STATUS = #status#
+  </select>
+
+  <select id="unionThreeBranches" resultClass="map">
+    SELECT ORDER_ID, 'ONLINE' AS CHANNEL FROM ONLINE_ORDER
+    UNION ALL
+    SELECT ORDER_ID, 'OFFLINE' AS CHANNEL FROM OFFLINE_ORDER
+    UNION
+    SELECT ORDER_ID, 'RETURN' AS CHANNEL FROM RETURN_ORDER
+  </select>
+
+  <select id="cteSingle" parameterClass="map" resultClass="map">
+    WITH RECENT_ORDER AS (
+      SELECT O.ORDER_ID, O.CUSTOMER_ID, O.TOTAL_AMOUNT
+      FROM ORDERS O
+      WHERE O.ORDER_DATE &gt;= #since#
+    )
+    SELECT R.CUSTOMER_ID, SUM(R.TOTAL_AMOUNT) AS RECENT_TOTAL
+    FROM RECENT_ORDER R
+    GROUP BY R.CUSTOMER_ID
+  </select>
+
+  <select id="cteChained" parameterClass="map" resultClass="map">
+    WITH RECENT_ORDER AS (
+      SELECT O.ORDER_ID, O.CUSTOMER_ID FROM ORDERS O WHERE O.ORDER_DATE &gt;= #since#
+    ), RECENT_DETAIL AS (
+      SELECT OD.ORDER_ID, OD.PRODUCT_ID, OD.QUANTITY
+      FROM ORDER_DETAIL OD
+      INNER JOIN RECENT_ORDER R ON R.ORDER_ID = OD.ORDER_ID
+    )
+    SELECT D.PRODUCT_ID, SUM(D.QUANTITY) AS UNITS
+    FROM RECENT_DETAIL D
+    GROUP BY D.PRODUCT_ID
+  </select>
+
+  <select id="unionOfDerivedTables" resultClass="map">
+    SELECT T1.CUSTOMER_ID, T1.AMOUNT
+    FROM (SELECT PM.CUSTOMER_ID, PM.PAYMENT_AMOUNT AS AMOUNT FROM PAYMENT PM) T1
+    UNION ALL
+    SELECT T2.CUSTOMER_ID, T2.AMOUNT
+    FROM (SELECT RF.CUSTOMER_ID, RF.REFUND_AMOUNT AS AMOUNT FROM REFUND RF) T2
+  </select>
+
+</sqlMap>

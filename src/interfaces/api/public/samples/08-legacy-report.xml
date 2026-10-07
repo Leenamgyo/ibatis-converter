@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="report">
+
+  <!-- Scenario 8 — the "one giant report query" a legacy iBATIS project
+       accumulates over ten years, and the reason this dashboard exists:
+       six tables, a correlated subquery column, a JOINed inline view with
+       its own subquery, a window function, GROUP BY + dynamic HAVING,
+       cross-mapper includes, and a UNION tail. -->
+
+  <sql id="productCoreColumns">
+    P.PRODUCT_ID, P.PRODUCT_NAME, P.PRICE, P.STATUS
+  </sql>
+
+  <resultMap id="SalesRowResult" class="SalesRowVO">
+    <result property="productId" column="PRODUCT_ID"/>
+    <result property="productName" column="PRODUCT_NAME"/>
+    <result property="categoryName" column="CATEGORY_NAME"/>
+    <result property="supplierName" column="SUPPLIER_NAME"/>
+    <result property="unitsSold" column="UNITS_SOLD"/>
+    <result property="revenue" column="REVENUE"/>
+    <result property="reviewCount" column="REVIEW_COUNT"/>
+    <result property="revenueRank" column="REVENUE_RANK"/>
+  </resultMap>
+
+  <select id="getProductSalesReport" parameterClass="map" resultMap="SalesRowResult">
+    SELECT
+        <include refid="productCoreColumns"/>,
+        CAT.CATEGORY_NAME,
+        S.SUPPLIER_NAME,
+        SUM(OD.QUANTITY) AS UNITS_SOLD,
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) AS REVENUE,
+        (SELECT COUNT(*) FROM PRODUCT_REVIEW R WHERE R.PRODUCT_ID = P.PRODUCT_ID) AS REVIEW_COUNT,
+        RANK() OVER (PARTITION BY CAT.CATEGORY_ID ORDER BY SUM(OD.QUANTITY * OD.UNIT_PRICE) DESC) AS REVENUE_RANK
+    FROM PRODUCT P
+    INNER JOIN ORDER_DETAIL OD ON OD.PRODUCT_ID = P.PRODUCT_ID
+    INNER JOIN ORDERS O ON O.ORDER_ID = OD.ORDER_ID
+    LEFT JOIN CATEGORY CAT ON CAT.CATEGORY_ID = P.CATEGORY_ID
+    LEFT JOIN SUPPLIER S ON S.SUPPLIER_ID = P.SUPPLIER_ID
+    LEFT JOIN (
+      SELECT RT.PRODUCT_ID, SUM(RT.RETURN_QTY) AS RETURNED
+      FROM RETURN_ITEM RT
+      WHERE RT.RETURN_DATE &gt;= #since#
+      GROUP BY RT.PRODUCT_ID
+    ) RET ON RET.PRODUCT_ID = P.PRODUCT_ID
+    WHERE O.STATUS = 'COMPLETED'
+    <dynamic prepend="AND">
+      <isNotNull property="categoryId" prepend="AND">
+        P.CATEGORY_ID = #categoryId#
+      </isNotNull>
+      <isNotNull property="supplierId" prepend="AND">
+        P.SUPPLIER_ID = #supplierId#
+      </isNotNull>
+      <isGreaterThan property="since" compareValue="0" prepend="AND">
+        O.ORDER_DATE &gt;= #since#
+      </isGreaterThan>
+    </dynamic>
+    GROUP BY P.PRODUCT_ID, P.PRODUCT_NAME, P.PRICE, P.STATUS, CAT.CATEGORY_ID, CAT.CATEGORY_NAME, S.SUPPLIER_NAME
+    <dynamic prepend="HAVING">
+      <isGreaterThan property="minUnits" compareValue="0" prepend="AND">
+        SUM(OD.QUANTITY) &gt;= #minUnits#
+      </isGreaterThan>
+      <isGreaterThan property="minRevenue" compareValue="0" prepend="AND">
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) &gt;= #minRevenue#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY REVENUE DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getCustomerOrderStatistics" parameterClass="map" resultClass="map">
+    SELECT
+        C.CUSTOMER_ID,
+        C.CUSTOMER_NAME,
+        (SELECT MAX(O.ORDER_DATE) FROM ORDERS O WHERE O.CUSTOMER_ID = C.CUSTOMER_ID) AS lastOrderDate,
+        P1.TOTAL_PAYMENT AS totalPayment,
+        P1.PAYMENT_COUNT AS paymentCount
+    FROM CUSTOMER C
+    LEFT JOIN (
+      SELECT PM.CUSTOMER_ID, SUM(PM.PAYMENT_AMOUNT) AS TOTAL_PAYMENT, COUNT(*) AS PAYMENT_COUNT
+      FROM PAYMENT PM
+      WHERE PM.ORDER_ID IN (SELECT OD.ORDER_ID FROM ORDER_DETAIL OD WHERE OD.QUANTITY &gt; 0)
+      GROUP BY PM.CUSTOMER_ID
+    ) P1 ON P1.CUSTOMER_ID = C.CUSTOMER_ID
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="regionCode" prepend="AND">
+        C.REGION_CODE = #regionCode#
+      </isNotEmpty>
+      <isGreaterThan property="minPayment" compareValue="0" prepend="AND">
+        P1.TOTAL_PAYMENT &gt;= #minPayment#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY P1.TOTAL_PAYMENT DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getChannelOrderTotals" parameterClass="map" resultClass="map">
+    SELECT 'ONLINE' AS CHANNEL, COUNT(*) AS ORDER_COUNT, SUM(ON_O.TOTAL_AMOUNT) AS AMOUNT
+    FROM ONLINE_ORDER ON_O
+    WHERE ON_O.ORDER_DATE &gt;= #since#
+    UNION ALL
+    SELECT 'OFFLINE' AS CHANNEL, COUNT(*) AS ORDER_COUNT, SUM(OFF_O.TOTAL_AMOUNT) AS AMOUNT
+    FROM OFFLINE_ORDER OFF_O
+    WHERE OFF_O.ORDER_DATE &gt;= #since#
+  </select>
+
+</sqlMap>

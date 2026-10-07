@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="cond">
+
+  <select id="allConditions" parameterClass="map" resultClass="Row">
+    SELECT *
+    FROM T
+    <dynamic prepend="WHERE">
+      <isNull property="a" prepend="AND">A IS NULL</isNull>
+      <isNotNull property="b" prepend="AND">B IS NOT NULL</isNotNull>
+      <isEmpty property="c" prepend="AND">C = ''</isEmpty>
+      <isNotEmpty property="d" prepend="AND">D != ''</isNotEmpty>
+      <isEqual property="e" compareValue="1" prepend="AND">E = 1</isEqual>
+      <isNotEqual property="f" compareValue="2" prepend="AND">F != 2</isNotEqual>
+      <isGreaterThan property="g" compareValue="3" prepend="AND">G > 3</isGreaterThan>
+      <isGreaterEqual property="h" compareValue="4" prepend="AND">H >= 4</isGreaterEqual>
+      <isLessThan property="i" compareValue="5" prepend="AND">I &lt; 5</isLessThan>
+      <isLessEqual property="j" compareValue="6" prepend="AND">J &lt;= 6</isLessEqual>
+      <isPropertyAvailable property="k" prepend="AND">K IS AVAILABLE</isPropertyAvailable>
+      <isNotPropertyAvailable property="l" prepend="AND">L NOT AVAILABLE</isNotPropertyAvailable>
+    </dynamic>
+  </select>
+
+</sqlMap>

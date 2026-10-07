@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <!--
+    Deliberately portable ANSI JOIN/subquery syntax rather than Oracle-only
+    extensions (ROWNUM, DUAL, the (+) outer-join operator, MERGE) — see
+    docs/SPEC_MAPPING.md: node-sql-parser has no dedicated Oracle grammar,
+    so SqlAnalyzer parses the 'oracle' dialect via its closest ANSI-leaning
+    alternative ('transactsql'), which accepts this subset but not the
+    Oracle-only extensions.
+  -->
+  <select id="getUserWithLatestOrder" parameterClass="map" resultClass="User">
+    SELECT U.USER_ID, O.ORDER_ID
+    FROM USER U
+    INNER JOIN ORDERS O
+        ON U.USER_ID = O.USER_ID
+    WHERE U.STATUS = #status#
+  </select>
+
+</sqlMap>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="basic">
+
+  <!-- Scenario 1 — the boring baseline every other scenario builds on:
+       a plain lookup, iBATIS's inline #property:jdbcType# syntax, an
+       aggregate, and a paged read using shared fragments. The write
+       statements that used to live here moved to
+       test/fixtures/write-statements/ when the sample project became
+       SELECT-only. -->
+
+  <select id="getCustomerById" parameterClass="int" resultClass="CustomerVO">
+    SELECT CUSTOMER_ID, CUSTOMER_NAME, EMAIL, STATUS, REGION_CODE, CREATED_AT
+    FROM CUSTOMER
+    WHERE CUSTOMER_ID = #customerId#
+  </select>
+
+  <!-- iBATIS's inline parameter syntax: #property:jdbcType# and
+       #property:jdbcType:nullValue#, both extremely common in legacy
+       mappers pinning a NULL's type for the driver. -->
+  <select id="getCustomerByTypedId" parameterClass="map" resultClass="CustomerVO">
+    SELECT CUSTOMER_ID, CUSTOMER_NAME, PHONE
+    FROM CUSTOMER
+    WHERE CUSTOMER_ID = #customerId:NUMERIC#
+      AND REGION_CODE = #regionCode:VARCHAR:NONE#
+  </select>
+
+  <select id="countCustomers" resultClass="int">
+    SELECT COUNT(*) AS TOTAL
+    FROM CUSTOMER
+  </select>
+
+  <select id="getCustomerPage" parameterClass="map" resultClass="CustomerVO">
+    SELECT CUSTOMER_ID, CUSTOMER_NAME, EMAIL
+    FROM CUSTOMER
+    WHERE <include refid="common.activeCondition"/>
+    ORDER BY CUSTOMER_ID
+    <include refid="common.pagination"/>
+  </select>
+
+</sqlMap>

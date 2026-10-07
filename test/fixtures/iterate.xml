@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <select id="getUsersByIds" parameterClass="map" resultClass="User">
+    SELECT USER_ID
+    FROM USER
+    WHERE USER_ID IN
+    <iterate property="ids" open="(" close=")" conjunction=",">
+      #ids[]#
+    </iterate>
+  </select>
+
+  <select id="getUsersByGroups" parameterClass="map" resultClass="User">
+    SELECT USER_ID
+    FROM USER
+    WHERE 1 = 1
+    <iterate property="groups" open="AND (" close=")" conjunction="OR">
+      GROUP_ID = #groups[]#
+      <iterate property="groups[].subIds" open="(" close=")" conjunction=",">
+        #groups[].subIds[]#
+      </iterate>
+    </iterate>
+  </select>
+
+</sqlMap>

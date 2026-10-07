@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="content">
+
+  <!-- no FROM of its own: both include sites read OLD_CONTENT, so its context is inferred -->
+  <sql id="appFilter">
+    AND APP_ID = #appId#
+  </sql>
+
+  <!-- included from an OLD_CONTENT and an OLD_COUNTRY statement, which map USE_YN differently -->
+  <sql id="activeFilter">
+    AND USE_YN = 'Y'
+  </sql>
+
+  <select id="getContents" parameterClass="map" resultClass="Content">
+    SELECT c.APP_ID AS appId, c.TITLE AS title
+    FROM OLD_CONTENT c
+    <dynamic prepend="WHERE">
+      <isNotNull property="appId" prepend="AND">
+        c.APP_ID = #appId#
+      </isNotNull>
+      <isNotEmpty property="contentIds" prepend="AND">
+        CONTENT_ID IN
+        <iterate property="contentIds" open="(" close=")" conjunction=",">#contentIds[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+    ORDER BY $order$
+  </select>
+
+  <select id="countContents" parameterClass="map" resultClass="int">
+    SELECT COUNT(*)
+    FROM OLD_CONTENT
+    WHERE 1 = 1
+    <include refid="appFilter"/>
+    <include refid="activeFilter"/>
+  </select>
+
+  <select id="countCountries" parameterClass="map" resultClass="int">
+    SELECT COUNT(*) FROM OLD_COUNTRY
+    WHERE 1 = 1
+    <include refid="activeFilter"/>
+  </select>
+
+  <update id="updateContent" parameterClass="map">
+    UPDATE OLD_CONTENT
+    <dynamic prepend="SET">
+      <isNotNull property="title" prepend=",">TITLE = #title#</isNotNull>
+      <isNotNull property="appId" prepend=",">APP_ID = #appId#</isNotNull>
+    </dynamic>
+    WHERE CONTENT_ID = #contentId#
+  </update>
+
+</sqlMap>

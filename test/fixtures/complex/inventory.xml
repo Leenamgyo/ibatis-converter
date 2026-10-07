@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="inventory">
+
+  <resultMap id="InventoryResult" class="Inventory">
+    <result property="inventoryId" column="INVENTORY_ID"/>
+    <result property="productId" column="PRODUCT_ID"/>
+    <result property="warehouseId" column="WAREHOUSE_ID"/>
+    <result property="quantity" column="QUANTITY"/>
+  </resultMap>
+
+  <resultMap id="InventoryDetailResult" class="InventoryDetail" extends="InventoryResult">
+    <result property="productName" column="PRODUCT_NAME"/>
+    <result property="warehouseName" column="WAREHOUSE_NAME"/>
+  </resultMap>
+
+  <select id="getInventoryForProduct" parameterClass="int" resultMap="InventoryDetailResult">
+    SELECT
+        I.INVENTORY_ID, I.PRODUCT_ID, I.WAREHOUSE_ID, I.QUANTITY,
+        P.PRODUCT_NAME,
+        W.WAREHOUSE_NAME
+    FROM INVENTORY I
+    INNER JOIN PRODUCTS P ON I.PRODUCT_ID = P.PRODUCT_ID
+    INNER JOIN WAREHOUSES W ON I.WAREHOUSE_ID = W.WAREHOUSE_ID
+    WHERE I.PRODUCT_ID = #productId#
+  </select>
+
+  <select id="getTotalStock" parameterClass="int" resultClass="int">
+    SELECT COALESCE(SUM(QUANTITY), 0)
+    FROM INVENTORY
+    WHERE PRODUCT_ID = #productId#
+  </select>
+
+  <select id="getLowStockProducts" parameterClass="map" resultMap="InventoryDetailResult">
+    SELECT
+        I.INVENTORY_ID, I.PRODUCT_ID, I.WAREHOUSE_ID, I.QUANTITY,
+        P.PRODUCT_NAME,
+        W.WAREHOUSE_NAME
+    FROM INVENTORY I
+    INNER JOIN PRODUCTS P ON I.PRODUCT_ID = P.PRODUCT_ID
+    INNER JOIN WAREHOUSES W ON I.WAREHOUSE_ID = W.WAREHOUSE_ID
+    WHERE I.QUANTITY &lt;= #threshold#
+    <dynamic prepend="AND">
+      <isNotNull property="warehouseId" prepend="AND">
+        I.WAREHOUSE_ID = #warehouseId#
+      </isNotNull>
+    </dynamic>
+    ORDER BY I.QUANTITY ASC
+  </select>
+
+  <select id="getInventoryByProductIds" parameterClass="map" resultMap="InventoryResult">
+    SELECT INVENTORY_ID, PRODUCT_ID, WAREHOUSE_ID, QUANTITY
+    FROM INVENTORY
+    WHERE PRODUCT_ID IN
+    <iterate property="productIds" open="(" close=")" conjunction=",">
+      #productIds[]#
+    </iterate>
+  </select>
+
+</sqlMap>

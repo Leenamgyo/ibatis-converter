@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="payment">
+
+  <!-- schema.table(LEGACY -> BILLING), 힌트, 주석, 문자열 literal, 매핑 없는 테이블(TB_LOG) -->
+  <select id="paymentAudit" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_ORD_H IDX_ORD_01) */
+           PY.PAY_NO AS payNo,
+           PY.PAY_AMT AS payAmt,
+           'TB_ORD_H.ORD_NO' AS srcLabel,   -- TB_ORD_H.ORD_NO 는 주석이라 그대로
+           L.ORD_NO AS logOrdNo
+      FROM LEGACY.TB_PAY_H PY
+      JOIN TB_ORD_H H ON H.ORD_NO = PY.ORD_NO
+      LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE PY.PAY_DT BETWEEN #fromDt# AND #toDt#
+  </select>
+
+  <!-- 같은 스코프 두 테이블이 ORD_NO 를 다르게 매핑하진 않지만, 매핑 없는 TB_LOG 가 끼면 추정(WARNING) -->
+  <select id="logJoin" resultClass="java.util.HashMap">
+    SELECT ORD_STAT_CD, MSG
+      FROM TB_ORD_H H
+      JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+  </select>
+
+  <!-- qualifier 없는 USE_YN: TB_CUST_M(IS_ACTIVE) / TB_PRD_M(IS_SELLABLE) 둘 다 매핑 -> 모호(MANUAL), 변환 안 함 -->
+  <select id="ambiguousColumn" resultClass="int">
+    SELECT COUNT(*)
+      FROM TB_CUST_M C, TB_PRD_M P
+     WHERE USE_YN = 'Y'
+  </select>
+
+</sqlMap>

@@ -1,0 +1,436 @@
+/* ------------------------------------------------------------------ *
+ * SQL Lineage Dashboard (spec section 26) + MyBatis tab               *
+ *                                                                      *
+ * Layout is plain CSS grid/flex on purpose: the lineage graph's boxes  *
+ * are laid out by the browser (nesting a subquery inside its parent    *
+ * SELECT is just a nested <div>), and the SVG edge layer is drawn      *
+ * afterwards from the measured positions - so there is no hand-rolled  *
+ * layout engine to keep in sync with the DOM.                          *
+ * ------------------------------------------------------------------ */
+
+:root {
+  --node-table-bg: #e9f1fd;
+  --node-table-bd: #b3ceef;
+  --node-table-fg: #17457e;
+  --node-refid-bg: #e9f7ee;
+  --node-refid-bd: #aed8bf;
+  --node-refid-fg: #1c6238;
+  --node-sub-bg: #fdf7e6;
+  --node-sub-bd: #e4d19c;
+  --node-sub-fg: #7a5a10;
+  --node-union-bg: #f4eefd;
+  --node-union-bd: #cfbcee;
+  --node-union-fg: #563086;
+  --node-col-bg: #fdecf2;
+  --node-col-bd: #f0bed3;
+  --node-col-fg: #8d2b53;
+  --node-join-bg: #f0efeb;
+  --node-join-bd: #c9c6bb;
+  --node-join-fg: #4f4d45;
+  --node-dyn-bd: #d59ab8;
+  --node-dyn-fg: #93315e;
+  --node-java-bg: #f1ecfb;
+  --node-java-bd: #cdbdee;
+  --edge: #7b8794;
+  --edge-ref: #9aa4b1;
+  --edge-join: #c2566d;
+  --edge-hi: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --node-table-bg: rgba(70, 130, 210, 0.16);
+    --node-table-bd: rgba(110, 165, 230, 0.5);
+    --node-table-fg: #9ec6f2;
+    --node-refid-bg: rgba(70, 175, 115, 0.15);
+    --node-refid-bd: rgba(105, 200, 145, 0.45);
+    --node-refid-fg: #8ed7ab;
+    --node-sub-bg: rgba(205, 165, 60, 0.15);
+    --node-sub-bd: rgba(220, 185, 95, 0.45);
+    --node-sub-fg: #e0c37c;
+    --node-union-bg: rgba(150, 110, 225, 0.16);
+    --node-union-bd: rgba(175, 140, 235, 0.45);
+    --node-union-fg: #c3a9f0;
+    --node-col-bg: rgba(220, 100, 150, 0.16);
+    --node-col-bd: rgba(235, 130, 175, 0.45);
+    --node-col-fg: #f0a8c4;
+    --node-join-bg: rgba(160, 160, 160, 0.14);
+    --node-join-bd: rgba(180, 180, 180, 0.35);
+    --node-join-fg: #c3c1b8;
+    --node-dyn-bd: rgba(230, 140, 185, 0.5);
+    --node-dyn-fg: #eda6c6;
+    --node-java-bg: rgba(150, 110, 225, 0.14);
+    --node-java-bd: rgba(175, 140, 235, 0.4);
+    --edge: #99a4b1;
+    --edge-ref: #7b8592;
+    --edge-join: #d3798c;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Screen frame: stat strip / three columns / legend row                *
+ * ------------------------------------------------------------------ */
+.dashboard { flex-direction: column; min-width: 0; }
+.dash-stats {
+  display: flex; align-items: stretch; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.55rem 0.8rem; background: var(--bg-raised); border-bottom: 1px solid var(--border);
+}
+.dash-title { min-width: 0; margin-right: auto; }
+.dash-title h2 { margin: 0; font-size: 0.95rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-title .sub { font-size: 0.72rem; color: var(--text-faint); }
+.dash-title .sub .mono { color: var(--text-muted); }
+.stat {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
+  padding: 0.25rem 0.6rem; min-width: 74px;
+}
+.stat .k { font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; }
+.stat .v { font-size: 0.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat.ok { background: var(--safe-soft); border-color: transparent; }
+.stat.ok .v, .stat.ok .k { color: var(--safe); }
+
+.dash-body { flex: 1; display: grid; grid-template-columns: 264px minmax(0, 1fr) 336px; min-height: 0; }
+.dash-left, .dash-right { min-height: 0; overflow-y: auto; background: var(--bg-raised); }
+.dash-left { border-right: 1px solid var(--border); }
+.dash-right { border-left: 1px solid var(--border); padding-bottom: 1rem; }
+.dash-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
+
+.dash-search { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
+.dash-search input {
+  width: 100%; padding: 0.35rem 0.5rem; font-size: 0.78rem; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius);
+}
+.dash-search input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------------------------ *
+ * Left: XML structure tree + include usage                             *
+ * ------------------------------------------------------------------ */
+.xml-tree { font-size: 0.78rem; padding: 0.35rem 0; }
+.xml-tree .node { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.6rem; cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--text); font: inherit; }
+.xml-tree .node:hover { background: var(--bg-sunken); }
+.xml-tree .node.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.xml-tree .node.search-hit { box-shadow: inset 2px 0 0 var(--warning); }
+.xml-tree .twisty { width: 0.7rem; flex: none; color: var(--text-faint); font-size: 0.6rem; }
+.xml-tree .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xml-tree .count { margin-left: auto; font-size: 0.68rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.xml-tree .kind { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.25rem; border-radius: 2px; background: var(--bg-sunken); color: var(--text-muted); flex: none; }
+.xml-tree .kind.sql { background: var(--node-refid-bg); color: var(--node-refid-fg); }
+.xml-tree .kind.select { background: var(--node-table-bg); color: var(--node-table-fg); }
+.xml-tree .kind.insert, .xml-tree .kind.update, .xml-tree .kind.delete, .xml-tree .kind.procedure { background: var(--node-join-bg); color: var(--node-join-fg); }
+.xml-tree .children { display: block; }
+.xml-tree .children[hidden] { display: none; }
+.xml-tree .depth-1 { padding-left: 1.1rem; }
+.xml-tree .depth-2 { padding-left: 1.9rem; }
+
+.usage-list { padding: 0.3rem 0.6rem 0.6rem; font-size: 0.76rem; }
+.usage-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0; }
+.usage-row .n { color: var(--text-faint); width: 1.1rem; text-align: right; font-variant-numeric: tabular-nums; }
+.usage-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-row .bar { margin-left: auto; height: 0.45rem; border-radius: 2px; background: var(--node-refid-bd); flex: none; }
+.usage-row .c { width: 2rem; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------ *
+ * Center: toolbar / graph viewport / legend                            *
+ * ------------------------------------------------------------------ */
+.dash-toolbar {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  padding: 0.4rem 0.6rem; background: var(--bg-raised); border-bottom: 1px solid var(--border);
+}
+.breadcrumb { display: flex; align-items: center; gap: 0.3rem; font-size: 0.74rem; color: var(--text-muted); min-width: 0; overflow: hidden; }
+.breadcrumb .crumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.breadcrumb .sep { color: var(--text-faint); }
+.breadcrumb .crumb.current { color: var(--text); font-weight: 700; }
+.tool-btns { display: flex; gap: 0.25rem; margin-left: auto; }
+.tool-btn {
+  font-size: 0.7rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: var(--radius);
+  border: 1px solid var(--border-strong); background: var(--bg-raised); color: var(--text-muted); cursor: pointer;
+}
+.tool-btn:hover { color: var(--accent); border-color: var(--accent); }
+.zoom-level { font-size: 0.7rem; color: var(--text-faint); align-self: center; font-variant-numeric: tabular-nums; width: 3rem; text-align: center; }
+
+.graph-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; }
+.graph-viewport.panning { cursor: grabbing; }
+.graph-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; padding: 1rem; }
+/* Edges sit between the two paint layers on purpose: above the cluster's
+   opaque background (otherwise every intra-cluster line is buried under
+   it - `.graph-nodes` is a positioned sibling that comes later in the DOM,
+   so it wins by paint order), and below the node boxes, so a line reaches
+   a box's edge instead of running across its text. That means
+   `.graph-nodes` must stay `z-index: auto`: give it one and it becomes a
+   stacking context, trapping `.gnode` below the edges again. */
+.graph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 1; }
+.graph-edges path { fill: none; stroke: var(--edge); stroke-width: 1.5; opacity: 0.85; }
+.graph-edges path.ref { stroke: var(--edge-ref); stroke-dasharray: 4 3; }
+.graph-edges path.join { stroke: var(--edge-join); stroke-width: 1.1; }
+.graph-edges path.dim { opacity: 0.12; }
+.graph-edges path.hi { stroke: var(--edge-hi); stroke-width: 2.2; opacity: 1; }
+.graph-nodes { position: relative; display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
+
+/* Cluster boxes -------------------------------------------------- */
+.cluster { border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-raised); min-width: 0; }
+.cluster > .cluster-head {
+  display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem;
+  font-size: 0.72rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.cluster > .cluster-head .badge {
+  font-size: 0.62rem; font-weight: 700; padding: 0.05rem 0.3rem; border-radius: 2px;
+  background: var(--bg-sunken); color: var(--text-muted);
+}
+.cluster > .cluster-head .origin { font-weight: 500; color: var(--text-faint); }
+.cluster > .cluster-head .collapse {
+  margin-left: auto; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text-muted);
+  border-radius: 2px; font-size: 0.62rem; line-height: 1; padding: 0.15rem 0.3rem; cursor: pointer;
+}
+.cluster > .cluster-body { padding: 0.5rem; display: flex; gap: 2.6rem; align-items: flex-start; }
+.cluster.collapsed > .cluster-body { display: none; }
+
+.cluster.refid { background: var(--node-refid-bg); border-color: var(--node-refid-bd); }
+.cluster.refid > .cluster-head { color: var(--node-refid-fg); border-bottom-color: var(--node-refid-bd); }
+.cluster.refid > .cluster-body { flex-wrap: wrap; gap: 0.5rem; }
+/* A SELECT scope is NOT a box. Drawing a border around it makes one box
+   look like it contains several tables, which is exactly what the objects
+   must never do. So a scope is a lane: a header chip, then the objects,
+   with no outline of its own. The only boxes on screen are the objects -
+   one per table, the JOIN table, each condition, each column. */
+.cluster.select-main, .cluster.select-sub, .cluster.select-union, .cluster.select-cte {
+  border: none; background: transparent; border-radius: 0;
+}
+.cluster.select-main > .cluster-head,
+.cluster.select-sub > .cluster-head,
+.cluster.select-union > .cluster-head,
+.cluster.select-cte > .cluster-head {
+  width: fit-content; border: 1px solid; border-radius: 4px; margin-bottom: 0.1rem;
+}
+.cluster.select-main > .cluster-head { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.cluster.select-sub > .cluster-head { color: var(--node-sub-fg); background: var(--node-sub-bg); border-color: var(--node-sub-bd); }
+.cluster.select-union > .cluster-head { color: var(--node-union-fg); background: var(--node-union-bg); border-color: var(--node-union-bd); }
+.cluster.select-cte > .cluster-head { color: var(--node-union-fg); background: var(--node-union-bg); border-color: var(--node-union-bd); border-style: dashed; }
+.cluster.select-main > .cluster-body,
+.cluster.select-sub > .cluster-body,
+.cluster.select-union > .cluster-body,
+.cluster.select-cte > .cluster-body { padding: 0.35rem 0 0.2rem 0.9rem; }
+/* A write statement (INSERT/UPDATE/DELETE) root - same machinery, but it
+   must never be mistaken for a SELECT at a glance. */
+.cluster.select-write { border-color: var(--warning); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08); }
+.cluster.select-write > .cluster-head { color: var(--warning); background: var(--warning-soft); border-bottom-color: var(--warning); }
+
+.cluster-col { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.cluster-col > .col-head {
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint);
+}
+
+/* A lane holds table objects: the source tables in one column, the table
+   the joins produce in the next. */
+.lane-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; align-items: flex-start; }
+.lane-col.sources { min-width: 190px; }
+.lane-col.result { min-width: 230px; }
+
+/* Table object internals: FROM / WHERE / SELECT sections. This is the only
+   nesting allowed inside a box - clauses and columns, never another table. */
+.tobj { max-width: 340px; padding: 0; overflow: hidden; }
+.tobj > .tobj-head {
+  display: flex; align-items: baseline; gap: 0.35rem; padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid var(--border); font-size: 0.74rem;
+}
+.tobj > .tobj-head .badge {
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.05rem 0.28rem;
+  border-radius: 2px; background: var(--bg-sunken); color: var(--text-muted);
+}
+.tobj > .tobj-head .tname { font-weight: 700; }
+.tobj > .tobj-head .alias { font-weight: 500; color: var(--text-faint); font-size: 0.68rem; }
+.tsec { display: flex; gap: 0.45rem; padding: 0.3rem 0.45rem; border-top: 1px dashed var(--border); }
+.tsec:first-of-type { border-top: none; }
+.tsec > .tsec-head {
+  flex: 0 0 62px; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-faint); padding-top: 0.15rem;
+}
+.tsec > .tsec-body { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; flex: 1 1 auto; }
+
+/* Node cards ------------------------------------------------------ */
+.gnode { position: relative; z-index: 2; }
+.cluster > .cluster-head, .cluster-col > .col-head { position: relative; z-index: 2; }
+.gnode {
+  border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg-raised);
+  padding: 0.3rem 0.45rem; font-size: 0.72rem; cursor: pointer; max-width: 260px; min-width: 0;
+}
+.gnode .title { font-weight: 700; display: flex; align-items: baseline; gap: 0.3rem; }
+.gnode .title .alias { font-weight: 500; color: var(--text-faint); font-size: 0.68rem; }
+.gnode .meta { font-size: 0.66rem; color: var(--text-faint); }
+.gnode .sql { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.68rem; color: var(--text-muted); word-break: break-word; }
+.gnode:hover { border-color: var(--accent); }
+.gnode.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gnode.dim, .cluster.dim { opacity: 0.28; }
+.gnode.search-hit { box-shadow: 0 0 0 2px var(--warning); }
+
+.gnode.table { background: var(--node-table-bg); border-color: var(--node-table-bd); }
+.gnode.table .title { color: var(--node-table-fg); }
+/* The slot a subquery fills. The subquery itself is drawn outside the
+   scope and points at this box. */
+.gnode.subref { background: var(--node-sub-bg); border-color: var(--node-sub-bd); border-style: dashed; }
+.gnode.subref .title { color: var(--node-sub-fg); }
+
+/* The table a set of joins produces - a table object like any other,
+   sitting at the end of every join line. */
+.gnode.jointbl {
+  background: var(--node-join-bg); border-color: var(--node-join-bd); border-width: 2px;
+}
+.gnode.jointbl > .tobj-head { color: var(--node-join-fg); }
+.gnode.table > .tobj-head { color: var(--node-table-fg); }
+.gnode.subref > .tobj-head { color: var(--node-sub-fg); }
+/* Nested clause/column objects must not inherit the parent's tint. */
+.tobj .gnode { background: var(--bg-raised); max-width: 100%; }
+.gnode.refid { background: var(--bg-raised); border-color: var(--node-refid-bd); }
+.gnode.refid .title { color: var(--node-refid-fg); }
+.gnode.join { background: var(--node-join-bg); border-color: var(--node-join-bd); }
+/* Each WHERE condition is its own object; the dynamic tag that guards it
+   is another object, one depth below it. */
+.gnode.cond { background: var(--node-join-bg); border-color: var(--node-join-bd); }
+.cond-stack { display: flex; flex-direction: column; gap: 0.3rem; }
+.cond-children { padding-left: 0.9rem; border-left: 1px dashed var(--node-dyn-bd, var(--border-strong)); margin-left: 0.35rem; }
+.cond-kw {
+  font-size: 0.56rem; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--node-join-fg); text-transform: uppercase;
+}
+/* What a join step produces: the integrated relation so far. */
+.gnode.join .relation {
+  margin-top: 0.25rem; padding-top: 0.22rem; border-top: 1px dashed var(--node-join-bd);
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.01em; color: var(--node-join-fg);
+}
+.gnode.join .title { color: var(--node-join-fg); }
+.gnode.column { background: var(--node-col-bg); border-color: var(--node-col-bd); }
+.gnode.column .title { color: var(--node-col-fg); font-weight: 600; }
+.gnode.column .meta { color: var(--node-col-fg); opacity: 0.75; }
+.gnode.dynamic { background: transparent; border: 1px dashed var(--node-dyn-bd); }
+.gnode.dynamic .title { color: var(--node-dyn-fg); }
+.gnode.clause { background: var(--bg); border-style: dashed; }
+.gnode.lineage-hi { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.join-type { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em; padding: 0 0.25rem; border-radius: 2px; }
+.join-type.INNER_JOIN { background: var(--node-table-bg); color: var(--node-table-fg); }
+.join-type.LEFT_JOIN { background: var(--node-refid-bg); color: var(--node-refid-fg); }
+.join-type.RIGHT_JOIN { background: var(--node-sub-bg); color: var(--node-sub-fg); }
+.join-type.FULL_JOIN, .join-type.FULL_OUTER_JOIN { background: var(--node-union-bg); color: var(--node-union-fg); }
+.join-type.CROSS_JOIN { background: var(--node-join-bg); color: var(--node-join-fg); }
+/* Recovered from the WHERE clause rather than written as a JOIN - dashed,
+   so it never reads as an explicit join in the mapper. */
+.join-type.IMPLICIT_JOIN { background: transparent; border: 1px dashed var(--node-join-bd); color: var(--node-join-fg); }
+
+/* Legend + summary ------------------------------------------------ */
+.dash-legend {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.4rem 0.7rem; background: var(--bg-raised); border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--text-muted);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 0.3rem; }
+.legend-swatch { width: 0.75rem; height: 0.6rem; border-radius: 2px; border: 1px solid var(--border-strong); display: inline-block; }
+.legend-line { width: 1.1rem; height: 0; border-top: 2px solid var(--edge); display: inline-block; }
+.legend-line.ref { border-top-style: dashed; border-color: var(--edge-ref); }
+.legend-line.join { border-color: var(--edge-join); }
+
+/* Right panel cards ----------------------------------------------- */
+.side-card { border-bottom: 1px solid var(--border); }
+.side-card > .side-head {
+  display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.6rem;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint);
+}
+.side-card > .side-head .n { margin-left: auto; font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.side-card > .side-body { padding: 0 0.6rem 0.6rem; }
+.side-card.java > .side-body { background: var(--node-java-bg); border-top: 1px solid var(--node-java-bd); padding-top: 0.5rem; }
+.side-card table.data td, .side-card table.data th { padding: 0.25rem 0.3rem; font-size: 0.7rem; overflow-wrap: anywhere; vertical-align: top; }
+.side-card table.data th { white-space: nowrap; }
+.side-card td.src { overflow-wrap: normal; }
+.side-card td.src .t, .side-card td.src .c { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-card td.src .c { color: var(--text-muted); }
+/* Short id-ish first columns ("MAIN", "S1") must not wrap mid-word. */
+.side-card table.data.compact-first td:first-child { white-space: nowrap; }
+/* Only the alias/lineage table gets a hairline "#" column; the Java
+   mapping table needs every column to size to its own content. */
+.side-card table.data.lineage-cols td:first-child, .side-card table.data.lineage-cols th:first-child { width: 1.1rem; color: var(--text-faint); }
+.side-card table.data tr.clickable { cursor: pointer; }
+.side-card table.data tr.clickable:hover { background: var(--bg-sunken); }
+.side-card table.data tr.selected { background: var(--accent-soft); }
+.side-card .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.side-empty { font-size: 0.74rem; color: var(--text-faint); padding: 0 0.6rem 0.6rem; }
+
+.minimap { position: relative; margin: 0 0.6rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-sunken); }
+.minimap svg { display: block; width: 100%; height: 130px; }
+.minimap rect.mm-node { fill: var(--node-table-bd); }
+.minimap rect.mm-cluster { fill: none; stroke: var(--border-strong); }
+.minimap rect.mm-view { fill: rgba(125, 128, 240, 0.16); stroke: var(--accent); }
+
+/* ------------------------------------------------------------------ *
+ * MyBatis tab                                                          *
+ * ------------------------------------------------------------------ */
+.mybatis-list { width: 300px; flex: none; }
+.mybatis-detail { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; min-width: 0; }
+.mb-file-head { padding: 0.5rem 0.75rem; font-weight: 700; font-size: 0.8rem; background: var(--bg-sunken); border-bottom: 1px solid var(--border); }
+.mb-file-head .sub { display: block; font-weight: 400; color: var(--text-faint); font-size: 0.72rem; }
+.mb-xml {
+  margin: 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.6rem; font-size: 0.76rem; max-height: 520px; overflow: auto; white-space: pre-wrap;
+}
+
+/* ------------------------------------------------------------------ *
+ * Responsive                                                           *
+ *   >1200px  three columns                                             *
+ *   <=1200px right panel drops under the graph as a card row           *
+ *   <=860px  single column, sidebars become collapsible accordions      *
+ * ------------------------------------------------------------------ */
+@media (max-width: 1200px) {
+  .dash-body { grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: minmax(260px, 1fr) auto; }
+  .dash-left { grid-row: 1 / span 2; }
+  .dash-right {
+    grid-column: 2; border-left: none; border-top: 1px solid var(--border);
+    max-height: 300px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+  .side-card { border-right: 1px solid var(--border); }
+}
+
+@media (max-width: 860px) {
+  .dash-body { display: flex; flex-direction: column; overflow-y: auto; }
+  .dash-left, .dash-right { max-height: none; border: none; border-bottom: 1px solid var(--border); display: block; }
+  .dash-center { min-height: 62vh; }
+  .dash-stats { gap: 0.35rem; padding: 0.5rem; }
+  .stat { min-width: 62px; padding: 0.2rem 0.4rem; }
+  .cluster > .cluster-body { flex-direction: column; gap: 0.6rem; }
+  .mybatis-list { width: 100%; }
+  /* A collapsed sidebar section keeps its header as the tap target. */
+  .dash-left.collapsed .panel-body, .dash-left.collapsed .dash-search { display: none; }
+}
+
+/* ------------------------------------------------------------------ *
+ * Left-menu view switch + the centre panes it controls                 *
+ * ------------------------------------------------------------------ */
+.view-switch {
+  display: flex; gap: 0.25rem; padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border); background: var(--bg-sunken);
+  position: sticky; top: 0; z-index: 2;
+}
+.view-tab {
+  flex: 1; padding: 0.4rem 0.5rem; border: 1px solid transparent; border-radius: var(--radius);
+  background: none; color: var(--text-muted); font: inherit; font-size: 0.8rem; font-weight: 600;
+  cursor: pointer;
+}
+.view-tab:hover { background: var(--bg-raised); color: var(--text); }
+.view-tab.active { background: var(--accent-soft); color: var(--accent); }
+.view-tab:focus-visible, .node:focus-visible, .tool-btn:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+.view-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* Same cascade trap as `.screen[hidden]`: a class selector setting
+   `display` beats the browser's default `[hidden] { display: none }`, so
+   anything hideable needs its own [hidden] rule. */
+.view-pane[hidden] { display: none; }
+.dash-toolbar[hidden] { display: none; }
+#mybatisPane { overflow-y: auto; padding: 0.85rem 1rem 1.5rem; background: var(--bg); }
+
+.mb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.mb-scope { display: flex; gap: 0.25rem; }
+.mb-scope .tool-btn.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.mb-xml {
+  margin: 0.5rem 0 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.7rem; font-size: 0.76rem; overflow: auto; white-space: pre-wrap;
+}
+
+/* A UNION is one result: its branches live inside a single box. */
+.union-group > .union-body { flex-direction: column; align-items: stretch; gap: 0.75rem; }
+.union-group > .union-body > .cluster { width: 100%; }

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="returnRequest">
+
+  <resultMap id="ReturnRequestResult" class="ReturnRequest">
+    <result property="returnId" column="RETURN_ID"/>
+    <result property="orderId" column="ORDER_ID"/>
+    <result property="orderItemId" column="ORDER_ITEM_ID"/>
+    <result property="reason" column="REASON"/>
+    <result property="status" column="STATUS"/>
+  </resultMap>
+
+  <resultMap id="ReturnRequestDetailResult" class="ReturnRequestDetail" extends="ReturnRequestResult">
+    <result property="productName" column="PRODUCT_NAME"/>
+    <result property="username" column="USERNAME"/>
+  </resultMap>
+
+  <select id="getReturnById" parameterClass="int" resultMap="ReturnRequestDetailResult">
+    SELECT
+        RR.RETURN_ID, RR.ORDER_ID, RR.ORDER_ITEM_ID, RR.REASON, RR.STATUS,
+        P.PRODUCT_NAME,
+        U.USERNAME
+    FROM RETURN_REQUESTS RR
+    INNER JOIN ORDER_ITEMS OI ON RR.ORDER_ITEM_ID = OI.ORDER_ITEM_ID
+    INNER JOIN PRODUCTS P ON OI.PRODUCT_ID = P.PRODUCT_ID
+    INNER JOIN ORDERS O ON RR.ORDER_ID = O.ORDER_ID
+    INNER JOIN USERS U ON O.USER_ID = U.USER_ID
+    WHERE RR.RETURN_ID = #returnId#
+  </select>
+
+  <select id="getReturnsForOrder" parameterClass="int" resultMap="ReturnRequestResult">
+    SELECT RETURN_ID, ORDER_ID, ORDER_ITEM_ID, REASON, STATUS
+    FROM RETURN_REQUESTS
+    WHERE ORDER_ID = #orderId#
+  </select>
+
+  <select id="searchReturns" parameterClass="map" resultMap="ReturnRequestDetailResult">
+    SELECT
+        RR.RETURN_ID, RR.ORDER_ID, RR.ORDER_ITEM_ID, RR.REASON, RR.STATUS,
+        P.PRODUCT_NAME,
+        U.USERNAME
+    FROM RETURN_REQUESTS RR
+    INNER JOIN ORDER_ITEMS OI ON RR.ORDER_ITEM_ID = OI.ORDER_ITEM_ID
+    INNER JOIN PRODUCTS P ON OI.PRODUCT_ID = P.PRODUCT_ID
+    INNER JOIN ORDERS O ON RR.ORDER_ID = O.ORDER_ID
+    INNER JOIN USERS U ON O.USER_ID = U.USER_ID
+    <dynamic prepend="WHERE">
+      <isNotNull property="status" prepend="AND">
+        RR.STATUS = #status#
+      </isNotNull>
+      <isNotEmpty property="reasonKeyword" prepend="AND">
+        RR.REASON LIKE #reasonKeyword#
+      </isNotEmpty>
+      <isNotNull property="userId" prepend="AND">
+        O.USER_ID = #userId#
+      </isNotNull>
+    </dynamic>
+    ORDER BY RR.RETURN_ID DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getPendingReturnCount" resultClass="int">
+    SELECT COUNT(*)
+    FROM RETURN_REQUESTS
+    WHERE STATUS = 'PENDING'
+  </select>
+
+</sqlMap>

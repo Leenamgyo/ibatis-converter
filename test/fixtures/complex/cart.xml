@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="cart">
+
+  <resultMap id="CartItemResult" class="CartItem">
+    <result property="cartItemId" column="CART_ITEM_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="productId" column="PRODUCT_ID"/>
+    <result property="quantity" column="QUANTITY"/>
+  </resultMap>
+
+  <resultMap id="CartItemDetailResult" class="CartItemDetail" extends="CartItemResult">
+    <result property="productName" column="PRODUCT_NAME"/>
+    <result property="price" column="PRICE"/>
+  </resultMap>
+
+  <select id="getCartForUser" parameterClass="int" resultMap="CartItemDetailResult">
+    SELECT
+        C.CART_ITEM_ID, C.USER_ID, C.PRODUCT_ID, C.QUANTITY,
+        P.PRODUCT_NAME,
+        P.PRICE
+    FROM CART_ITEMS C
+    INNER JOIN PRODUCTS P
+        ON C.PRODUCT_ID = P.PRODUCT_ID
+    WHERE C.USER_ID = #userId#
+  </select>
+
+  <select id="getCartTotal" parameterClass="int" resultClass="map">
+    SELECT SUM(C.QUANTITY * P.PRICE) AS CART_TOTAL
+    FROM CART_ITEMS C
+    INNER JOIN PRODUCTS P
+        ON C.PRODUCT_ID = P.PRODUCT_ID
+    WHERE C.USER_ID = #userId#
+  </select>
+
+  <select id="getCartItemCount" parameterClass="int" resultClass="int">
+    SELECT COUNT(*)
+    FROM CART_ITEMS
+    WHERE USER_ID = #userId#
+  </select>
+
+</sqlMap>

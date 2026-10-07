@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="role">
+
+  <resultMap id="RoleResult" class="Role">
+    <result property="roleId" column="ROLE_ID"/>
+    <result property="roleName" column="ROLE_NAME"/>
+  </resultMap>
+
+  <resultMap id="RoleWithPermissionResult" class="RoleDetail" extends="RoleResult">
+    <result property="permissionId" column="PERMISSION_ID"/>
+    <result property="permissionName" column="PERMISSION_NAME"/>
+  </resultMap>
+
+  <select id="getAllRoles" resultMap="RoleResult">
+    SELECT ROLE_ID, ROLE_NAME
+    FROM ROLES
+    ORDER BY ROLE_NAME
+  </select>
+
+  <select id="getRoleById" parameterClass="int" resultMap="RoleResult">
+    SELECT ROLE_ID, ROLE_NAME
+    FROM ROLES
+    WHERE ROLE_ID = #roleId#
+  </select>
+
+  <select id="getRolesWithPermissions" parameterClass="int" resultMap="RoleWithPermissionResult">
+    SELECT
+        R.ROLE_ID, R.ROLE_NAME,
+        P.PERMISSION_ID, P.PERMISSION_NAME
+    FROM ROLES R
+    LEFT JOIN ROLE_PERMISSIONS RP
+        ON R.ROLE_ID = RP.ROLE_ID
+    LEFT JOIN PERMISSIONS P
+        ON RP.PERMISSION_ID = P.PERMISSION_ID
+    WHERE R.ROLE_ID = #roleId#
+  </select>
+
+  <select id="getRolesByPermissionNames" parameterClass="map" resultMap="RoleResult">
+    SELECT DISTINCT R.ROLE_ID, R.ROLE_NAME
+    FROM ROLES R
+    INNER JOIN ROLE_PERMISSIONS RP ON R.ROLE_ID = RP.ROLE_ID
+    INNER JOIN PERMISSIONS P ON RP.PERMISSION_ID = P.PERMISSION_ID
+    WHERE P.PERMISSION_NAME IN
+    <iterate property="permissionNames" open="(" close=")" conjunction=",">
+      #permissionNames[]#
+    </iterate>
+  </select>
+
+</sqlMap>

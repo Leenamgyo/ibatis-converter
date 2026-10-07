@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="stat">
+
+  <!-- The shape the lineage dashboard (spec section 26) exists to draw:
+       a main SELECT that reads a real table, a JOINed inline view, a
+       scalar subquery in the SELECT list, a subquery nested two levels
+       deep, a UNION branch, and a resultMap so alias -> Java field can be
+       shown. See test/analyzer/lineageAnalyzer.test.js. -->
+
+  <sql id="customerBaseColumns">
+    C.CUSTOMER_ID, C.CUSTOMER_NAME
+  </sql>
+
+  <resultMap id="CustomerStatisticsResult" class="CustomerStatisticsVO">
+    <result property="customerId" column="CUSTOMER_ID"/>
+    <result property="customerName" column="CUSTOMER_NAME"/>
+    <result property="lastOrderDate" column="lastOrderDate"/>
+    <result property="totalPayment" column="totalPayment"/>
+  </resultMap>
+
+  <select id="getCustomerOrderStatistics" parameterClass="map" resultMap="CustomerStatisticsResult">
+    SELECT
+        <include refid="customerBaseColumns"/>,
+        (SELECT MAX(O.ORDER_DATE) FROM ORDERS O WHERE O.CUSTOMER_ID = C.CUSTOMER_ID) AS lastOrderDate,
+        P1.TOTAL_PAYMENT AS totalPayment
+    FROM CUSTOMER C
+    LEFT JOIN (
+      SELECT PM.CUSTOMER_ID, SUM(PM.PAYMENT_AMOUNT) AS TOTAL_PAYMENT
+      FROM PAYMENT PM
+      WHERE PM.ORDER_ID IN (SELECT OD.ORDER_ID FROM ORDER_DETAIL OD WHERE OD.QUANTITY &gt; 0)
+      GROUP BY PM.CUSTOMER_ID
+    ) P1 ON P1.CUSTOMER_ID = C.CUSTOMER_ID
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="regionCode" prepend="AND">
+        C.REGION_CODE = #regionCode#
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <select id="getCustomerOrderStatisticsUnion" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME
+    FROM CUSTOMER C
+    UNION ALL
+    SELECT A.CUSTOMER_ID, A.CUSTOMER_NAME
+    FROM ARCHIVED_CUSTOMER A
+  </select>
+
+</sqlMap>

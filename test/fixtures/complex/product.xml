@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="product">
+
+  <cacheModel id="productCache" type="LRU"/>
+
+  <resultMap id="ProductResult" class="Product">
+    <result property="productId" column="PRODUCT_ID"/>
+    <result property="productName" column="PRODUCT_NAME"/>
+    <result property="categoryId" column="CATEGORY_ID"/>
+    <result property="supplierId" column="SUPPLIER_ID"/>
+    <result property="price" column="PRICE"/>
+    <result property="status" column="STATUS"/>
+  </resultMap>
+
+  <resultMap id="ProductDetailResult" class="ProductDetail" extends="ProductResult">
+    <result property="categoryName" column="CATEGORY_NAME"/>
+    <result property="supplierName" column="SUPPLIER_NAME"/>
+  </resultMap>
+
+  <select id="getProductById" parameterClass="int" resultMap="ProductResult" cacheModel="productCache">
+    SELECT PRODUCT_ID, PRODUCT_NAME, CATEGORY_ID, SUPPLIER_ID, PRICE, STATUS
+    FROM PRODUCTS
+    WHERE PRODUCT_ID = #productId#
+  </select>
+
+  <select id="getProductDetail" parameterClass="int" resultMap="ProductDetailResult">
+    SELECT
+        P.PRODUCT_ID, P.PRODUCT_NAME, P.CATEGORY_ID, P.SUPPLIER_ID, P.PRICE, P.STATUS,
+        C.CATEGORY_NAME,
+        S.SUPPLIER_NAME
+    FROM PRODUCTS P
+    LEFT JOIN CATEGORIES C ON P.CATEGORY_ID = C.CATEGORY_ID
+    LEFT JOIN SUPPLIERS S ON P.SUPPLIER_ID = S.SUPPLIER_ID
+    WHERE P.PRODUCT_ID = #productId#
+  </select>
+
+  <select id="searchProducts" parameterClass="map" resultMap="ProductDetailResult">
+    SELECT
+        P.PRODUCT_ID, P.PRODUCT_NAME, P.CATEGORY_ID, P.SUPPLIER_ID, P.PRICE, P.STATUS,
+        C.CATEGORY_NAME,
+        S.SUPPLIER_NAME
+    FROM PRODUCTS P
+    LEFT JOIN CATEGORIES C ON P.CATEGORY_ID = C.CATEGORY_ID
+    LEFT JOIN SUPPLIERS S ON P.SUPPLIER_ID = S.SUPPLIER_ID
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="name" prepend="AND">
+        P.PRODUCT_NAME LIKE #name#
+      </isNotEmpty>
+      <isNotNull property="categoryId" prepend="AND">
+        P.CATEGORY_ID = #categoryId#
+      </isNotNull>
+      <isGreaterEqual property="minPrice" compareValue="0" prepend="AND">
+        P.PRICE &gt;= #minPrice#
+      </isGreaterEqual>
+      <isLessEqual property="maxPrice" compareValue="0" prepend="AND">
+        P.PRICE &lt;= #maxPrice#
+      </isLessEqual>
+      <isNotNull property="status" prepend="AND">
+        P.STATUS = #status#
+      </isNotNull>
+    </dynamic>
+    ORDER BY $orderBy$
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getProductsByCategoryIds" parameterClass="map" resultMap="ProductResult">
+    SELECT PRODUCT_ID, PRODUCT_NAME, CATEGORY_ID, SUPPLIER_ID, PRICE, STATUS
+    FROM PRODUCTS
+    WHERE 1 = 1
+    <iterate property="categoryIds" open="AND CATEGORY_ID IN (" close=")" conjunction=",">
+      #categoryIds[]#
+    </iterate>
+  </select>
+
+  <select id="getTopRatedProducts" parameterClass="map" resultClass="map">
+    SELECT
+        P.PRODUCT_ID,
+        P.PRODUCT_NAME,
+        AVG(R.RATING) AS AVG_RATING
+    FROM PRODUCTS P
+    INNER JOIN PRODUCT_REVIEWS R
+        ON P.PRODUCT_ID = R.PRODUCT_ID
+    GROUP BY P.PRODUCT_ID, P.PRODUCT_NAME
+    HAVING AVG(R.RATING) &gt;= #minRating#
+    ORDER BY AVG_RATING DESC
+    <include refid="common.pagination"/>
+  </select>
+
+</sqlMap>

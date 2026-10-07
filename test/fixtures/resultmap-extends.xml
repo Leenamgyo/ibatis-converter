@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <resultMap id="BaseResult" class="User">
+    <result property="id" column="USER_ID"/>
+  </resultMap>
+
+  <resultMap id="UserResult" class="User" extends="BaseResult">
+    <result property="name" column="USER_NAME"/>
+  </resultMap>
+
+  <resultMap id="UserDetailResult" class="UserDetail" extends="UserResult">
+    <result property="email" column="EMAIL"/>
+  </resultMap>
+
+  <select id="getUser" parameterClass="int" resultMap="UserDetailResult">
+    SELECT USER_ID, USER_NAME, EMAIL FROM USER WHERE USER_ID = #id#
+  </select>
+
+</sqlMap>

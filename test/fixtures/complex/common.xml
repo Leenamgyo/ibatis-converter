@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="common">
+
+  <!-- Shared across every mapper in test/fixtures/complex/ - proves the
+       resolver handles namespace-qualified cross-mapper <include refid>
+       at realistic scale, not just the two-file cross-mapper/ fixture. -->
+
+  <sql id="pagination">
+    LIMIT #offset#, #limit#
+  </sql>
+
+  <sql id="activeStatusCondition">
+    STATUS = 'ACTIVE'
+  </sql>
+
+  <sql id="auditColumns">
+    CREATED_AT, UPDATED_AT
+  </sql>
+
+  <sql id="softDeleteCondition">
+    DELETED_AT IS NULL
+  </sql>
+
+</sqlMap>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="order">
+
+  <select id="searchOrders" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.ORD_NO AS ordNo, H.TOT_AMT AS totAmt, H.ORD_STAT_CD AS ordStatCd
+      FROM TB_ORD_H H
+    
+    <where>
+
+      
+      <if test="custNo != null and custNo != ''">
+
+        AND H.CUST_NO = #{custNo}
+      
+      </if>
+
+      
+      <if test="fromDt != null and fromDt != ''">
+
+        AND 
+ H.ORD_DT &gt;= #{fromDt} 
+
+      
+      </if>
+
+      
+      <if test="onlyBig == 'Y'.toString()">
+
+        AND TOT_AMT &gt; 100000
+      
+      </if>
+
+      
+      <if test="statList != null and statList.size() &gt; 0">
+
+        AND H.ORD_STAT_CD IN
+        
+        <foreach collection="statList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+    ORDER BY ${sortColumn} ${sortDir}
+  
+  </select>
+
+</mapper>

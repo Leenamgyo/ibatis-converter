@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="report">
+
+  <!-- Cross-domain reporting mapper - deliberately combines joins across
+       five tables, a correlated subquery, a UNION, and nested <dynamic>
+       inside a <dynamic>, mirroring the kind of "one giant report query"
+       legacy iBATIS projects accumulate over the years. -->
+
+  <!-- A same-file <sql refid> (as opposed to every other <include> in this
+       project, which is namespace-qualified across files - see
+       common.xml) - the plain, unqualified refid form from
+       include-basic.xml, reused here inside a bigger statement. -->
+  <sql id="productCoreColumns">
+    P.PRODUCT_ID, P.PRODUCT_NAME, P.PRICE, P.STATUS
+  </sql>
+
+  <!-- RIGHT JOIN (every other join in this project is LEFT/INNER) plus a
+       correlated subquery column, a same-file <include refid>, a
+       cross-mapper <include refid="common.pagination">, and a <dynamic>
+       WHERE - one statement exercising the full join/subquery/column/refid
+       matrix at once. -->
+  <select id="getCategoryProductCoverage" parameterClass="map" resultClass="map">
+    SELECT
+        C.CATEGORY_ID,
+        C.CATEGORY_NAME,
+        <include refid="productCoreColumns"/>,
+        (SELECT COUNT(*) FROM PRODUCT_REVIEWS R WHERE R.PRODUCT_ID = P.PRODUCT_ID) AS REVIEW_COUNT
+    FROM PRODUCTS P
+    RIGHT JOIN CATEGORIES C
+        ON P.CATEGORY_ID = C.CATEGORY_ID
+    <dynamic prepend="WHERE">
+      <isNotNull property="parentId" prepend="AND">
+        C.PARENT_ID = #parentId#
+      </isNotNull>
+    </dynamic>
+    ORDER BY C.CATEGORY_NAME
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getUserOrderSummary" parameterClass="map" resultClass="map">
+    SELECT
+        U.USER_ID,
+        U.USERNAME,
+        COUNT(O.ORDER_ID) AS ORDER_COUNT,
+        SUM(O.TOTAL_AMOUNT) AS TOTAL_SPENT
+    FROM USERS U
+    LEFT JOIN ORDERS O
+        ON U.USER_ID = O.USER_ID
+        AND O.STATUS != 'CANCELLED'
+    <dynamic prepend="WHERE">
+      <isNotNull property="status" prepend="AND">
+        U.STATUS = #status#
+      </isNotNull>
+      <isNotNull property="roleId" prepend="AND">
+        U.ROLE_ID = #roleId#
+      </isNotNull>
+    </dynamic>
+    GROUP BY U.USER_ID, U.USERNAME
+    <dynamic prepend="HAVING">
+      <isGreaterThan property="minOrderCount" compareValue="0" prepend="AND">
+        COUNT(O.ORDER_ID) &gt;= #minOrderCount#
+      </isGreaterThan>
+      <isGreaterThan property="minTotalSpent" compareValue="0" prepend="AND">
+        SUM(O.TOTAL_AMOUNT) &gt;= #minTotalSpent#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY TOTAL_SPENT DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getProductSalesReport" parameterClass="map" resultClass="map">
+    SELECT
+        P.PRODUCT_ID,
+        P.PRODUCT_NAME,
+        C.CATEGORY_NAME,
+        S.SUPPLIER_NAME,
+        SUM(OI.QUANTITY) AS UNITS_SOLD,
+        SUM(OI.QUANTITY * OI.UNIT_PRICE) AS REVENUE
+    FROM PRODUCTS P
+    INNER JOIN ORDER_ITEMS OI ON P.PRODUCT_ID = OI.PRODUCT_ID
+    INNER JOIN ORDERS O ON OI.ORDER_ID = O.ORDER_ID
+    LEFT JOIN CATEGORIES C ON P.CATEGORY_ID = C.CATEGORY_ID
+    LEFT JOIN SUPPLIERS S ON P.SUPPLIER_ID = S.SUPPLIER_ID
+    WHERE O.STATUS = 'COMPLETED'
+    <dynamic prepend="AND">
+      <isNotNull property="categoryId" prepend="AND">
+        P.CATEGORY_ID = #categoryId#
+      </isNotNull>
+      <isGreaterThan property="since" compareValue="0" prepend="AND">
+        O.ORDERED_AT &gt;= #since#
+      </isGreaterThan>
+    </dynamic>
+    GROUP BY P.PRODUCT_ID, P.PRODUCT_NAME, C.CATEGORY_NAME, S.SUPPLIER_NAME
+    ORDER BY REVENUE DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getUsersWithNoOrders" resultClass="map">
+    SELECT U.USER_ID, U.USERNAME
+    FROM USERS U
+    WHERE NOT EXISTS (
+      SELECT 1 FROM ORDERS O WHERE O.USER_ID = U.USER_ID
+    )
+  </select>
+
+  <select id="getTopSpendersAndRecentSignups" parameterClass="map" resultClass="map">
+    SELECT USER_ID, USERNAME, 'TOP_SPENDER' AS SEGMENT
+    FROM USERS
+    WHERE USER_ID IN (
+      SELECT USER_ID FROM ORDERS
+      GROUP BY USER_ID
+      HAVING SUM(TOTAL_AMOUNT) &gt;= #topSpenderThreshold#
+    )
+    UNION
+    SELECT USER_ID, USERNAME, 'RECENT_SIGNUP' AS SEGMENT
+    FROM USERS
+    WHERE CREATED_AT &gt;= #recentSince#
+  </select>
+
+  <select id="getWarehouseStockValue" resultClass="map">
+    SELECT
+        W.WAREHOUSE_ID,
+        W.WAREHOUSE_NAME,
+        SUM(I.QUANTITY * P.PRICE) AS STOCK_VALUE
+    FROM WAREHOUSES W
+    INNER JOIN INVENTORY I ON W.WAREHOUSE_ID = I.WAREHOUSE_ID
+    INNER JOIN PRODUCTS P ON I.PRODUCT_ID = P.PRODUCT_ID
+    GROUP BY W.WAREHOUSE_ID, W.WAREHOUSE_NAME
+    ORDER BY STOCK_VALUE DESC
+  </select>
+
+  <select id="getOrdersForUsersByRegion" parameterClass="map" resultClass="map">
+    SELECT
+        O.ORDER_ID, O.TOTAL_AMOUNT, SA.CITY
+    FROM ORDERS O
+    INNER JOIN SHIPPING_ADDRESSES SA
+        ON O.USER_ID = SA.USER_ID
+        AND SA.IS_DEFAULT = 1
+    WHERE 1 = 1
+    <iterate property="cities" open="AND SA.CITY IN (" close=")" conjunction=",">
+      #cities[]#
+    </iterate>
+  </select>
+
+</sqlMap>

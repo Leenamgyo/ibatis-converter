@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <select id="getUserPage" parameterClass="map" resultClass="User">
+    SELECT USER_ID, USER_NAME
+    FROM USER
+    WHERE STATUS = #status#
+    ORDER BY CREATED_AT DESC
+    LIMIT #offset#, #limit#
+  </select>
+
+</sqlMap>

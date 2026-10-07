@@ -1,0 +1,3028 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="large">
+
+  <sql id="cols_cust_m">
+
+    C.CUSTOMER_ID AS custNo,
+    C.CUSTOMER_NAME AS custNm,
+    C.REGION_CODE AS rgnCd,
+    C.IS_ACTIVE AS useYn,
+    C.CREATED_AT AS regDt,
+    C.TEL_NO AS telNo,
+    C.EMAIL AS email
+  
+  </sql>
+
+  <sql id="filter_cust_m">
+
+    
+    <if test="regDt != null and regDt != ''">
+
+      AND CREATED_AT = #{regDt}
+    
+    </if>
+
+  
+  </sql>
+
+  <sql id="cols_ord_h">
+
+    H.ORDER_ID AS ordNo,
+    H.CUSTOMER_ID AS custNo,
+    H.ORDERED_AT AS ordDt,
+    H.STATUS AS ordStatCd,
+    H.TOTAL_AMOUNT AS totAmt,
+    H.REG_ID AS regId,
+    H.UPD_DT AS updDt
+  
+  </sql>
+
+  <sql id="filter_ord_h">
+
+    
+    <if test="ordDt != null and ordDt != ''">
+
+      AND ORDERED_AT = #{ordDt}
+    
+    </if>
+
+  
+  </sql>
+
+  <sql id="cols_ord_d">
+
+    D.ORDER_ID AS ordNo,
+    D.LINE_NO AS itemSeq,
+    D.PRODUCT_ID AS prdCd,
+    D.QUANTITY AS ordQty,
+    D.UNIT_PRICE AS unitPrc,
+    D.DC_AMT AS dcAmt
+  
+  </sql>
+
+  <sql id="filter_ord_d">
+
+    
+    <if test="ordNo != null and ordNo != ''">
+
+      AND ORDER_ID = #{ordNo}
+    
+    </if>
+
+  
+  </sql>
+
+  <sql id="cols_prd_m">
+
+    P.PRODUCT_ID AS prdCd,
+    P.PRODUCT_NAME AS prdNm,
+    P.CATEGORY_CODE AS ctgCd,
+    P.IS_SELLABLE AS useYn,
+    P.SALE_PRC AS salePrc
+  
+  </sql>
+
+  <sql id="filter_prd_m">
+
+    
+    <if test="ctgCd != null and ctgCd != ''">
+
+      AND CATEGORY_CODE = #{ctgCd}
+    
+    </if>
+
+  
+  </sql>
+
+  <sql id="cols_cmm_cd">
+
+    CC.GROUP_CODE AS grpCd,
+    CC.CODE AS cd,
+    CC.CODE_NAME AS cdNm,
+    CC.SORT_ORDER AS sortSeq,
+    CC.RMK AS rmk
+  
+  </sql>
+
+  <sql id="filter_cmm_cd">
+
+    
+    <if test="cd != null and cd != ''">
+
+      AND CODE = #{cd}
+    
+    </if>
+
+  
+  </sql>
+
+  <sql id="cols_pay_h">
+
+    PY.PAYMENT_ID AS payNo,
+    PY.ORDER_ID AS ordNo,
+    PY.AMOUNT AS payAmt,
+    PY.PAID_AT AS payDt,
+    PY.PAY_MTHD_CD AS payMthdCd
+  
+  </sql>
+
+  <sql id="filter_pay_h">
+
+    
+    <if test="ordNo != null and ordNo != ''">
+
+      AND ORDER_ID = #{ordNo}
+    
+    </if>
+
+  
+  </sql>
+
+  <select id="listAll001" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_cust_m"/>
+
+      FROM CUSTOMER C
+     WHERE C.CUSTOMER_ID = #{custNo}
+       AND C.TEL_NO IS NOT NULL
+       AND C.IS_ACTIVE &lt;&gt; 'TB_ORD_H.ORD_NO'
+  
+  </select>
+
+  <select id="countFiltered002" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM CUSTOMER
+     WHERE 1 = 1
+     
+    <include refid="filter_cust_m"/>
+
+  
+  </select>
+
+  <select id="listAll003" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_ord_h"/>
+
+      FROM ORDERS H
+     WHERE H.ORDER_ID = #{ordNo}
+       AND H.CUSTOMER_ID IS NOT NULL
+       AND H.TOTAL_AMOUNT &lt;&gt; 'TB_ORD_H.ORD_NO'
+  
+  </select>
+
+  <select id="countFiltered004" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDERS
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_h"/>
+
+  
+  </select>
+
+  <select id="listAll005" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_ord_d"/>
+
+      FROM ORDER_ITEM D
+     WHERE D.LINE_NO = #{itemSeq}
+       AND D.PRODUCT_ID IS NOT NULL
+       AND D.UNIT_PRICE &lt;&gt; 'TB_ORD_H.ORD_NO'
+  
+  </select>
+
+  <select id="countFiltered006" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDER_ITEM
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_d"/>
+
+  
+  </select>
+
+  <select id="listAll007" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_prd_m"/>
+
+      FROM PRODUCT P
+     WHERE P.PRODUCT_ID = #{prdCd}
+       AND P.SALE_PRC IS NOT NULL
+  
+  </select>
+
+  <select id="countFiltered008" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM PRODUCT
+     WHERE 1 = 1
+     
+    <include refid="filter_prd_m"/>
+
+  
+  </select>
+
+  <select id="listAll009" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_cmm_cd"/>
+
+      FROM COMMON_CODE CC
+     WHERE CC.CODE = #{cd}
+  
+  </select>
+
+  <select id="countFiltered010" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM COMMON_CODE
+     WHERE 1 = 1
+     
+    <include refid="filter_cmm_cd"/>
+
+  
+  </select>
+
+  <select id="listAll011" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_pay_h"/>
+
+      FROM BILLING.PAYMENT PY
+     WHERE PY.PAYMENT_ID = #{payNo}
+       AND PY.AMOUNT IS NOT NULL
+       AND PY.AMOUNT &lt;&gt; 'TB_ORD_H.ORD_NO'
+  
+  </select>
+
+  <select id="countFiltered012" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM BILLING.PAYMENT
+     WHERE 1 = 1
+     
+    <include refid="filter_pay_h"/>
+
+  
+  </select>
+
+  <select id="selectByKey013" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_ORD_D 단건 조회
+    SELECT PRODUCT_ID AS prdCd,
+           LINE_NO AS itemSeq
+      FROM ORDER_ITEM
+     WHERE LINE_NO = #{itemSeq}
+       AND PRODUCT_ID IS NOT NULL
+  
+  </select>
+
+  <select id="joinSelect014" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.STATUS AS ordStatCd,
+           H.CUSTOMER_ID AS custNo,
+           CC.CODE_NAME AS cdNmCC,
+           CC.SORT_ORDER AS sortSeqCC,
+           D.DC_AMT AS dcAmtD,
+           D.QUANTITY AS ordQtyD,
+           C.CUSTOMER_ID AS custNoC,
+           C.IS_ACTIVE AS useYnC,
+           L.MSG AS logMsg
+      FROM ORDERS H
+     LEFT OUTER JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     JOIN ORDER_ITEM D ON D.ORDER_ID = H.ORDER_ID
+     JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORDER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="search015" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_ord_h"/>
+
+      FROM ORDERS H
+    
+    <where>
+
+      
+      <if test="ordNo != null">
+
+        AND H.ORDER_ID = #{ordNo}
+      
+      </if>
+
+      
+      <if test="totAmtFlag == 'Y'.toString()">
+
+        AND H.TOTAL_AMOUNT IS NOT NULL
+      
+      </if>
+
+      
+      <if test="ordDtList != null and ordDtList.size() &gt; 0">
+
+        AND H.ORDERED_AT IN
+        
+        <foreach collection="ordDtList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+    ORDER BY ${sortColumn}
+  
+  </select>
+
+  <select id="countWithFilter016" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM PRODUCT
+     WHERE 1 = 1
+     
+    <include refid="filter_prd_m"/>
+
+  
+  </select>
+
+  <insert id="insert017" parameterType="map">
+
+    INSERT INTO CUSTOMER (
+      CUSTOMER_ID, CUSTOMER_NAME, REGION_CODE, IS_ACTIVE, CREATED_AT, TEL_NO, EMAIL
+    ) VALUES (
+      #{custNo}, #{custNm}, #{rgnCd}, #{useYn}, #{regDt}, #{telNo}, #{email}
+    )
+  
+  </insert>
+
+  <insert id="copyItems018" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <update id="update019" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="custNo != null">
+CUSTOMER_ID = #{custNo},
+      </if>
+
+      
+      <if test="updDt != null">
+UPD_DT = #{updDt},
+      </if>
+
+      
+      <if test="regId != null">
+REG_ID = #{regId},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <update id="refreshTotal020" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <delete id="deleteOrphan021" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="aggregate022" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.PAID_AT, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT PAID_AT, COUNT(*) AS CNT, MAX(AMOUNT) AS MAX_VAL
+              FROM BILLING.PAYMENT
+             GROUP BY PAID_AT
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="cte023" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT PRODUCT_NAME, CATEGORY_CODE
+        FROM PRODUCT
+       WHERE PRODUCT_ID IS NOT NULL
+    )
+    SELECT B.PRODUCT_NAME AS prdNm, B.CATEGORY_CODE AS ctgCd
+      FROM BASE B
+  
+  </select>
+
+  <select id="union024" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT CUSTOMER_ID AS v, 'A' AS src FROM ORDERS WHERE ORDERED_AT IS NOT NULL
+    UNION ALL
+    SELECT ORDERED_AT AS v, 'B' AS src FROM ORDERS WHERE CUSTOMER_ID IS NULL
+  
+  </select>
+
+  <select id="customerSummary025" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <update id="update026" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="ordDt != null">
+ORDERED_AT = #{ordDt},
+      </if>
+
+      
+      <if test="custNo != null">
+CUSTOMER_ID = #{custNo},
+      </if>
+
+      
+      <if test="updDt != null">
+UPD_DT = #{updDt},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <update id="update027" parameterType="map">
+
+    UPDATE BILLING.PAYMENT
+    
+    <set>
+
+      
+      <if test="payMthdCd != null">
+PAY_MTHD_CD = #{payMthdCd},
+      </if>
+
+      
+      <if test="payAmt != null">
+AMOUNT = #{payAmt},
+      </if>
+
+      
+      <if test="ordNo != null">
+ORDER_ID = #{ordNo},
+      </if>
+
+    
+    </set>
+
+     WHERE PAYMENT_ID = #{payNo}
+  
+  </update>
+
+  <select id="aggregate028" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.LINE_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT LINE_NO, COUNT(*) AS CNT, MAX(PRODUCT_ID) AS MAX_VAL
+              FROM ORDER_ITEM
+             GROUP BY LINE_NO
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="search029" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_cust_m"/>
+
+      FROM CUSTOMER C
+    
+    <where>
+
+      
+      <if test="custNo != null and custNo != ''">
+
+        AND C.CUSTOMER_ID = #{custNo}
+      
+      </if>
+
+      
+      <if test="custNmFlag == 'Y'.toString()">
+
+        AND C.CUSTOMER_NAME IS NOT NULL
+      
+      </if>
+
+      
+      <if test="regDtFlag == 'Y'.toString()">
+
+        AND C.CREATED_AT IS NOT NULL
+      
+      </if>
+
+      
+      <if test="emailFlag == 'Y'.toString()">
+
+        AND C.EMAIL IS NOT NULL
+      
+      </if>
+
+      
+      <if test="custNoList != null and custNoList.size() &gt; 0">
+
+        AND C.CUSTOMER_ID IN
+        
+        <foreach collection="custNoList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <select id="countWithFilter030" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM CUSTOMER
+     WHERE 1 = 1
+     
+    <include refid="filter_cust_m"/>
+
+  
+  </select>
+
+  <insert id="copyItems031" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="union032" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT IS_SELLABLE AS v, 'A' AS src FROM PRODUCT WHERE CATEGORY_CODE IS NOT NULL
+    UNION ALL
+    SELECT CATEGORY_CODE AS v, 'B' AS src FROM PRODUCT WHERE IS_SELLABLE IS NULL
+  
+  </select>
+
+  <select id="cte033" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT ORDER_ID, ORDERED_AT
+        FROM ORDERS
+       WHERE ORDER_ID IS NOT NULL
+    )
+    SELECT B.ORDER_ID AS ordNo, B.ORDERED_AT AS ordDt
+      FROM BASE B
+  
+  </select>
+
+  <update id="refreshTotal034" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="aggregate035" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.ORDER_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORDER_ID, COUNT(*) AS CNT, MAX(TOTAL_AMOUNT) AS MAX_VAL
+              FROM ORDERS
+             GROUP BY ORDER_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="selectByKey036" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_PRD_M 단건 조회
+    SELECT PRODUCT_NAME AS prdNm,
+           PRODUCT_ID,
+           CATEGORY_CODE AS ctgCd,
+           IS_SELLABLE
+      FROM PRODUCT
+     WHERE PRODUCT_ID = #{prdCd}
+       AND PRODUCT_NAME IS NOT NULL
+  
+  </select>
+
+  <update id="update037" parameterType="map">
+
+    UPDATE COMMON_CODE
+    
+    <set>
+
+      
+      <if test="rmk != null">
+RMK = #{rmk},
+      </if>
+
+      
+      <if test="grpCd != null">
+GROUP_CODE = #{grpCd},
+      </if>
+
+      
+      <if test="cdNm != null">
+CODE_NAME = #{cdNm},
+      </if>
+
+    
+    </set>
+
+     WHERE CODE = #{cd}
+  
+  </update>
+
+  <select id="joinSelect038" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.STATUS AS ordStatCd,
+           H.TOTAL_AMOUNT AS totAmt,
+           C.TEL_NO AS telNoC,
+           C.IS_ACTIVE AS useYnC,
+           PY.AMOUNT AS payAmtPY,
+           PY.ORDER_ID AS ordNoPY,
+           CC.RMK AS rmkCC,
+           CC.CODE_NAME AS cdNmCC,
+           L.MSG AS logMsg
+      FROM ORDERS H
+     LEFT OUTER JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     LEFT OUTER JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     INNER JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORDER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="search039" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT LINE_NO, QUANTITY, PRODUCT_ID
+      FROM ORDER_ITEM
+    
+    <where>
+
+      
+      <if test="unitPrcFlag == 'Y'.toString()">
+
+        AND UNIT_PRICE IS NOT NULL
+      
+      </if>
+
+      
+      <if test="itemSeq != null">
+
+        AND LINE_NO = #{itemSeq}
+      
+      </if>
+
+      
+      <if test="ordQtyList != null and ordQtyList.size() &gt; 0">
+
+        AND QUANTITY IN
+        
+        <foreach collection="ordQtyList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <update id="update040" parameterType="map">
+
+    UPDATE COMMON_CODE
+    
+    <set>
+
+      
+      <if test="grpCd != null">
+GROUP_CODE = #{grpCd},
+      </if>
+
+      
+      <if test="cdNm != null">
+CODE_NAME = #{cdNm},
+      </if>
+
+      
+      <if test="sortSeq != null">
+SORT_ORDER = #{sortSeq},
+      </if>
+
+    
+    </set>
+
+     WHERE CODE = #{cd}
+  
+  </update>
+
+  <insert id="insert041" parameterType="map">
+
+    
+    <selectKey keyProperty="ordNo" resultType="string" order="BEFORE">
+
+      SELECT 'O' || LPAD(SEQ_ORD_NO.NEXTVAL, 9, '0') FROM DUAL
+    
+    </selectKey>
+
+    INSERT INTO ORDERS (
+      ORDER_ID, CUSTOMER_ID, ORDERED_AT, STATUS, TOTAL_AMOUNT, REG_ID, UPD_DT
+    ) VALUES (
+      #{ordNo}, #{custNo}, #{ordDt}, #{ordStatCd}, #{totAmt}, #{regId}, #{updDt}
+    )
+  
+  </insert>
+
+  <select id="aggregate042" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.PAID_AT, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT PAID_AT, COUNT(*) AS CNT, MAX(ORDER_ID) AS MAX_VAL
+              FROM BILLING.PAYMENT
+             GROUP BY PAID_AT
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="cte043" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CODE, CODE_NAME
+        FROM COMMON_CODE
+       WHERE CODE IS NOT NULL
+    )
+    SELECT B.CODE AS cd, B.CODE_NAME AS cdNm
+      FROM BASE B
+  
+  </select>
+
+  <select id="countWithFilter044" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDERS
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_h"/>
+
+  
+  </select>
+
+  <delete id="deleteOrphan045" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="joinSelect046" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.UPD_DT AS updDt,
+           H.ORDER_ID AS ordNo,
+           C.IS_ACTIVE AS useYnC,
+           C.REGION_CODE AS rgnCdC
+      FROM ORDERS H
+     LEFT OUTER JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <update id="refreshTotal047" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <delete id="deleteOrphan048" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="cte049" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT SORT_ORDER, GROUP_CODE
+        FROM COMMON_CODE
+       WHERE CODE IS NOT NULL
+    )
+    SELECT B.SORT_ORDER AS sortSeq, B.GROUP_CODE AS grpCd
+      FROM BASE B
+  
+  </select>
+
+  <select id="cte050" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CUSTOMER_ID, REGION_CODE
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CUSTOMER_ID AS custNo, B.REGION_CODE AS rgnCd
+      FROM BASE B
+  
+  </select>
+
+  <delete id="deleteOrphan051" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="joinSelect052" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.UPD_DT AS updDt,
+           H.ORDERED_AT AS ordDt,
+           CC.GROUP_CODE AS grpCdCC,
+           CC.SORT_ORDER AS sortSeqCC,
+           C.CUSTOMER_NAME AS custNmC,
+           C.CREATED_AT AS regDtC,
+           L.MSG AS logMsg
+      FROM ORDERS H
+     LEFT OUTER JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     LEFT OUTER JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORDER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="cte053" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CUSTOMER_NAME, CUSTOMER_ID
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CUSTOMER_NAME AS custNm, B.CUSTOMER_ID AS custNo
+      FROM BASE B
+  
+  </select>
+
+  <select id="cte054" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT ORDER_ID, CUSTOMER_ID
+        FROM ORDERS
+       WHERE ORDER_ID IS NOT NULL
+    )
+    SELECT B.ORDER_ID AS ordNo, B.CUSTOMER_ID AS custNo
+      FROM BASE B
+  
+  </select>
+
+  <update id="update055" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="ordStatCd != null">
+STATUS = #{ordStatCd},
+      </if>
+
+      
+      <if test="totAmt != null">
+TOTAL_AMOUNT = #{totAmt},
+      </if>
+
+      
+      <if test="regId != null">
+REG_ID = #{regId},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="cte056" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT ORDER_ID, STATUS
+        FROM ORDERS
+       WHERE ORDER_ID IS NOT NULL
+    )
+    SELECT B.ORDER_ID AS ordNo, B.STATUS AS ordStatCd
+      FROM BASE B
+  
+  </select>
+
+  <update id="refreshTotal057" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="customerSummary058" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <insert id="insert059" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (
+      ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE, DC_AMT
+    ) VALUES (
+      #{ordNo}, #{itemSeq}, #{prdCd}, #{ordQty}, #{unitPrc}, #{dcAmt}
+    )
+  
+  </insert>
+
+  <select id="aggregate060" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.QUANTITY, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT QUANTITY, COUNT(*) AS CNT, MAX(LINE_NO) AS MAX_VAL
+              FROM ORDER_ITEM
+             GROUP BY QUANTITY
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="cte061" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT IS_SELLABLE, PRODUCT_ID
+        FROM PRODUCT
+       WHERE PRODUCT_ID IS NOT NULL
+    )
+    SELECT B.IS_SELLABLE AS useYn, B.PRODUCT_ID AS prdCd
+      FROM BASE B
+  
+  </select>
+
+  <select id="customerSummary062" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <update id="update063" parameterType="map">
+
+    UPDATE COMMON_CODE
+    
+    <set>
+
+      
+      <if test="cdNm != null">
+CODE_NAME = #{cdNm},
+      </if>
+
+      
+      <if test="grpCd != null">
+GROUP_CODE = #{grpCd},
+      </if>
+
+      
+      <if test="sortSeq != null">
+SORT_ORDER = #{sortSeq},
+      </if>
+
+    
+    </set>
+
+     WHERE CODE = #{cd}
+  
+  </update>
+
+  <select id="union064" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT QUANTITY AS v, 'A' AS src FROM ORDER_ITEM WHERE ORDER_ID IS NOT NULL
+    UNION ALL
+    SELECT ORDER_ID AS v, 'B' AS src FROM ORDER_ITEM WHERE QUANTITY IS NULL
+  
+  </select>
+
+  <delete id="deleteOrphan065" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <update id="update066" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="custNo != null">
+CUSTOMER_ID = #{custNo},
+      </if>
+
+      
+      <if test="totAmt != null">
+TOTAL_AMOUNT = #{totAmt},
+      </if>
+
+      
+      <if test="regId != null">
+REG_ID = #{regId},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="cte067" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT ORDER_ID, LINE_NO
+        FROM ORDER_ITEM
+       WHERE LINE_NO IS NOT NULL
+    )
+    SELECT B.ORDER_ID AS ordNo, B.LINE_NO AS itemSeq
+      FROM BASE B
+  
+  </select>
+
+  <select id="selectByKey068" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_CUST_M 단건 조회
+    SELECT C.EMAIL AS email,
+           C.CREATED_AT AS regDt,
+           C.CUSTOMER_NAME,
+           C.IS_ACTIVE
+      FROM CUSTOMER C
+     WHERE C.CUSTOMER_ID = #{custNo}
+       AND C.CUSTOMER_NAME IS NOT NULL
+       AND C.IS_ACTIVE &lt;&gt; 'TB_ORD_H.ORD_NO'
+  
+  </select>
+
+  <select id="customerSummary069" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <select id="joinSelect070" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.ORDER_ID AS ordNo,
+           H.STATUS AS ordStatCd,
+           PY.PAYMENT_ID AS payNoPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           CC.CODE AS cdCC,
+           CC.SORT_ORDER AS sortSeqCC
+      FROM ORDERS H
+     LEFT OUTER JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="cte071" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CUSTOMER_ID, CREATED_AT
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CUSTOMER_ID AS custNo, B.CREATED_AT AS regDt
+      FROM BASE B
+  
+  </select>
+
+  <select id="cte072" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CREATED_AT, REGION_CODE
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CREATED_AT AS regDt, B.REGION_CODE AS rgnCd
+      FROM BASE B
+  
+  </select>
+
+  <select id="customerSummary073" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <select id="cte074" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT STATUS, ORDER_ID
+        FROM ORDERS
+       WHERE ORDER_ID IS NOT NULL
+    )
+    SELECT B.STATUS AS ordStatCd, B.ORDER_ID AS ordNo
+      FROM BASE B
+  
+  </select>
+
+  <update id="update075" parameterType="map">
+
+    UPDATE BILLING.PAYMENT
+    
+    <set>
+
+      
+      <if test="payDt != null">
+PAID_AT = #{payDt},
+      </if>
+
+      
+      <if test="ordNo != null">
+ORDER_ID = #{ordNo},
+      </if>
+
+      
+      <if test="payAmt != null">
+AMOUNT = #{payAmt},
+      </if>
+
+    
+    </set>
+
+     WHERE PAYMENT_ID = #{payNo}
+  
+  </update>
+
+  <select id="aggregate076" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.UNIT_PRICE, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT UNIT_PRICE, COUNT(*) AS CNT, MAX(QUANTITY) AS MAX_VAL
+              FROM ORDER_ITEM
+             GROUP BY UNIT_PRICE
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="countWithFilter077" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDER_ITEM
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_d"/>
+
+  
+  </select>
+
+  <insert id="copyItems078" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="search079" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT 
+    <include refid="cols_prd_m"/>
+
+      FROM PRODUCT P
+    
+    <where>
+
+      
+      <if test="prdNm != null">
+
+        AND P.PRODUCT_NAME = #{prdNm}
+      
+      </if>
+
+      
+      <if test="useYnFrom != null and useYnFrom != ''">
+
+        AND 
+ P.IS_SELLABLE &gt;= #{useYnFrom} 
+
+      
+      </if>
+
+      
+      <if test="ctgCd != null">
+
+        AND P.CATEGORY_CODE = #{ctgCd}
+      
+      </if>
+
+      
+      <if test="salePrcFrom != null and salePrcFrom != ''">
+
+        AND 
+ P.SALE_PRC &gt;= #{salePrcFrom} 
+
+      
+      </if>
+
+      
+      <if test="prdNmList != null and prdNmList.size() &gt; 0">
+
+        AND P.PRODUCT_NAME IN
+        
+        <foreach collection="prdNmList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <select id="customerSummary080" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <update id="refreshTotal081" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <update id="refreshTotal082" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <update id="update083" parameterType="map">
+
+    UPDATE ORDER_ITEM
+    
+    <set>
+
+      
+      <if test="unitPrc != null">
+UNIT_PRICE = #{unitPrc},
+      </if>
+
+      
+      <if test="ordNo != null">
+ORDER_ID = #{ordNo},
+      </if>
+
+      
+      <if test="prdCd != null">
+PRODUCT_ID = #{prdCd},
+      </if>
+
+    
+    </set>
+
+     WHERE LINE_NO = #{itemSeq}
+  
+  </update>
+
+  <delete id="deleteOrphan084" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="joinSelect085" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.CUSTOMER_ID AS custNo,
+           H.ORDERED_AT AS ordDt
+      FROM ORDERS H
+     
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <delete id="deleteOrphan086" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="cte087" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CODE, SORT_ORDER
+        FROM COMMON_CODE
+       WHERE CODE IS NOT NULL
+    )
+    SELECT B.CODE AS cd, B.SORT_ORDER AS sortSeq
+      FROM BASE B
+  
+  </select>
+
+  <delete id="deleteOrphan088" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="union089" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT CUSTOMER_NAME AS v, 'A' AS src FROM CUSTOMER WHERE CUSTOMER_ID IS NOT NULL
+    UNION ALL
+    SELECT CUSTOMER_ID AS v, 'B' AS src FROM CUSTOMER WHERE CUSTOMER_NAME IS NULL
+  
+  </select>
+
+  <update id="refreshTotal090" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="cte091" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT PRODUCT_NAME, CATEGORY_CODE
+        FROM PRODUCT
+       WHERE PRODUCT_ID IS NOT NULL
+    )
+    SELECT B.PRODUCT_NAME AS prdNm, B.CATEGORY_CODE AS ctgCd
+      FROM BASE B
+  
+  </select>
+
+  <select id="countWithFilter092" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM CUSTOMER
+     WHERE 1 = 1
+     
+    <include refid="filter_cust_m"/>
+
+  
+  </select>
+
+  <select id="joinSelect093" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.CUSTOMER_ID AS custNo,
+           H.ORDER_ID AS ordNo,
+           PY.ORDER_ID AS ordNoPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           D.ORDER_ID AS ordNoD,
+           D.UNIT_PRICE AS unitPrcD,
+           C.REGION_CODE AS rgnCdC,
+           C.CREATED_AT AS regDtC,
+           P.PRODUCT_NAME AS prdNmP,
+           P.SALE_PRC AS salePrcP
+      FROM ORDERS H
+     JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     LEFT OUTER JOIN ORDER_ITEM D ON D.ORDER_ID = H.ORDER_ID
+     JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     INNER JOIN PRODUCT P ON P.PRODUCT_ID = D.PRODUCT_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <update id="update094" parameterType="map">
+
+    UPDATE CUSTOMER
+    
+    <set>
+
+      
+      <if test="custNm != null">
+CUSTOMER_NAME = #{custNm},
+      </if>
+
+      
+      <if test="useYn != null">
+IS_ACTIVE = #{useYn},
+      </if>
+
+      
+      <if test="email != null">
+EMAIL = #{email},
+      </if>
+
+    
+    </set>
+
+     WHERE CUSTOMER_ID = #{custNo}
+  
+  </update>
+
+  <select id="search095" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT PRODUCT_ID, PRODUCT_NAME, SALE_PRC
+      FROM PRODUCT
+    
+    <where>
+
+      
+      <if test="prdCdFlag == 'Y'.toString()">
+
+        AND PRODUCT_ID IS NOT NULL
+      
+      </if>
+
+      
+      <if test="prdNmFrom != null and prdNmFrom != ''">
+
+        AND 
+ PRODUCT_NAME &gt;= #{prdNmFrom} 
+
+      
+      </if>
+
+      
+      <if test="useYn != null">
+
+        AND IS_SELLABLE = #{useYn}
+      
+      </if>
+
+      
+      <if test="prdNmList != null and prdNmList.size() &gt; 0">
+
+        AND PRODUCT_NAME IN
+        
+        <foreach collection="prdNmList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <select id="aggregate096" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.ORDER_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORDER_ID, COUNT(*) AS CNT, MAX(LINE_NO) AS MAX_VAL
+              FROM ORDER_ITEM
+             GROUP BY ORDER_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="selectByKey097" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 LEGACY.TB_PAY_H 단건 조회
+    SELECT PY.PAYMENT_ID,
+           PY.ORDER_ID AS ordNo,
+           PY.PAY_MTHD_CD AS payMthdCd
+      FROM BILLING.PAYMENT PY
+     WHERE PY.PAYMENT_ID = #{payNo}
+       AND PY.PAYMENT_ID IS NOT NULL
+  
+  </select>
+
+  <select id="aggregate098" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.CUSTOMER_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT CUSTOMER_ID, COUNT(*) AS CNT, MAX(TOTAL_AMOUNT) AS MAX_VAL
+              FROM ORDERS
+             GROUP BY CUSTOMER_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="selectByKey099" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_CMM_CD 단건 조회
+    SELECT CC.CODE,
+           CC.GROUP_CODE AS grpCd,
+           CC.RMK AS rmk,
+           CC.SORT_ORDER AS sortSeq
+      FROM COMMON_CODE CC
+     WHERE CC.CODE = #{cd}
+  
+  </select>
+
+  <select id="joinSelect100" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.STATUS AS ordStatCd,
+           H.CUSTOMER_ID AS custNo,
+           C.IS_ACTIVE AS useYnC,
+           C.TEL_NO AS telNoC,
+           PY.PAYMENT_ID AS payNoPY,
+           PY.AMOUNT AS payAmtPY,
+           CC.RMK AS rmkCC,
+           CC.GROUP_CODE AS grpCdCC,
+           L.MSG AS logMsg
+      FROM ORDERS H
+     JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     LEFT OUTER JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     INNER JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORDER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <update id="refreshTotal101" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="aggregate102" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.CUSTOMER_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT CUSTOMER_ID, COUNT(*) AS CNT, MAX(ORDERED_AT) AS MAX_VAL
+              FROM ORDERS
+             GROUP BY CUSTOMER_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="union103" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT ORDER_ID AS v, 'A' AS src FROM ORDER_ITEM WHERE UNIT_PRICE IS NOT NULL
+    UNION ALL
+    SELECT UNIT_PRICE AS v, 'B' AS src FROM ORDER_ITEM WHERE ORDER_ID IS NULL
+  
+  </select>
+
+  <delete id="deleteOrphan104" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="selectByKey105" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_ORD_D 단건 조회
+    SELECT ORDER_ID AS ordNo,
+           DC_AMT,
+           QUANTITY AS ordQty,
+           UNIT_PRICE AS unitPrc
+      FROM ORDER_ITEM
+     WHERE LINE_NO = #{itemSeq}
+  
+  </select>
+
+  <select id="aggregate106" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.ORDER_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORDER_ID, COUNT(*) AS CNT, MAX(ORDERED_AT) AS MAX_VAL
+              FROM ORDERS
+             GROUP BY ORDER_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <update id="refreshTotal107" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="joinSelect108" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.UPD_DT AS updDt,
+           H.TOTAL_AMOUNT AS totAmt,
+           PY.PAYMENT_ID AS payNoPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           C.CUSTOMER_ID AS custNoC,
+           C.CUSTOMER_NAME AS custNmC
+      FROM ORDERS H
+     JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="countWithFilter109" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM PRODUCT
+     WHERE 1 = 1
+     
+    <include refid="filter_prd_m"/>
+
+  
+  </select>
+
+  <select id="union110" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT CUSTOMER_ID AS v, 'A' AS src FROM CUSTOMER WHERE REGION_CODE IS NOT NULL
+    UNION ALL
+    SELECT REGION_CODE AS v, 'B' AS src FROM CUSTOMER WHERE CUSTOMER_ID IS NULL
+  
+  </select>
+
+  <insert id="insert111" parameterType="map">
+
+    INSERT INTO CUSTOMER (
+      CUSTOMER_ID, CUSTOMER_NAME, REGION_CODE, IS_ACTIVE, CREATED_AT, TEL_NO, EMAIL
+    ) VALUES (
+      #{custNo}, #{custNm}, #{rgnCd}, #{useYn}, #{regDt}, #{telNo}, #{email}
+    )
+  
+  </insert>
+
+  <insert id="insert112" parameterType="map">
+
+    INSERT INTO BILLING.PAYMENT (
+      PAYMENT_ID, ORDER_ID, AMOUNT, PAID_AT, PAY_MTHD_CD
+    ) VALUES (
+      #{payNo}, #{ordNo}, #{payAmt}, #{payDt}, #{payMthdCd}
+    )
+  
+  </insert>
+
+  <select id="selectByKey113" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_CUST_M 단건 조회
+    SELECT C.CUSTOMER_ID AS custNo,
+           C.EMAIL,
+           C.CUSTOMER_NAME AS custNm,
+           C.CREATED_AT AS regDt
+      FROM CUSTOMER C
+     WHERE C.CUSTOMER_ID = #{custNo}
+       AND C.TEL_NO IS NOT NULL
+  
+  </select>
+
+  <select id="aggregate114" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.PAYMENT_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT PAYMENT_ID, COUNT(*) AS CNT, MAX(PAID_AT) AS MAX_VAL
+              FROM BILLING.PAYMENT
+             GROUP BY PAYMENT_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <update id="refreshTotal115" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="customerSummary116" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <insert id="copyItems117" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <insert id="insert118" parameterType="map">
+
+    
+    <selectKey keyProperty="ordNo" resultType="string" order="BEFORE">
+
+      SELECT 'O' || LPAD(SEQ_ORD_NO.NEXTVAL, 9, '0') FROM DUAL
+    
+    </selectKey>
+
+    INSERT INTO ORDERS (
+      ORDER_ID, CUSTOMER_ID, ORDERED_AT, STATUS, TOTAL_AMOUNT, REG_ID, UPD_DT
+    ) VALUES (
+      #{ordNo}, #{custNo}, #{ordDt}, #{ordStatCd}, #{totAmt}, #{regId}, #{updDt}
+    )
+  
+  </insert>
+
+  <select id="cte119" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT PRODUCT_ID, QUANTITY
+        FROM ORDER_ITEM
+       WHERE LINE_NO IS NOT NULL
+    )
+    SELECT B.PRODUCT_ID AS prdCd, B.QUANTITY AS ordQty
+      FROM BASE B
+  
+  </select>
+
+  <update id="update120" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="custNo != null">
+CUSTOMER_ID = #{custNo},
+      </if>
+
+      
+      <if test="ordDt != null">
+ORDERED_AT = #{ordDt},
+      </if>
+
+      
+      <if test="updDt != null">
+UPD_DT = #{updDt},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <insert id="insert121" parameterType="map">
+
+    INSERT INTO COMMON_CODE (
+      GROUP_CODE, CODE, CODE_NAME, SORT_ORDER, RMK
+    ) VALUES (
+      #{grpCd}, #{cd}, #{cdNm}, #{sortSeq}, #{rmk}
+    )
+  
+  </insert>
+
+  <insert id="copyItems122" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="cte123" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT STATUS, ORDERED_AT
+        FROM ORDERS
+       WHERE ORDER_ID IS NOT NULL
+    )
+    SELECT B.STATUS AS ordStatCd, B.ORDERED_AT AS ordDt
+      FROM BASE B
+  
+  </select>
+
+  <update id="refreshTotal124" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <update id="update125" parameterType="map">
+
+    UPDATE ORDER_ITEM
+    
+    <set>
+
+      
+      <if test="unitPrc != null">
+UNIT_PRICE = #{unitPrc},
+      </if>
+
+      
+      <if test="ordQty != null">
+QUANTITY = #{ordQty},
+      </if>
+
+      
+      <if test="ordNo != null">
+ORDER_ID = #{ordNo},
+      </if>
+
+    
+    </set>
+
+     WHERE LINE_NO = #{itemSeq}
+  
+  </update>
+
+  <select id="countWithFilter126" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDER_ITEM
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_d"/>
+
+  
+  </select>
+
+  <select id="union127" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT CREATED_AT AS v, 'A' AS src FROM CUSTOMER WHERE CUSTOMER_NAME IS NOT NULL
+    UNION ALL
+    SELECT CUSTOMER_NAME AS v, 'B' AS src FROM CUSTOMER WHERE CREATED_AT IS NULL
+  
+  </select>
+
+  <insert id="insert128" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (
+      ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE, DC_AMT
+    ) VALUES (
+      #{ordNo}, #{itemSeq}, #{prdCd}, #{ordQty}, #{unitPrc}, #{dcAmt}
+    )
+  
+  </insert>
+
+  <select id="selectByKey129" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_ORD_H 단건 조회
+    SELECT H.ORDER_ID AS ordNo,
+           H.UPD_DT AS updDt,
+           H.TOTAL_AMOUNT AS totAmt
+      FROM ORDERS H
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </select>
+
+  <select id="aggregate130" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.ORDER_ID, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORDER_ID, COUNT(*) AS CNT, MAX(AMOUNT) AS MAX_VAL
+              FROM BILLING.PAYMENT
+             GROUP BY ORDER_ID
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="customerSummary131" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <insert id="copyItems132" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="aggregate133" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.ORDERED_AT, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORDERED_AT, COUNT(*) AS CNT, MAX(TOTAL_AMOUNT) AS MAX_VAL
+              FROM ORDERS
+             GROUP BY ORDERED_AT
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <select id="cte134" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CUSTOMER_ID, CUSTOMER_NAME
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CUSTOMER_ID AS custNo, B.CUSTOMER_NAME AS custNm
+      FROM BASE B
+  
+  </select>
+
+  <insert id="copyItems135" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="customerSummary136" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <select id="union137" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT IS_SELLABLE AS v, 'A' AS src FROM PRODUCT WHERE CATEGORY_CODE IS NOT NULL
+    UNION ALL
+    SELECT CATEGORY_CODE AS v, 'B' AS src FROM PRODUCT WHERE IS_SELLABLE IS NULL
+  
+  </select>
+
+  <select id="selectByKey138" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 LEGACY.TB_PAY_H 단건 조회
+    SELECT ORDER_ID AS ordNo,
+           PAYMENT_ID AS payNo
+      FROM BILLING.PAYMENT
+     WHERE PAYMENT_ID = #{payNo}
+  
+  </select>
+
+  <select id="union139" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT PAYMENT_ID AS v, 'A' AS src FROM BILLING.PAYMENT WHERE AMOUNT IS NOT NULL
+    UNION ALL
+    SELECT AMOUNT AS v, 'B' AS src FROM BILLING.PAYMENT WHERE PAYMENT_ID IS NULL
+  
+  </select>
+
+  <select id="selectByKey140" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 TB_ORD_H 단건 조회
+    SELECT H.CUSTOMER_ID,
+           H.ORDER_ID AS ordNo
+      FROM ORDERS H
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </select>
+
+  <update id="refreshTotal141" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="customerSummary142" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <update id="refreshTotal143" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="countWithFilter144" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM BILLING.PAYMENT
+     WHERE 1 = 1
+     
+    <include refid="filter_pay_h"/>
+
+  
+  </select>
+
+  <insert id="insert145" parameterType="map">
+
+    INSERT INTO BILLING.PAYMENT (
+      PAYMENT_ID, ORDER_ID, AMOUNT, PAID_AT, PAY_MTHD_CD
+    ) VALUES (
+      #{payNo}, #{ordNo}, #{payAmt}, #{payDt}, #{payMthdCd}
+    )
+  
+  </insert>
+
+  <select id="union146" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT SORT_ORDER AS v, 'A' AS src FROM COMMON_CODE WHERE CODE_NAME IS NOT NULL
+    UNION ALL
+    SELECT CODE_NAME AS v, 'B' AS src FROM COMMON_CODE WHERE SORT_ORDER IS NULL
+  
+  </select>
+
+  <select id="search147" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT PAYMENT_ID, PAID_AT, AMOUNT
+      FROM BILLING.PAYMENT
+    
+    <where>
+
+      
+      <if test="payAmtFrom != null and payAmtFrom != ''">
+
+        AND 
+ AMOUNT &gt;= #{payAmtFrom} 
+
+      
+      </if>
+
+      
+      <if test="ordNo != null">
+
+        AND ORDER_ID = #{ordNo}
+      
+      </if>
+
+      
+      <if test="payMthdCd != null and payMthdCd != ''">
+
+        AND PAY_MTHD_CD = #{payMthdCd}
+      
+      </if>
+
+      
+      <if test="payNo != null and payNo != ''">
+
+        AND PAYMENT_ID = #{payNo}
+      
+      </if>
+
+      
+      <if test="ordNoList != null and ordNoList.size() &gt; 0">
+
+        AND ORDER_ID IN
+        
+        <foreach collection="ordNoList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <delete id="deleteOrphan148" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="countWithFilter149" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM BILLING.PAYMENT
+     WHERE 1 = 1
+     
+    <include refid="filter_pay_h"/>
+
+  
+  </select>
+
+  <select id="search150" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT CODE, SORT_ORDER, RMK
+      FROM COMMON_CODE
+    
+    <where>
+
+      
+      <if test="cdNmFrom != null and cdNmFrom != ''">
+
+        AND 
+ CODE_NAME &gt;= #{cdNmFrom} 
+
+      
+      </if>
+
+      
+      <if test="rmk != null and rmk != ''">
+
+        AND RMK = #{rmk}
+      
+      </if>
+
+      
+      <if test="cdNmList != null and cdNmList.size() &gt; 0">
+
+        AND CODE_NAME IN
+        
+        <foreach collection="cdNmList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <insert id="copyItems151" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="joinSelect152" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.ORDER_ID AS ordNo,
+           H.UPD_DT AS updDt,
+           PY.PAID_AT AS payDtPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           L.MSG AS logMsg
+      FROM ORDERS H
+     INNER JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORDER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="joinSelect153" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.CUSTOMER_ID AS custNo,
+           H.UPD_DT AS updDt,
+           CC.GROUP_CODE AS grpCdCC,
+           CC.CODE AS cdCC
+      FROM ORDERS H
+     INNER JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <update id="refreshTotal154" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="countWithFilter155" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDER_ITEM
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_d"/>
+
+  
+  </select>
+
+  <select id="cte156" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CUSTOMER_ID, CUSTOMER_NAME
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CUSTOMER_ID AS custNo, B.CUSTOMER_NAME AS custNm
+      FROM BASE B
+  
+  </select>
+
+  <select id="customerSummary157" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <select id="search158" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT GROUP_CODE, CODE_NAME, CODE
+      FROM COMMON_CODE
+    
+    <where>
+
+      
+      <if test="cd != null">
+
+        AND CODE = #{cd}
+      
+      </if>
+
+      
+      <if test="sortSeqFrom != null and sortSeqFrom != ''">
+
+        AND 
+ SORT_ORDER &gt;= #{sortSeqFrom} 
+
+      
+      </if>
+
+      
+      <if test="cdList != null and cdList.size() &gt; 0">
+
+        AND CODE IN
+        
+        <foreach collection="cdList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+    ORDER BY ${sortColumn}
+  
+  </select>
+
+  <select id="countWithFilter159" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM CUSTOMER
+     WHERE 1 = 1
+     
+    <include refid="filter_cust_m"/>
+
+  
+  </select>
+
+  <select id="cte160" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CODE_NAME, SORT_ORDER
+        FROM COMMON_CODE
+       WHERE CODE IS NOT NULL
+    )
+    SELECT B.CODE_NAME AS cdNm, B.SORT_ORDER AS sortSeq
+      FROM BASE B
+  
+  </select>
+
+  <select id="customerSummary161" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <update id="refreshTotal162" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="countWithFilter163" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM BILLING.PAYMENT
+     WHERE 1 = 1
+     
+    <include refid="filter_pay_h"/>
+
+  
+  </select>
+
+  <update id="refreshTotal164" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <insert id="insert165" parameterType="map">
+
+    INSERT INTO COMMON_CODE (
+      GROUP_CODE, CODE, CODE_NAME, SORT_ORDER, RMK
+    ) VALUES (
+      #{grpCd}, #{cd}, #{cdNm}, #{sortSeq}, #{rmk}
+    )
+  
+  </insert>
+
+  <update id="refreshTotal166" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="selectByKey167" parameterType="map" resultType="java.util.HashMap">
+
+    -- 레거시 LEGACY.TB_PAY_H 단건 조회
+    SELECT PY.PAID_AT AS payDt,
+           PY.AMOUNT,
+           PY.PAY_MTHD_CD AS payMthdCd,
+           PY.PAYMENT_ID
+      FROM BILLING.PAYMENT PY
+     WHERE PY.PAYMENT_ID = #{payNo}
+       AND PY.ORDER_ID &lt;&gt; 'TB_ORD_H.ORD_NO'
+  
+  </select>
+
+  <delete id="deleteOrphan168" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="joinSelect169" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT H.CUSTOMER_ID AS custNo,
+           H.ORDERED_AT AS ordDt,
+           PY.PAID_AT AS payDtPY,
+           PY.ORDER_ID AS ordNoPY,
+           CC.SORT_ORDER AS sortSeqCC,
+           CC.CODE AS cdCC,
+           D.LINE_NO AS itemSeqD,
+           D.QUANTITY AS ordQtyD,
+           L.MSG AS logMsg
+      FROM ORDERS H
+     INNER JOIN BILLING.PAYMENT PY ON PY.ORDER_ID = H.ORDER_ID
+     LEFT OUTER JOIN COMMON_CODE CC ON CC.CODE = H.STATUS AND CC.GROUP_CODE = 'ORD_STAT'
+     INNER JOIN ORDER_ITEM D ON D.ORDER_ID = H.ORDER_ID
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORDER_ID
+     WHERE H.ORDERED_AT &gt;= #{fromDt}
+     ORDER BY H.ORDER_ID DESC
+  
+  </select>
+
+  <select id="cte170" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT CUSTOMER_ID, IS_ACTIVE
+        FROM CUSTOMER
+       WHERE CUSTOMER_ID IS NOT NULL
+    )
+    SELECT B.CUSTOMER_ID AS custNo, B.IS_ACTIVE AS useYn
+      FROM BASE B
+  
+  </select>
+
+  <update id="update171" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="custNo != null">
+CUSTOMER_ID = #{custNo},
+      </if>
+
+      
+      <if test="ordDt != null">
+ORDERED_AT = #{ordDt},
+      </if>
+
+      
+      <if test="totAmt != null">
+TOTAL_AMOUNT = #{totAmt},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <update id="update172" parameterType="map">
+
+    UPDATE BILLING.PAYMENT
+    
+    <set>
+
+      
+      <if test="payMthdCd != null">
+PAY_MTHD_CD = #{payMthdCd},
+      </if>
+
+      
+      <if test="ordNo != null">
+ORDER_ID = #{ordNo},
+      </if>
+
+      
+      <if test="payAmt != null">
+AMOUNT = #{payAmt},
+      </if>
+
+    
+    </set>
+
+     WHERE PAYMENT_ID = #{payNo}
+  
+  </update>
+
+  <insert id="insert173" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (
+      ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE, DC_AMT
+    ) VALUES (
+      #{ordNo}, #{itemSeq}, #{prdCd}, #{ordQty}, #{unitPrc}, #{dcAmt}
+    )
+  
+  </insert>
+
+  <select id="cte174" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT ORDER_ID, TOTAL_AMOUNT
+        FROM ORDERS
+       WHERE ORDER_ID IS NOT NULL
+    )
+    SELECT B.ORDER_ID AS ordNo, B.TOTAL_AMOUNT AS totAmt
+      FROM BASE B
+  
+  </select>
+
+  <insert id="copyItems175" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <insert id="copyItems176" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="union177" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT GROUP_CODE AS v, 'A' AS src FROM COMMON_CODE WHERE CODE IS NOT NULL
+    UNION ALL
+    SELECT CODE AS v, 'B' AS src FROM COMMON_CODE WHERE GROUP_CODE IS NULL
+  
+  </select>
+
+  <insert id="copyItems178" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <update id="update179" parameterType="map">
+
+    UPDATE COMMON_CODE
+    
+    <set>
+
+      
+      <if test="grpCd != null">
+GROUP_CODE = #{grpCd},
+      </if>
+
+      
+      <if test="cdNm != null">
+CODE_NAME = #{cdNm},
+      </if>
+
+      
+      <if test="rmk != null">
+RMK = #{rmk},
+      </if>
+
+    
+    </set>
+
+     WHERE CODE = #{cd}
+  
+  </update>
+
+  <select id="countWithFilter180" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM ORDER_ITEM
+     WHERE 1 = 1
+     
+    <include refid="filter_ord_d"/>
+
+  
+  </select>
+
+  <update id="refreshTotal181" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="search182" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT CUSTOMER_ID, REGION_CODE, TEL_NO
+      FROM CUSTOMER
+    
+    <where>
+
+      
+      <if test="custNmFrom != null and custNmFrom != ''">
+
+        AND 
+ CUSTOMER_NAME &gt;= #{custNmFrom} 
+
+      
+      </if>
+
+      
+      <if test="regDt != null and regDt != ''">
+
+        AND CREATED_AT = #{regDt}
+      
+      </if>
+
+      
+      <if test="useYnList != null and useYnList.size() &gt; 0">
+
+        AND IS_ACTIVE IN
+        
+        <foreach collection="useYnList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+  
+  </select>
+
+  <update id="refreshTotal183" parameterType="map">
+
+    UPDATE ORDERS H
+       SET H.TOTAL_AMOUNT = (SELECT SUM(D.QUANTITY * D.UNIT_PRICE)
+                         FROM ORDER_ITEM D
+                        WHERE D.ORDER_ID = H.ORDER_ID),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <select id="cte184" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT QUANTITY, UNIT_PRICE
+        FROM ORDER_ITEM
+       WHERE LINE_NO IS NOT NULL
+    )
+    SELECT B.QUANTITY AS ordQty, B.UNIT_PRICE AS unitPrc
+      FROM BASE B
+  
+  </select>
+
+  <select id="cte185" parameterType="map" resultType="java.util.HashMap">
+
+    WITH BASE AS (
+      SELECT GROUP_CODE, CODE
+        FROM COMMON_CODE
+       WHERE CODE IS NOT NULL
+    )
+    SELECT B.GROUP_CODE AS grpCd, B.CODE AS cd
+      FROM BASE B
+  
+  </select>
+
+  <select id="countWithFilter186" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT COUNT(*)
+      FROM COMMON_CODE
+     WHERE 1 = 1
+     
+    <include refid="filter_cmm_cd"/>
+
+  
+  </select>
+
+  <select id="customerSummary187" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUSTOMER_ID AS custNo,
+           (SELECT COUNT(*) FROM ORDERS H WHERE H.CUSTOMER_ID = C.CUSTOMER_ID) AS ordCnt
+      FROM CUSTOMER C
+     WHERE EXISTS (SELECT 1 FROM ORDERS H2
+                    WHERE H2.CUSTOMER_ID = C.CUSTOMER_ID
+                      AND H2.STATUS = '90')
+       AND C.IS_ACTIVE = 'Y'
+  
+  </select>
+
+  <select id="union188" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT PAID_AT AS v, 'A' AS src FROM BILLING.PAYMENT WHERE ORDER_ID IS NOT NULL
+    UNION ALL
+    SELECT ORDER_ID AS v, 'B' AS src FROM BILLING.PAYMENT WHERE PAID_AT IS NULL
+  
+  </select>
+
+  <delete id="deleteOrphan189" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <select id="search190" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT TEL_NO, CREATED_AT, IS_ACTIVE
+      FROM CUSTOMER
+    
+    <where>
+
+      
+      <if test="email != null and email != ''">
+
+        AND EMAIL = #{email}
+      
+      </if>
+
+      
+      <if test="rgnCdFlag == 'Y'.toString()">
+
+        AND REGION_CODE IS NOT NULL
+      
+      </if>
+
+      
+      <if test="useYn != null">
+
+        AND IS_ACTIVE = #{useYn}
+      
+      </if>
+
+      
+      <if test="telNoFrom != null and telNoFrom != ''">
+
+        AND 
+ TEL_NO &gt;= #{telNoFrom} 
+
+      
+      </if>
+
+      
+      <if test="custNmList != null and custNmList.size() &gt; 0">
+
+        AND CUSTOMER_NAME IN
+        
+        <foreach collection="custNmList" item="item" open="(" close=")" separator=",">
+#{item}
+        </foreach>
+
+      
+      </if>
+
+    
+    </where>
+
+    ORDER BY ${sortColumn}
+  
+  </select>
+
+  <insert id="copyItems191" parameterType="map">
+
+    INSERT INTO ORDER_ITEM (ORDER_ID, LINE_NO, PRODUCT_ID, QUANTITY, UNIT_PRICE)
+    SELECT #{newOrdNo}, S.LINE_NO, S.PRODUCT_ID, S.QUANTITY, P.SALE_PRC
+      FROM ORDER_ITEM S
+      JOIN PRODUCT P ON P.PRODUCT_ID = S.PRODUCT_ID
+     WHERE S.ORDER_ID = #{srcOrdNo}
+       AND P.IS_SELLABLE = 'Y'
+  
+  </insert>
+
+  <select id="aggregate192" parameterType="map" resultType="java.util.HashMap">
+
+    SELECT T.LINE_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT LINE_NO, COUNT(*) AS CNT, MAX(PRODUCT_ID) AS MAX_VAL
+              FROM ORDER_ITEM
+             GROUP BY LINE_NO
+           ) T
+     WHERE T.CNT &gt; #{minCnt}
+     ORDER BY T.CNT DESC
+  
+  </select>
+
+  <update id="update193" parameterType="map">
+
+    UPDATE ORDERS
+    
+    <set>
+
+      
+      <if test="custNo != null">
+CUSTOMER_ID = #{custNo},
+      </if>
+
+      
+      <if test="updDt != null">
+UPD_DT = #{updDt},
+      </if>
+
+      
+      <if test="ordDt != null">
+ORDERED_AT = #{ordDt},
+      </if>
+
+    
+    </set>
+
+     WHERE ORDER_ID = #{ordNo}
+  
+  </update>
+
+  <delete id="deleteOrphan194" parameterType="map">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+</mapper>

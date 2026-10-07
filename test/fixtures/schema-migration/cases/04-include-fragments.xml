@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="product">
+
+  <!-- FROM 없는 컬럼 목록 fragment: include 지점의 alias(P)로 문맥 추론 -->
+  <sql id="productColumns">
+    P.PRD_CD AS prdCd, P.PRD_NM AS prdNm, P.CTG_CD AS ctgCd
+  </sql>
+
+  <!-- FROM 없는 조건 fragment: 두 include 지점 모두 TB_PRD_M -> 추론 -->
+  <sql id="categoryFilter">
+    <isNotEmpty property="ctgCd" prepend="AND">
+      CTG_CD = #ctgCd#
+    </isNotEmpty>
+  </sql>
+
+  <!-- TB_PRD_M(USE_YN->IS_SELLABLE) 과 TB_CUST_M(USE_YN->IS_ACTIVE) 양쪽에서 include: 충돌 -> MANUAL -->
+  <sql id="activeOnly">
+    AND USE_YN = 'Y'
+  </sql>
+
+  <select id="listProducts" parameterClass="map" resultClass="Product">
+    SELECT <include refid="productColumns"/>
+      FROM TB_PRD_M P
+     WHERE 1 = 1
+     <include refid="categoryFilter"/>
+     <include refid="activeOnly"/>
+  </select>
+
+  <select id="countProducts" parameterClass="map" resultClass="int">
+    SELECT COUNT(*)
+      FROM TB_PRD_M
+     WHERE 1 = 1
+     <include refid="categoryFilter"/>
+  </select>
+
+  <select id="countActiveCustomers" resultClass="int">
+    SELECT COUNT(*) FROM TB_CUST_M WHERE 1 = 1
+    <include refid="activeOnly"/>
+  </select>
+
+</sqlMap>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="common">
+
+  <!-- Fragments shared by every other sample mapper: the cross-mapper
+       <include refid="common.x"/> case, resolved through the project-wide
+       symbol table rather than per-file. -->
+
+  <sql id="pagination">
+    LIMIT #offset#, #limit#
+  </sql>
+
+  <sql id="activeCondition">
+    STATUS = 'ACTIVE'
+  </sql>
+
+  <sql id="auditColumns">
+    CREATED_AT, UPDATED_AT
+  </sql>
+
+  <sql id="softDeleteCondition">
+    DELETED_AT IS NULL
+  </sql>
+
+  <!-- A fragment built out of another fragment: expanding this one has to
+       expand the nested <include> too. -->
+  <sql id="liveRowCondition">
+    <include refid="common.activeCondition"/>
+    AND <include refid="common.softDeleteCondition"/>
+  </sql>
+
+</sqlMap>

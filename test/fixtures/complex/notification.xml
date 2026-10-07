@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="notification">
+
+  <resultMap id="NotificationResult" class="Notification">
+    <result property="notificationId" column="NOTIFICATION_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="type" column="TYPE"/>
+    <result property="message" column="MESSAGE"/>
+    <result property="isRead" column="IS_READ"/>
+  </resultMap>
+
+  <select id="getNotificationsForUser" parameterClass="map" resultMap="NotificationResult">
+    SELECT NOTIFICATION_ID, USER_ID, TYPE, MESSAGE, IS_READ
+    FROM NOTIFICATIONS
+    WHERE USER_ID = #userId#
+    <dynamic prepend="AND">
+      <isNotNull property="isRead" prepend="AND">
+        IS_READ = #isRead#
+      </isNotNull>
+      <isNotNull property="type" prepend="AND">
+        TYPE = #type#
+      </isNotNull>
+    </dynamic>
+    ORDER BY CREATED_AT DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getUnreadCount" parameterClass="int" resultClass="int">
+    SELECT COUNT(*)
+    FROM NOTIFICATIONS
+    WHERE USER_ID = #userId#
+      AND IS_READ = 0
+  </select>
+
+</sqlMap>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <select id="getOrders" parameterClass="map" resultClass="Order">
+    SELECT ORDER_ID
+    FROM ORDERS
+    <include refid="common.pagination"/>
+  </select>
+
+</sqlMap>

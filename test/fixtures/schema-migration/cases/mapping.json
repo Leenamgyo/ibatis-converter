@@ -1,0 +1,26 @@
+{
+  "TB_CUST_M": {
+    "targetTable": "CUSTOMER",
+    "columns": { "CUST_NO": "CUSTOMER_ID", "CUST_NM": "CUSTOMER_NAME", "RGN_CD": "REGION_CODE", "USE_YN": "IS_ACTIVE", "REG_DT": "CREATED_AT" }
+  },
+  "TB_ORD_H": {
+    "targetTable": "ORDERS",
+    "columns": { "ORD_NO": "ORDER_ID", "CUST_NO": "CUSTOMER_ID", "ORD_DT": "ORDERED_AT", "ORD_STAT_CD": "STATUS", "TOT_AMT": "TOTAL_AMOUNT" }
+  },
+  "TB_ORD_D": {
+    "targetTable": "ORDER_ITEM",
+    "columns": { "ORD_NO": "ORDER_ID", "ITEM_SEQ": "LINE_NO", "PRD_CD": "PRODUCT_ID", "ORD_QTY": "QUANTITY", "UNIT_PRC": "UNIT_PRICE" }
+  },
+  "TB_PRD_M": {
+    "targetTable": "PRODUCT",
+    "columns": { "PRD_CD": "PRODUCT_ID", "PRD_NM": "PRODUCT_NAME", "CTG_CD": "CATEGORY_CODE", "USE_YN": "IS_SELLABLE" }
+  },
+  "TB_CMM_CD": {
+    "targetTable": "COMMON_CODE",
+    "columns": { "GRP_CD": "GROUP_CODE", "CD": "CODE", "CD_NM": "CODE_NAME", "SORT_SEQ": "SORT_ORDER" }
+  },
+  "LEGACY.TB_PAY_H": {
+    "targetTable": "BILLING.PAYMENT",
+    "columns": { "PAY_NO": "PAYMENT_ID", "ORD_NO": "ORDER_ID", "PAY_AMT": "AMOUNT", "PAY_DT": "PAID_AT" }
+  }
+}

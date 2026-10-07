@@ -1,0 +1,21 @@
+{
+  "name": "ibatis-migration-analyzer",
+  "version": "0.1.0",
+  "description": "Static analysis tool that parses legacy iBATIS 2.x XML Mappers into an AST, resolves references, analyzes SQL/dynamic structure, and converts them to MyBatis 3.x XML.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "src/application/index.js",
+  "scripts": {
+    "start": "node src/interfaces/api/server.js",
+    "dev": "node --watch --watch-path=src/analyzer --watch-path=src/application --watch-path=src/ast --watch-path=src/converter --watch-path=src/generator --watch-path=src/parser --watch-path=src/report --watch-path=src/resolver --watch-path=src/interfaces/api/server.js src/interfaces/api/server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:watch": "node --test --watch \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-sql-parser": "^4.18.0"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <insert id="insertUserPlain" parameterClass="User">
+    INSERT INTO USER (USER_ID, USER_NAME, STATUS)
+    VALUES (#id#, #name#, #status#)
+  </insert>
+
+  <update id="updateUserStatus" parameterClass="map">
+    UPDATE USER
+    SET STATUS = #status#
+    WHERE USER_ID = #id#
+  </update>
+
+  <delete id="deleteUser" parameterClass="int">
+    DELETE FROM USER
+    WHERE USER_ID = #id#
+  </delete>
+
+</sqlMap>

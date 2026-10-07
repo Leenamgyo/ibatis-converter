@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="advancedSearch">
+
+  <!-- Exercises the condition tags and nesting shapes the domain mappers
+       don't otherwise reach: isNull/isEmpty/isNotEqual/isPropertyAvailable/
+       isNotPropertyAvailable, and a <dynamic> nested inside a condition
+       nested inside another <dynamic> (see docs/AST_REFERENCE.md's note on
+       nested dynamic SQL). -->
+
+  <select id="advancedProductSearch" parameterClass="map" resultClass="map">
+    SELECT P.PRODUCT_ID, P.PRODUCT_NAME, P.PRICE, P.STATUS
+    FROM PRODUCTS P
+    <dynamic prepend="WHERE">
+      <isNull property="supplierId" prepend="AND">
+        P.SUPPLIER_ID IS NULL
+      </isNull>
+      <isEmpty property="excludedName" prepend="AND">
+        P.PRODUCT_NAME != ''
+      </isEmpty>
+      <isNotEqual property="status" compareValue="DISCONTINUED" prepend="AND">
+        P.STATUS != #status#
+      </isNotEqual>
+      <isPropertyAvailable property="categoryId" prepend="AND">
+        P.CATEGORY_ID = #categoryId#
+        <dynamic prepend="AND">
+          <isGreaterThan property="minPrice" compareValue="0" prepend="AND">
+            P.PRICE &gt;= #minPrice#
+          </isGreaterThan>
+          <isLessThan property="maxPrice" compareValue="0" prepend="AND">
+            P.PRICE &lt;= #maxPrice#
+          </isLessThan>
+        </dynamic>
+      </isPropertyAvailable>
+      <isNotPropertyAvailable property="categoryId" prepend="AND">
+        P.CATEGORY_ID IS NOT NULL
+      </isNotPropertyAvailable>
+    </dynamic>
+    ORDER BY $orderBy$
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="advancedUserSearch" parameterClass="map" resultClass="map">
+    SELECT U.USER_ID, U.USERNAME, U.EMAIL, U.STATUS
+    FROM USERS U
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="keyword" prepend="AND">
+        (U.USERNAME LIKE #keyword# OR U.EMAIL LIKE #keyword#)
+      </isNotEmpty>
+      <isNotEqual property="excludeStatus" compareValue="BANNED" prepend="AND">
+        U.STATUS != #excludeStatus#
+      </isNotEqual>
+      <isGreaterEqual property="minLoginCount" compareValue="0" prepend="AND">
+        U.USER_ID IN (
+          SELECT USER_ID FROM LOGIN_HISTORY GROUP BY USER_ID HAVING COUNT(*) &gt;= #minLoginCount#
+        )
+      </isGreaterEqual>
+    </dynamic>
+  </select>
+
+  <select id="advancedOrderSearch" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, O.STATUS, O.TOTAL_AMOUNT
+    FROM ORDERS O
+    <dynamic prepend="WHERE">
+      <isNotNull property="userId" prepend="AND">
+        O.USER_ID = #userId#
+        <dynamic prepend="AND">
+          <isNotNull property="statuses" prepend="AND">
+            O.STATUS IN
+            <iterate property="statuses" open="(" close=")" conjunction=",">
+              #statuses[]#
+            </iterate>
+          </isNotNull>
+        </dynamic>
+      </isNotNull>
+      <isEmpty property="couponCode" prepend="AND">
+        O.ORDER_ID NOT IN (SELECT ORDER_ID FROM ORDER_ITEMS WHERE PRODUCT_ID IS NULL)
+      </isEmpty>
+    </dynamic>
+  </select>
+
+  <select id="fullConditionMatrix" parameterClass="map" resultClass="map">
+    SELECT *
+    FROM AUDIT_LOGS
+    <dynamic prepend="WHERE">
+      <isNull property="a" prepend="AND">A IS NULL</isNull>
+      <isNotNull property="b" prepend="AND">B IS NOT NULL</isNotNull>
+      <isEmpty property="c" prepend="AND">C = ''</isEmpty>
+      <isNotEmpty property="d" prepend="AND">D != ''</isNotEmpty>
+      <isEqual property="e" compareValue="1" prepend="AND">E = 1</isEqual>
+      <isNotEqual property="f" compareValue="2" prepend="AND">F != 2</isNotEqual>
+      <isGreaterThan property="g" compareValue="3" prepend="AND">G &gt; 3</isGreaterThan>
+      <isGreaterEqual property="h" compareValue="4" prepend="AND">H &gt;= 4</isGreaterEqual>
+      <isLessThan property="i" compareValue="5" prepend="AND">I &lt; 5</isLessThan>
+      <isLessEqual property="j" compareValue="6" prepend="AND">J &lt;= 6</isLessEqual>
+      <isPropertyAvailable property="k" prepend="AND">K IS AVAILABLE</isPropertyAvailable>
+      <isNotPropertyAvailable property="l" prepend="AND">L NOT AVAILABLE</isNotPropertyAvailable>
+    </dynamic>
+  </select>
+
+</sqlMap>

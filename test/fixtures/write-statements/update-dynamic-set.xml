@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <update id="updateUser" parameterClass="map">
+    UPDATE USER
+    <dynamic prepend="SET">
+      <isNotNull property="name" prepend=",">
+        USER_NAME = #name#
+      </isNotNull>
+      <isNotNull property="status" prepend=",">
+        STATUS = #status#
+      </isNotNull>
+    </dynamic>
+    WHERE USER_ID = #id#
+  </update>
+
+</sqlMap>

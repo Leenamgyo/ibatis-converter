@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <insert id="insertUser" parameterClass="User">
+    <selectKey keyProperty="id" resultClass="int" type="pre">
+      SELECT NEXT VALUE FOR USER_SEQ
+    </selectKey>
+    INSERT INTO USER (USER_ID, USER_NAME)
+    VALUES (#id#, #name#)
+  </insert>
+
+</sqlMap>

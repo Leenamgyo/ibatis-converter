@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="supplier">
+
+  <resultMap id="SupplierResult" class="Supplier">
+    <result property="supplierId" column="SUPPLIER_ID"/>
+    <result property="supplierName" column="SUPPLIER_NAME"/>
+    <result property="contactEmail" column="CONTACT_EMAIL"/>
+    <result property="status" column="STATUS"/>
+  </resultMap>
+
+  <select id="getSupplierById" parameterClass="int" resultMap="SupplierResult">
+    SELECT SUPPLIER_ID, SUPPLIER_NAME, CONTACT_EMAIL, STATUS
+    FROM SUPPLIERS
+    WHERE SUPPLIER_ID = #supplierId#
+  </select>
+
+  <select id="searchSuppliers" parameterClass="map" resultMap="SupplierResult">
+    SELECT SUPPLIER_ID, SUPPLIER_NAME, CONTACT_EMAIL, STATUS
+    FROM SUPPLIERS
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="name" prepend="AND">
+        SUPPLIER_NAME LIKE #name#
+      </isNotEmpty>
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+      </isNotNull>
+    </dynamic>
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getActiveSuppliers" resultMap="SupplierResult">
+    SELECT SUPPLIER_ID, SUPPLIER_NAME, CONTACT_EMAIL, STATUS
+    FROM SUPPLIERS
+    WHERE
+    <include refid="common.activeStatusCondition"/>
+  </select>
+
+  <select id="getSuppliersWithProductCount" resultClass="map">
+    SELECT
+        S.SUPPLIER_ID,
+        S.SUPPLIER_NAME,
+        COUNT(P.PRODUCT_ID) AS PRODUCT_COUNT
+    FROM SUPPLIERS S
+    LEFT JOIN PRODUCTS P
+        ON S.SUPPLIER_ID = P.SUPPLIER_ID
+    GROUP BY S.SUPPLIER_ID, S.SUPPLIER_NAME
+    ORDER BY PRODUCT_COUNT DESC
+  </select>
+
+</sqlMap>

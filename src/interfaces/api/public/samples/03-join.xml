@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="join">
+
+  <!-- Scenario 3 — every join type the analyzer distinguishes, a 5-table
+       join chain, a self join, and an implicit (comma) join. -->
+
+  <select id="innerJoin" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, C.CUSTOMER_NAME
+    FROM ORDERS O
+    INNER JOIN CUSTOMER C ON C.CUSTOMER_ID = O.CUSTOMER_ID
+    WHERE O.STATUS = #status#
+  </select>
+
+  <select id="leftJoin" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, O.ORDER_ID
+    FROM CUSTOMER C
+    LEFT JOIN ORDERS O ON O.CUSTOMER_ID = C.CUSTOMER_ID AND O.STATUS != 'CANCELLED'
+  </select>
+
+  <select id="rightJoin" parameterClass="map" resultClass="map">
+    SELECT P.PRODUCT_ID, CAT.CATEGORY_NAME
+    FROM PRODUCT P
+    RIGHT JOIN CATEGORY CAT ON CAT.CATEGORY_ID = P.CATEGORY_ID
+  </select>
+
+  <select id="fullOuterJoin" parameterClass="map" resultClass="map">
+    SELECT S.SUPPLIER_ID, P.PRODUCT_ID
+    FROM SUPPLIER S
+    FULL OUTER JOIN PRODUCT P ON P.SUPPLIER_ID = S.SUPPLIER_ID
+  </select>
+
+  <select id="crossJoin" resultClass="map">
+    SELECT R.REGION_CODE, CH.CHANNEL_CODE
+    FROM REGION R
+    CROSS JOIN CHANNEL CH
+  </select>
+
+  <select id="selfJoin" parameterClass="map" resultClass="map">
+    SELECT CH.CATEGORY_ID, CH.CATEGORY_NAME, PAR.CATEGORY_NAME AS PARENT_NAME
+    FROM CATEGORY CH
+    LEFT JOIN CATEGORY PAR ON PAR.CATEGORY_ID = CH.PARENT_ID
+    WHERE CH.CATEGORY_ID = #categoryId#
+  </select>
+
+  <select id="fiveTableChain" parameterClass="map" resultClass="map">
+    SELECT
+        O.ORDER_ID,
+        C.CUSTOMER_NAME,
+        P.PRODUCT_NAME,
+        CAT.CATEGORY_NAME,
+        S.SUPPLIER_NAME,
+        OD.QUANTITY
+    FROM ORDERS O
+    INNER JOIN CUSTOMER C ON C.CUSTOMER_ID = O.CUSTOMER_ID
+    INNER JOIN ORDER_DETAIL OD ON OD.ORDER_ID = O.ORDER_ID
+    INNER JOIN PRODUCT P ON P.PRODUCT_ID = OD.PRODUCT_ID
+    LEFT JOIN CATEGORY CAT ON CAT.CATEGORY_ID = P.CATEGORY_ID
+    LEFT JOIN SUPPLIER S ON S.SUPPLIER_ID = P.SUPPLIER_ID
+    WHERE O.ORDER_DATE &gt;= #since#
+  </select>
+
+  <select id="implicitCommaJoin" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, C.CUSTOMER_NAME
+    FROM ORDERS O, CUSTOMER C
+    WHERE C.CUSTOMER_ID = O.CUSTOMER_ID
+      AND O.STATUS = #status#
+  </select>
+
+</sqlMap>

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <resultMap id="OrderResult" class="Order">
+    <result property="orderId" column="ORDER_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="status" column="STATUS"/>
+    <result property="totalAmount" column="TOTAL_AMOUNT"/>
+  </resultMap>
+
+  <resultMap id="OrderWithUserResult" class="OrderDetail" extends="OrderResult">
+    <result property="username" column="USERNAME"/>
+    <result property="orderedAt" column="ORDERED_AT"/>
+  </resultMap>
+
+  <select id="getOrderById" parameterClass="int" resultMap="OrderWithUserResult">
+    SELECT
+        O.ORDER_ID, O.USER_ID, O.STATUS, O.TOTAL_AMOUNT, O.ORDERED_AT,
+        U.USERNAME
+    FROM ORDERS O
+    INNER JOIN USERS U
+        ON O.USER_ID = U.USER_ID
+    WHERE O.ORDER_ID = #orderId#
+  </select>
+
+  <select id="searchOrders" parameterClass="map" resultMap="OrderWithUserResult">
+    SELECT
+        O.ORDER_ID, O.USER_ID, O.STATUS, O.TOTAL_AMOUNT, O.ORDERED_AT,
+        U.USERNAME
+    FROM ORDERS O
+    INNER JOIN USERS U
+        ON O.USER_ID = U.USER_ID
+        AND U.STATUS = 'ACTIVE'
+    <dynamic prepend="WHERE">
+      <isNotNull property="userId" prepend="AND">
+        O.USER_ID = #userId#
+      </isNotNull>
+      <isNotNull property="status" prepend="AND">
+        O.STATUS = #status#
+      </isNotNull>
+      <isGreaterThan property="minAmount" compareValue="0" prepend="AND">
+        O.TOTAL_AMOUNT &gt;= #minAmount#
+      </isGreaterThan>
+      <isGreaterThan property="orderedAfter" compareValue="0" prepend="AND">
+        O.ORDERED_AT &gt;= #orderedAfter#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY O.ORDERED_AT DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getOrdersForUser" parameterClass="int" resultMap="OrderResult">
+    SELECT ORDER_ID, USER_ID, STATUS, TOTAL_AMOUNT
+    FROM ORDERS
+    WHERE USER_ID = #userId#
+    ORDER BY ORDER_ID DESC
+  </select>
+
+  <select id="getOrdersWithItemCount" parameterClass="map" resultClass="map">
+    SELECT
+        O.ORDER_ID,
+        O.STATUS,
+        COUNT(OI.ORDER_ITEM_ID) AS ITEM_COUNT,
+        SUM(OI.QUANTITY * OI.UNIT_PRICE) AS COMPUTED_TOTAL
+    FROM ORDERS O
+    LEFT JOIN ORDER_ITEMS OI
+        ON O.ORDER_ID = OI.ORDER_ID
+    WHERE O.USER_ID = #userId#
+    GROUP BY O.ORDER_ID, O.STATUS
+    HAVING COUNT(OI.ORDER_ITEM_ID) &gt; 0
+  </select>
+
+  <!-- Union across the live and archived order tables - a realistic
+       "recently retired" reporting query many legacy iBATIS projects have. -->
+  <select id="getAllOrdersIncludingArchived" parameterClass="int" resultMap="OrderResult">
+    SELECT ORDER_ID, USER_ID, STATUS, TOTAL_AMOUNT
+    FROM ORDERS
+    WHERE USER_ID = #userId#
+    UNION
+    SELECT ORDER_ID, USER_ID, STATUS, TOTAL_AMOUNT
+    FROM ARCHIVED_ORDERS
+    WHERE USER_ID = #userId#
+  </select>
+
+  <select id="getOrdersAboveAverageAmount" resultMap="OrderResult">
+    SELECT ORDER_ID, USER_ID, STATUS, TOTAL_AMOUNT
+    FROM ORDERS
+    WHERE TOTAL_AMOUNT &gt; (SELECT AVG(TOTAL_AMOUNT) FROM ORDERS)
+  </select>
+
+  <select id="getOrdersByIdsAndStatuses" parameterClass="map" resultMap="OrderResult">
+    SELECT ORDER_ID, USER_ID, STATUS, TOTAL_AMOUNT
+    FROM ORDERS
+    WHERE 1 = 1
+    <iterate property="orderIds" open="AND ORDER_ID IN (" close=")" conjunction=",">
+      #orderIds[]#
+    </iterate>
+    <iterate property="statuses" open="AND STATUS IN (" close=")" conjunction=",">
+      #statuses[]#
+    </iterate>
+  </select>
+
+</sqlMap>

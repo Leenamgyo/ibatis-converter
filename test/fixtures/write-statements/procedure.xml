@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="edge">
+
+  <!-- A `<procedure>` with JDBC callable-statement escape syntax. No SQL
+       dialect parses `{ call ... }`, so table/column analysis must degrade
+       to a SQL_PARSE_FAILED warning while parsing, conversion and
+       reporting still succeed. Moved out of the sample project when it
+       became SELECT-only. -->
+
+  <procedure id="callSettlementBatch" parameterClass="map">
+    { call SETTLE_ORDERS(#batchDate#, #channel#) }
+  </procedure>
+
+</sqlMap>

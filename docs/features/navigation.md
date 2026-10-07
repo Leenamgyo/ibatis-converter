@@ -1,0 +1,69 @@
+# Navigation and accessibility
+
+`src/interfaces/api/public/index.html` + `app.js`.
+
+## Two screens; the analysis screen has three views
+
+The header has two top-level tabs (`showScreen()` in `app.js`): **분석**
+(the dashboard below) and **데이터셋** (the schema-mapping editor, see
+[schema-view.md](schema-view.md)).
+
+The analysis screen has a **tablist at the top of the left menu**:
+
+- **리니지** — the lineage graph (`lineagePane`)
+- **변환** — column/table renames, with the MyBatis syntax conversion as a
+  toggle (`schemaPane`, see [schema-view.md](schema-view.md))
+
+Both views render whichever statement the **shared left tree** has
+selected, so switching view never moves the tree, loses its scroll
+position, or clears the selection. `selectLineageStatement()` refreshes
+the MyBatis view too when that is the open one.
+
+There is exactly one selected statement in the app. An earlier design gave
+the converted side its own screen *and its own statement list*, which
+meant every switch threw the selection away and you had to find the same
+statement again — that is the problem this layout exists to solve.
+
+`showView()` in `app.js` owns the switch: it flips `aria-selected`, the
+roving `tabindex`, the pane `hidden` flags, and hides the graph toolbar
+(which is inert over the XML).
+
+## Accessibility
+
+- The view switch is a real `role="tablist"` with `aria-selected`,
+  `aria-controls`, roving `tabindex`, and Left/Right/Home/End keys.
+- Tree rows are `<button role="treeitem">` with `aria-level`,
+  `aria-expanded` and `aria-current`.
+- Every interactive control has a `:focus-visible` outline.
+
+## The `[hidden]` cascade trap
+
+A class selector that sets `display` beats the browser's default
+`[hidden] { display: none }` — same specificity, author stylesheet wins.
+Anything hideable therefore needs its own `[hidden]` rule:
+
+```css
+.screen[hidden]        { display: none; }
+.view-pane[hidden]     { display: none; }
+.dash-toolbar[hidden]  { display: none; }
+```
+
+This has bitten three times: two screens rendering at once, and the graph
+toolbar floating over the MyBatis view. If something refuses to hide,
+check this first.
+
+## Recovering from a dead project
+
+Analyzed projects live in the server's memory, so a server restart
+invalidates the `projectId` the page holds. `selectStatement()` catches
+the failed fetch, re-runs the analysis from the files still held
+client-side, and retries once — rather than sitting on "Loading…" forever.
+
+## Removed screens
+
+The **Statements** and **Tables** tabs were removed, and every mermaid
+diagram with them; the UI loads no diagram library at all. Their API
+endpoints (`/statements/:id`, `/statements/:id/dependencies`,
+`/tables/:name`) are untouched and still tested, so bringing either screen
+back is UI work, not analysis work. See `../SPEC_MAPPING.md` sections
+24–25.

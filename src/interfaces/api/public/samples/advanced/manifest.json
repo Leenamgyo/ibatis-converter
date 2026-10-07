@@ -1,0 +1,8 @@
+{
+  "name": "advanced iBATIS project (2000-line report + hard iBATIS syntax)",
+  "files": [
+    "adv-00-common.xml",
+    "adv-01-mega-report.xml",
+    "adv-02-ibatis-syntax.xml"
+  ]
+}

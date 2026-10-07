@@ -1,0 +1,21 @@
+# Features
+
+One file per feature: what it does, the rules it follows, and the traps
+worth not rediscovering. These describe the *current* behaviour — when a
+feature changes, edit its file rather than appending to it.
+
+| File | Feature |
+|---|---|
+| [lineage-graph.md](lineage-graph.md) | The SQL Lineage graph: what an object is, and the four rules the drawing follows |
+| [lineage-dashboard.md](lineage-dashboard.md) | The dashboard around the graph — stat strip, XML tree, side panels, minimap, zoom |
+| [navigation.md](navigation.md) | One screen, two views, the left-menu view switch, and accessibility |
+| [sample-project.md](sample-project.md) | The "Load sample" project as the scenario matrix, and the SELECT-only rule |
+| [analysis-coverage.md](analysis-coverage.md) | What the analyzer handles and the one shape it can't |
+| [dev-loop.md](dev-loop.md) | `npm run dev`, watch paths, and why the UI is excluded |
+| [schema-view.md](schema-view.md) | The 변환 view (column renames first, MyBatis syntax as a toggle, every change marked) and the 데이터셋 JSON editor |
+| [schema-migration.md](schema-migration.md) | Old -> new table/column renames in mapper SQL (`converter/schema`), its grading and limits |
+
+Backend architecture and the spec-section status live in
+[../ARCHITECTURE.md](../ARCHITECTURE.md) and
+[../SPEC_MAPPING.md](../SPEC_MAPPING.md); test layout and fixtures in
+[../TESTING.md](../TESTING.md).

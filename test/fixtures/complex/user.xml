@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <resultMap id="UserResult" class="User">
+    <result property="id" column="USER_ID"/>
+    <result property="username" column="USERNAME"/>
+    <result property="email" column="EMAIL"/>
+    <result property="status" column="STATUS"/>
+    <result property="roleId" column="ROLE_ID"/>
+  </resultMap>
+
+  <resultMap id="UserSummaryResult" class="UserSummary" extends="UserResult">
+    <result property="createdAt" column="CREATED_AT"/>
+    <result property="updatedAt" column="UPDATED_AT"/>
+  </resultMap>
+
+  <select id="getUserById" parameterClass="int" resultMap="UserResult">
+    SELECT USER_ID, USERNAME, EMAIL, STATUS, ROLE_ID
+    FROM USERS
+    WHERE USER_ID = #id#
+  </select>
+
+  <select id="searchUsers" parameterClass="map" resultMap="UserSummaryResult">
+    SELECT
+        USER_ID, USERNAME, EMAIL, STATUS, ROLE_ID,
+        <include refid="common.auditColumns"/>
+    FROM USERS
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="username" prepend="AND">
+        USERNAME LIKE #username#
+      </isNotEmpty>
+      <isNotEmpty property="email" prepend="AND">
+        EMAIL LIKE #email#
+      </isNotEmpty>
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+      </isNotNull>
+      <isNotNull property="roleId" prepend="AND">
+        ROLE_ID = #roleId#
+      </isNotNull>
+      <isGreaterThan property="createdAfter" compareValue="0" prepend="AND">
+        CREATED_AT &gt;= #createdAfter#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY $orderBy$
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="countUsers" parameterClass="map" resultClass="int">
+    SELECT COUNT(*)
+    FROM USERS
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="username" prepend="AND">
+        USERNAME LIKE #username#
+      </isNotEmpty>
+      <isNotEmpty property="email" prepend="AND">
+        EMAIL LIKE #email#
+      </isNotEmpty>
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+      </isNotNull>
+      <isNotNull property="roleId" prepend="AND">
+        ROLE_ID = #roleId#
+      </isNotNull>
+      <isGreaterThan property="createdAfter" compareValue="0" prepend="AND">
+        CREATED_AT &gt;= #createdAfter#
+      </isGreaterThan>
+    </dynamic>
+  </select>
+
+  <select id="getUsersByIds" parameterClass="map" resultMap="UserResult">
+    SELECT USER_ID, USERNAME, EMAIL, STATUS, ROLE_ID
+    FROM USERS
+    WHERE USER_ID IN
+    <iterate property="ids" open="(" close=")" conjunction=",">
+      #ids[]#
+    </iterate>
+  </select>
+
+  <select id="getUsersWithOrders" parameterClass="map" resultMap="UserResult">
+    SELECT DISTINCT U.USER_ID, U.USERNAME, U.EMAIL, U.STATUS, U.ROLE_ID
+    FROM USERS U
+    WHERE U.USER_ID IN (
+      SELECT O.USER_ID FROM ORDERS O WHERE O.STATUS = #orderStatus#
+    )
+  </select>
+
+  <select id="getActiveUserCount" parameterClass="map" resultClass="int">
+    SELECT COUNT(*)
+    FROM USERS
+    WHERE
+    <include refid="common.activeStatusCondition"/>
+  </select>
+
+</sqlMap>

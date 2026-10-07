@@ -1,0 +1,2001 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="large">
+
+  <sql id="cols_cust_m">
+    C.CUST_NO AS custNo,
+    C.CUST_NM AS custNm,
+    C.RGN_CD AS rgnCd,
+    C.USE_YN AS useYn,
+    C.REG_DT AS regDt,
+    C.TEL_NO AS telNo,
+    C.EMAIL AS email
+  </sql>
+
+  <sql id="filter_cust_m">
+    <isNotEmpty property="regDt" prepend="AND">
+      REG_DT = #regDt#
+    </isNotEmpty>
+  </sql>
+
+  <sql id="cols_ord_h">
+    H.ORD_NO AS ordNo,
+    H.CUST_NO AS custNo,
+    H.ORD_DT AS ordDt,
+    H.ORD_STAT_CD AS ordStatCd,
+    H.TOT_AMT AS totAmt,
+    H.REG_ID AS regId,
+    H.UPD_DT AS updDt
+  </sql>
+
+  <sql id="filter_ord_h">
+    <isNotEmpty property="ordDt" prepend="AND">
+      ORD_DT = #ordDt#
+    </isNotEmpty>
+  </sql>
+
+  <sql id="cols_ord_d">
+    D.ORD_NO AS ordNo,
+    D.ITEM_SEQ AS itemSeq,
+    D.PRD_CD AS prdCd,
+    D.ORD_QTY AS ordQty,
+    D.UNIT_PRC AS unitPrc,
+    D.DC_AMT AS dcAmt
+  </sql>
+
+  <sql id="filter_ord_d">
+    <isNotEmpty property="ordNo" prepend="AND">
+      ORD_NO = #ordNo#
+    </isNotEmpty>
+  </sql>
+
+  <sql id="cols_prd_m">
+    P.PRD_CD AS prdCd,
+    P.PRD_NM AS prdNm,
+    P.CTG_CD AS ctgCd,
+    P.USE_YN AS useYn,
+    P.SALE_PRC AS salePrc
+  </sql>
+
+  <sql id="filter_prd_m">
+    <isNotEmpty property="ctgCd" prepend="AND">
+      CTG_CD = #ctgCd#
+    </isNotEmpty>
+  </sql>
+
+  <sql id="cols_cmm_cd">
+    CC.GRP_CD AS grpCd,
+    CC.CD AS cd,
+    CC.CD_NM AS cdNm,
+    CC.SORT_SEQ AS sortSeq,
+    CC.RMK AS rmk
+  </sql>
+
+  <sql id="filter_cmm_cd">
+    <isNotEmpty property="cd" prepend="AND">
+      CD = #cd#
+    </isNotEmpty>
+  </sql>
+
+  <sql id="cols_pay_h">
+    PY.PAY_NO AS payNo,
+    PY.ORD_NO AS ordNo,
+    PY.PAY_AMT AS payAmt,
+    PY.PAY_DT AS payDt,
+    PY.PAY_MTHD_CD AS payMthdCd
+  </sql>
+
+  <sql id="filter_pay_h">
+    <isNotEmpty property="ordNo" prepend="AND">
+      ORD_NO = #ordNo#
+    </isNotEmpty>
+  </sql>
+
+  <select id="listAll001" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_cust_m"/>
+      FROM TB_CUST_M C
+     WHERE C.CUST_NO = #custNo#
+       AND C.TEL_NO IS NOT NULL
+       AND C.USE_YN &lt;&gt; 'TB_ORD_H.ORD_NO'
+  </select>
+
+  <select id="countFiltered002" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_CUST_M
+     WHERE 1 = 1
+     <include refid="filter_cust_m"/>
+  </select>
+
+  <select id="listAll003" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_ord_h"/>
+      FROM TB_ORD_H H
+     WHERE H.ORD_NO = #ordNo#
+       AND H.CUST_NO IS NOT NULL
+       AND H.TOT_AMT &lt;&gt; 'TB_ORD_H.ORD_NO'
+  </select>
+
+  <select id="countFiltered004" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_H
+     WHERE 1 = 1
+     <include refid="filter_ord_h"/>
+  </select>
+
+  <select id="listAll005" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_ord_d"/>
+      FROM TB_ORD_D D
+     WHERE D.ITEM_SEQ = #itemSeq#
+       AND D.PRD_CD IS NOT NULL
+       AND D.UNIT_PRC &lt;&gt; 'TB_ORD_H.ORD_NO'
+  </select>
+
+  <select id="countFiltered006" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_D
+     WHERE 1 = 1
+     <include refid="filter_ord_d"/>
+  </select>
+
+  <select id="listAll007" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_prd_m"/>
+      FROM TB_PRD_M P
+     WHERE P.PRD_CD = #prdCd#
+       AND P.SALE_PRC IS NOT NULL
+  </select>
+
+  <select id="countFiltered008" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_PRD_M
+     WHERE 1 = 1
+     <include refid="filter_prd_m"/>
+  </select>
+
+  <select id="listAll009" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_cmm_cd"/>
+      FROM TB_CMM_CD CC
+     WHERE CC.CD = #cd#
+  </select>
+
+  <select id="countFiltered010" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_CMM_CD
+     WHERE 1 = 1
+     <include refid="filter_cmm_cd"/>
+  </select>
+
+  <select id="listAll011" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_pay_h"/>
+      FROM LEGACY.TB_PAY_H PY
+     WHERE PY.PAY_NO = #payNo#
+       AND PY.PAY_AMT IS NOT NULL
+       AND PY.PAY_AMT &lt;&gt; 'TB_ORD_H.ORD_NO'
+  </select>
+
+  <select id="countFiltered012" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM LEGACY.TB_PAY_H
+     WHERE 1 = 1
+     <include refid="filter_pay_h"/>
+  </select>
+
+  <select id="selectByKey013" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_ORD_D 단건 조회
+    SELECT PRD_CD AS prdCd,
+           ITEM_SEQ AS itemSeq
+      FROM TB_ORD_D
+     WHERE ITEM_SEQ = #itemSeq#
+       AND PRD_CD IS NOT NULL
+  </select>
+
+  <select id="joinSelect014" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_STAT_CD AS ordStatCd,
+           H.CUST_NO AS custNo,
+           CC.CD_NM AS cdNmCC,
+           CC.SORT_SEQ AS sortSeqCC,
+           D.DC_AMT AS dcAmtD,
+           D.ORD_QTY AS ordQtyD,
+           C.CUST_NO AS custNoC,
+           C.USE_YN AS useYnC,
+           L.MSG AS logMsg
+      FROM TB_ORD_H H
+     LEFT OUTER JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     JOIN TB_ORD_D D ON D.ORD_NO = H.ORD_NO
+     JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="search015" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_ord_h"/>
+      FROM TB_ORD_H H
+    <dynamic prepend="WHERE">
+      <isNotNull property="ordNo" prepend="AND">
+        H.ORD_NO = #ordNo#
+      </isNotNull>
+      <isEqual property="totAmtFlag" compareValue="Y" prepend="AND">
+        H.TOT_AMT IS NOT NULL
+      </isEqual>
+      <isNotEmpty property="ordDtList" prepend="AND">
+        H.ORD_DT IN
+        <iterate property="ordDtList" open="(" close=")" conjunction=",">#ordDtList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+    ORDER BY $sortColumn$
+  </select>
+
+  <select id="countWithFilter016" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_PRD_M
+     WHERE 1 = 1
+     <include refid="filter_prd_m"/>
+  </select>
+
+  <insert id="insert017" parameterClass="map">
+    INSERT INTO TB_CUST_M (
+      CUST_NO, CUST_NM, RGN_CD, USE_YN, REG_DT, TEL_NO, EMAIL
+    ) VALUES (
+      #custNo#, #custNm#, #rgnCd#, #useYn#, #regDt#, #telNo#, #email#
+    )
+  </insert>
+
+  <insert id="copyItems018" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <update id="update019" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="custNo" prepend=",">CUST_NO = #custNo#</isNotNull>
+      <isNotNull property="updDt" prepend=",">UPD_DT = #updDt#</isNotNull>
+      <isNotNull property="regId" prepend=",">REG_ID = #regId#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <update id="refreshTotal020" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <delete id="deleteOrphan021" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="aggregate022" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.PAY_DT, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT PAY_DT, COUNT(*) AS CNT, MAX(PAY_AMT) AS MAX_VAL
+              FROM LEGACY.TB_PAY_H
+             GROUP BY PAY_DT
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="cte023" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT PRD_NM, CTG_CD
+        FROM TB_PRD_M
+       WHERE PRD_CD IS NOT NULL
+    )
+    SELECT B.PRD_NM AS prdNm, B.CTG_CD AS ctgCd
+      FROM BASE B
+  </select>
+
+  <select id="union024" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT CUST_NO AS v, 'A' AS src FROM TB_ORD_H WHERE ORD_DT IS NOT NULL
+    UNION ALL
+    SELECT ORD_DT AS v, 'B' AS src FROM TB_ORD_H WHERE CUST_NO IS NULL
+  </select>
+
+  <select id="customerSummary025" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <update id="update026" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="ordDt" prepend=",">ORD_DT = #ordDt#</isNotNull>
+      <isNotNull property="custNo" prepend=",">CUST_NO = #custNo#</isNotNull>
+      <isNotNull property="updDt" prepend=",">UPD_DT = #updDt#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <update id="update027" parameterClass="map">
+    UPDATE LEGACY.TB_PAY_H
+    <dynamic prepend="SET">
+      <isNotNull property="payMthdCd" prepend=",">PAY_MTHD_CD = #payMthdCd#</isNotNull>
+      <isNotNull property="payAmt" prepend=",">PAY_AMT = #payAmt#</isNotNull>
+      <isNotNull property="ordNo" prepend=",">ORD_NO = #ordNo#</isNotNull>
+    </dynamic>
+     WHERE PAY_NO = #payNo#
+  </update>
+
+  <select id="aggregate028" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ITEM_SEQ, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ITEM_SEQ, COUNT(*) AS CNT, MAX(PRD_CD) AS MAX_VAL
+              FROM TB_ORD_D
+             GROUP BY ITEM_SEQ
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="search029" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_cust_m"/>
+      FROM TB_CUST_M C
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="custNo" prepend="AND">
+        C.CUST_NO = #custNo#
+      </isNotEmpty>
+      <isEqual property="custNmFlag" compareValue="Y" prepend="AND">
+        C.CUST_NM IS NOT NULL
+      </isEqual>
+      <isEqual property="regDtFlag" compareValue="Y" prepend="AND">
+        C.REG_DT IS NOT NULL
+      </isEqual>
+      <isEqual property="emailFlag" compareValue="Y" prepend="AND">
+        C.EMAIL IS NOT NULL
+      </isEqual>
+      <isNotEmpty property="custNoList" prepend="AND">
+        C.CUST_NO IN
+        <iterate property="custNoList" open="(" close=")" conjunction=",">#custNoList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <select id="countWithFilter030" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_CUST_M
+     WHERE 1 = 1
+     <include refid="filter_cust_m"/>
+  </select>
+
+  <insert id="copyItems031" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="union032" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT USE_YN AS v, 'A' AS src FROM TB_PRD_M WHERE CTG_CD IS NOT NULL
+    UNION ALL
+    SELECT CTG_CD AS v, 'B' AS src FROM TB_PRD_M WHERE USE_YN IS NULL
+  </select>
+
+  <select id="cte033" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_NO, ORD_DT
+        FROM TB_ORD_H
+       WHERE ORD_NO IS NOT NULL
+    )
+    SELECT B.ORD_NO AS ordNo, B.ORD_DT AS ordDt
+      FROM BASE B
+  </select>
+
+  <update id="refreshTotal034" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="aggregate035" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ORD_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORD_NO, COUNT(*) AS CNT, MAX(TOT_AMT) AS MAX_VAL
+              FROM TB_ORD_H
+             GROUP BY ORD_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="selectByKey036" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_PRD_M 단건 조회
+    SELECT PRD_NM AS prdNm,
+           PRD_CD,
+           CTG_CD AS ctgCd,
+           USE_YN
+      FROM TB_PRD_M
+     WHERE PRD_CD = #prdCd#
+       AND PRD_NM IS NOT NULL
+  </select>
+
+  <update id="update037" parameterClass="map">
+    UPDATE TB_CMM_CD
+    <dynamic prepend="SET">
+      <isNotNull property="rmk" prepend=",">RMK = #rmk#</isNotNull>
+      <isNotNull property="grpCd" prepend=",">GRP_CD = #grpCd#</isNotNull>
+      <isNotNull property="cdNm" prepend=",">CD_NM = #cdNm#</isNotNull>
+    </dynamic>
+     WHERE CD = #cd#
+  </update>
+
+  <select id="joinSelect038" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_STAT_CD AS ordStatCd,
+           H.TOT_AMT AS totAmt,
+           C.TEL_NO AS telNoC,
+           C.USE_YN AS useYnC,
+           PY.PAY_AMT AS payAmtPY,
+           PY.ORD_NO AS ordNoPY,
+           CC.RMK AS rmkCC,
+           CC.CD_NM AS cdNmCC,
+           L.MSG AS logMsg
+      FROM TB_ORD_H H
+     LEFT OUTER JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     LEFT OUTER JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     INNER JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="search039" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT ITEM_SEQ, ORD_QTY, PRD_CD
+      FROM TB_ORD_D
+    <dynamic prepend="WHERE">
+      <isEqual property="unitPrcFlag" compareValue="Y" prepend="AND">
+        UNIT_PRC IS NOT NULL
+      </isEqual>
+      <isNotNull property="itemSeq" prepend="AND">
+        ITEM_SEQ = #itemSeq#
+      </isNotNull>
+      <isNotEmpty property="ordQtyList" prepend="AND">
+        ORD_QTY IN
+        <iterate property="ordQtyList" open="(" close=")" conjunction=",">#ordQtyList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <update id="update040" parameterClass="map">
+    UPDATE TB_CMM_CD
+    <dynamic prepend="SET">
+      <isNotNull property="grpCd" prepend=",">GRP_CD = #grpCd#</isNotNull>
+      <isNotNull property="cdNm" prepend=",">CD_NM = #cdNm#</isNotNull>
+      <isNotNull property="sortSeq" prepend=",">SORT_SEQ = #sortSeq#</isNotNull>
+    </dynamic>
+     WHERE CD = #cd#
+  </update>
+
+  <insert id="insert041" parameterClass="map">
+    <selectKey keyProperty="ordNo" resultClass="string" type="pre">
+      SELECT 'O' || LPAD(SEQ_ORD_NO.NEXTVAL, 9, '0') FROM DUAL
+    </selectKey>
+    INSERT INTO TB_ORD_H (
+      ORD_NO, CUST_NO, ORD_DT, ORD_STAT_CD, TOT_AMT, REG_ID, UPD_DT
+    ) VALUES (
+      #ordNo#, #custNo#, #ordDt#, #ordStatCd#, #totAmt#, #regId#, #updDt#
+    )
+  </insert>
+
+  <select id="aggregate042" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.PAY_DT, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT PAY_DT, COUNT(*) AS CNT, MAX(ORD_NO) AS MAX_VAL
+              FROM LEGACY.TB_PAY_H
+             GROUP BY PAY_DT
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="cte043" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CD, CD_NM
+        FROM TB_CMM_CD
+       WHERE CD IS NOT NULL
+    )
+    SELECT B.CD AS cd, B.CD_NM AS cdNm
+      FROM BASE B
+  </select>
+
+  <select id="countWithFilter044" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_H
+     WHERE 1 = 1
+     <include refid="filter_ord_h"/>
+  </select>
+
+  <delete id="deleteOrphan045" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="joinSelect046" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.UPD_DT AS updDt,
+           H.ORD_NO AS ordNo,
+           C.USE_YN AS useYnC,
+           C.RGN_CD AS rgnCdC
+      FROM TB_ORD_H H
+     LEFT OUTER JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <update id="refreshTotal047" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <delete id="deleteOrphan048" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="cte049" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT SORT_SEQ, GRP_CD
+        FROM TB_CMM_CD
+       WHERE CD IS NOT NULL
+    )
+    SELECT B.SORT_SEQ AS sortSeq, B.GRP_CD AS grpCd
+      FROM BASE B
+  </select>
+
+  <select id="cte050" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CUST_NO, RGN_CD
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.CUST_NO AS custNo, B.RGN_CD AS rgnCd
+      FROM BASE B
+  </select>
+
+  <delete id="deleteOrphan051" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="joinSelect052" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.UPD_DT AS updDt,
+           H.ORD_DT AS ordDt,
+           CC.GRP_CD AS grpCdCC,
+           CC.SORT_SEQ AS sortSeqCC,
+           C.CUST_NM AS custNmC,
+           C.REG_DT AS regDtC,
+           L.MSG AS logMsg
+      FROM TB_ORD_H H
+     LEFT OUTER JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     LEFT OUTER JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="cte053" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CUST_NM, CUST_NO
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.CUST_NM AS custNm, B.CUST_NO AS custNo
+      FROM BASE B
+  </select>
+
+  <select id="cte054" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_NO, CUST_NO
+        FROM TB_ORD_H
+       WHERE ORD_NO IS NOT NULL
+    )
+    SELECT B.ORD_NO AS ordNo, B.CUST_NO AS custNo
+      FROM BASE B
+  </select>
+
+  <update id="update055" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="ordStatCd" prepend=",">ORD_STAT_CD = #ordStatCd#</isNotNull>
+      <isNotNull property="totAmt" prepend=",">TOT_AMT = #totAmt#</isNotNull>
+      <isNotNull property="regId" prepend=",">REG_ID = #regId#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <select id="cte056" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_NO, ORD_STAT_CD
+        FROM TB_ORD_H
+       WHERE ORD_NO IS NOT NULL
+    )
+    SELECT B.ORD_NO AS ordNo, B.ORD_STAT_CD AS ordStatCd
+      FROM BASE B
+  </select>
+
+  <update id="refreshTotal057" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="customerSummary058" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <insert id="insert059" parameterClass="map">
+    INSERT INTO TB_ORD_D (
+      ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC, DC_AMT
+    ) VALUES (
+      #ordNo#, #itemSeq#, #prdCd#, #ordQty#, #unitPrc#, #dcAmt#
+    )
+  </insert>
+
+  <select id="aggregate060" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ORD_QTY, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORD_QTY, COUNT(*) AS CNT, MAX(ITEM_SEQ) AS MAX_VAL
+              FROM TB_ORD_D
+             GROUP BY ORD_QTY
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="cte061" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT USE_YN, PRD_CD
+        FROM TB_PRD_M
+       WHERE PRD_CD IS NOT NULL
+    )
+    SELECT B.USE_YN AS useYn, B.PRD_CD AS prdCd
+      FROM BASE B
+  </select>
+
+  <select id="customerSummary062" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <update id="update063" parameterClass="map">
+    UPDATE TB_CMM_CD
+    <dynamic prepend="SET">
+      <isNotNull property="cdNm" prepend=",">CD_NM = #cdNm#</isNotNull>
+      <isNotNull property="grpCd" prepend=",">GRP_CD = #grpCd#</isNotNull>
+      <isNotNull property="sortSeq" prepend=",">SORT_SEQ = #sortSeq#</isNotNull>
+    </dynamic>
+     WHERE CD = #cd#
+  </update>
+
+  <select id="union064" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT ORD_QTY AS v, 'A' AS src FROM TB_ORD_D WHERE ORD_NO IS NOT NULL
+    UNION ALL
+    SELECT ORD_NO AS v, 'B' AS src FROM TB_ORD_D WHERE ORD_QTY IS NULL
+  </select>
+
+  <delete id="deleteOrphan065" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <update id="update066" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="custNo" prepend=",">CUST_NO = #custNo#</isNotNull>
+      <isNotNull property="totAmt" prepend=",">TOT_AMT = #totAmt#</isNotNull>
+      <isNotNull property="regId" prepend=",">REG_ID = #regId#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <select id="cte067" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_NO, ITEM_SEQ
+        FROM TB_ORD_D
+       WHERE ITEM_SEQ IS NOT NULL
+    )
+    SELECT B.ORD_NO AS ordNo, B.ITEM_SEQ AS itemSeq
+      FROM BASE B
+  </select>
+
+  <select id="selectByKey068" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_CUST_M 단건 조회
+    SELECT C.EMAIL AS email,
+           C.REG_DT AS regDt,
+           C.CUST_NM,
+           C.USE_YN
+      FROM TB_CUST_M C
+     WHERE C.CUST_NO = #custNo#
+       AND C.CUST_NM IS NOT NULL
+       AND C.USE_YN &lt;&gt; 'TB_ORD_H.ORD_NO'
+  </select>
+
+  <select id="customerSummary069" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <select id="joinSelect070" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO AS ordNo,
+           H.ORD_STAT_CD AS ordStatCd,
+           PY.PAY_NO AS payNoPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           CC.CD AS cdCC,
+           CC.SORT_SEQ AS sortSeqCC
+      FROM TB_ORD_H H
+     LEFT OUTER JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="cte071" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CUST_NO, REG_DT
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.CUST_NO AS custNo, B.REG_DT AS regDt
+      FROM BASE B
+  </select>
+
+  <select id="cte072" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT REG_DT, RGN_CD
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.REG_DT AS regDt, B.RGN_CD AS rgnCd
+      FROM BASE B
+  </select>
+
+  <select id="customerSummary073" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <select id="cte074" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_STAT_CD, ORD_NO
+        FROM TB_ORD_H
+       WHERE ORD_NO IS NOT NULL
+    )
+    SELECT B.ORD_STAT_CD AS ordStatCd, B.ORD_NO AS ordNo
+      FROM BASE B
+  </select>
+
+  <update id="update075" parameterClass="map">
+    UPDATE LEGACY.TB_PAY_H
+    <dynamic prepend="SET">
+      <isNotNull property="payDt" prepend=",">PAY_DT = #payDt#</isNotNull>
+      <isNotNull property="ordNo" prepend=",">ORD_NO = #ordNo#</isNotNull>
+      <isNotNull property="payAmt" prepend=",">PAY_AMT = #payAmt#</isNotNull>
+    </dynamic>
+     WHERE PAY_NO = #payNo#
+  </update>
+
+  <select id="aggregate076" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.UNIT_PRC, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT UNIT_PRC, COUNT(*) AS CNT, MAX(ORD_QTY) AS MAX_VAL
+              FROM TB_ORD_D
+             GROUP BY UNIT_PRC
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="countWithFilter077" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_D
+     WHERE 1 = 1
+     <include refid="filter_ord_d"/>
+  </select>
+
+  <insert id="copyItems078" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="search079" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT <include refid="cols_prd_m"/>
+      FROM TB_PRD_M P
+    <dynamic prepend="WHERE">
+      <isNotNull property="prdNm" prepend="AND">
+        P.PRD_NM = #prdNm#
+      </isNotNull>
+      <isNotEmpty property="useYnFrom" prepend="AND">
+        <![CDATA[ P.USE_YN >= #useYnFrom# ]]>
+      </isNotEmpty>
+      <isNotNull property="ctgCd" prepend="AND">
+        P.CTG_CD = #ctgCd#
+      </isNotNull>
+      <isNotEmpty property="salePrcFrom" prepend="AND">
+        <![CDATA[ P.SALE_PRC >= #salePrcFrom# ]]>
+      </isNotEmpty>
+      <isNotEmpty property="prdNmList" prepend="AND">
+        P.PRD_NM IN
+        <iterate property="prdNmList" open="(" close=")" conjunction=",">#prdNmList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <select id="customerSummary080" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <update id="refreshTotal081" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <update id="refreshTotal082" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <update id="update083" parameterClass="map">
+    UPDATE TB_ORD_D
+    <dynamic prepend="SET">
+      <isNotNull property="unitPrc" prepend=",">UNIT_PRC = #unitPrc#</isNotNull>
+      <isNotNull property="ordNo" prepend=",">ORD_NO = #ordNo#</isNotNull>
+      <isNotNull property="prdCd" prepend=",">PRD_CD = #prdCd#</isNotNull>
+    </dynamic>
+     WHERE ITEM_SEQ = #itemSeq#
+  </update>
+
+  <delete id="deleteOrphan084" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="joinSelect085" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.CUST_NO AS custNo,
+           H.ORD_DT AS ordDt
+      FROM TB_ORD_H H
+     
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <delete id="deleteOrphan086" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="cte087" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CD, SORT_SEQ
+        FROM TB_CMM_CD
+       WHERE CD IS NOT NULL
+    )
+    SELECT B.CD AS cd, B.SORT_SEQ AS sortSeq
+      FROM BASE B
+  </select>
+
+  <delete id="deleteOrphan088" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="union089" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT CUST_NM AS v, 'A' AS src FROM TB_CUST_M WHERE CUST_NO IS NOT NULL
+    UNION ALL
+    SELECT CUST_NO AS v, 'B' AS src FROM TB_CUST_M WHERE CUST_NM IS NULL
+  </select>
+
+  <update id="refreshTotal090" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="cte091" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT PRD_NM, CTG_CD
+        FROM TB_PRD_M
+       WHERE PRD_CD IS NOT NULL
+    )
+    SELECT B.PRD_NM AS prdNm, B.CTG_CD AS ctgCd
+      FROM BASE B
+  </select>
+
+  <select id="countWithFilter092" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_CUST_M
+     WHERE 1 = 1
+     <include refid="filter_cust_m"/>
+  </select>
+
+  <select id="joinSelect093" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.CUST_NO AS custNo,
+           H.ORD_NO AS ordNo,
+           PY.ORD_NO AS ordNoPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           D.ORD_NO AS ordNoD,
+           D.UNIT_PRC AS unitPrcD,
+           C.RGN_CD AS rgnCdC,
+           C.REG_DT AS regDtC,
+           P.PRD_NM AS prdNmP,
+           P.SALE_PRC AS salePrcP
+      FROM TB_ORD_H H
+     JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     LEFT OUTER JOIN TB_ORD_D D ON D.ORD_NO = H.ORD_NO
+     JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     INNER JOIN TB_PRD_M P ON P.PRD_CD = D.PRD_CD
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <update id="update094" parameterClass="map">
+    UPDATE TB_CUST_M
+    <dynamic prepend="SET">
+      <isNotNull property="custNm" prepend=",">CUST_NM = #custNm#</isNotNull>
+      <isNotNull property="useYn" prepend=",">USE_YN = #useYn#</isNotNull>
+      <isNotNull property="email" prepend=",">EMAIL = #email#</isNotNull>
+    </dynamic>
+     WHERE CUST_NO = #custNo#
+  </update>
+
+  <select id="search095" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT PRD_CD, PRD_NM, SALE_PRC
+      FROM TB_PRD_M
+    <dynamic prepend="WHERE">
+      <isEqual property="prdCdFlag" compareValue="Y" prepend="AND">
+        PRD_CD IS NOT NULL
+      </isEqual>
+      <isNotEmpty property="prdNmFrom" prepend="AND">
+        <![CDATA[ PRD_NM >= #prdNmFrom# ]]>
+      </isNotEmpty>
+      <isNotNull property="useYn" prepend="AND">
+        USE_YN = #useYn#
+      </isNotNull>
+      <isNotEmpty property="prdNmList" prepend="AND">
+        PRD_NM IN
+        <iterate property="prdNmList" open="(" close=")" conjunction=",">#prdNmList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <select id="aggregate096" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ORD_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORD_NO, COUNT(*) AS CNT, MAX(ITEM_SEQ) AS MAX_VAL
+              FROM TB_ORD_D
+             GROUP BY ORD_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="selectByKey097" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 LEGACY.TB_PAY_H 단건 조회
+    SELECT PY.PAY_NO,
+           PY.ORD_NO AS ordNo,
+           PY.PAY_MTHD_CD AS payMthdCd
+      FROM LEGACY.TB_PAY_H PY
+     WHERE PY.PAY_NO = #payNo#
+       AND PY.PAY_NO IS NOT NULL
+  </select>
+
+  <select id="aggregate098" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.CUST_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT CUST_NO, COUNT(*) AS CNT, MAX(TOT_AMT) AS MAX_VAL
+              FROM TB_ORD_H
+             GROUP BY CUST_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="selectByKey099" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_CMM_CD 단건 조회
+    SELECT CC.CD,
+           CC.GRP_CD AS grpCd,
+           CC.RMK AS rmk,
+           CC.SORT_SEQ AS sortSeq
+      FROM TB_CMM_CD CC
+     WHERE CC.CD = #cd#
+  </select>
+
+  <select id="joinSelect100" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_STAT_CD AS ordStatCd,
+           H.CUST_NO AS custNo,
+           C.USE_YN AS useYnC,
+           C.TEL_NO AS telNoC,
+           PY.PAY_NO AS payNoPY,
+           PY.PAY_AMT AS payAmtPY,
+           CC.RMK AS rmkCC,
+           CC.GRP_CD AS grpCdCC,
+           L.MSG AS logMsg
+      FROM TB_ORD_H H
+     JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     LEFT OUTER JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     INNER JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <update id="refreshTotal101" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="aggregate102" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.CUST_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT CUST_NO, COUNT(*) AS CNT, MAX(ORD_DT) AS MAX_VAL
+              FROM TB_ORD_H
+             GROUP BY CUST_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="union103" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT ORD_NO AS v, 'A' AS src FROM TB_ORD_D WHERE UNIT_PRC IS NOT NULL
+    UNION ALL
+    SELECT UNIT_PRC AS v, 'B' AS src FROM TB_ORD_D WHERE ORD_NO IS NULL
+  </select>
+
+  <delete id="deleteOrphan104" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="selectByKey105" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_ORD_D 단건 조회
+    SELECT ORD_NO AS ordNo,
+           DC_AMT,
+           ORD_QTY AS ordQty,
+           UNIT_PRC AS unitPrc
+      FROM TB_ORD_D
+     WHERE ITEM_SEQ = #itemSeq#
+  </select>
+
+  <select id="aggregate106" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ORD_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORD_NO, COUNT(*) AS CNT, MAX(ORD_DT) AS MAX_VAL
+              FROM TB_ORD_H
+             GROUP BY ORD_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <update id="refreshTotal107" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="joinSelect108" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.UPD_DT AS updDt,
+           H.TOT_AMT AS totAmt,
+           PY.PAY_NO AS payNoPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           C.CUST_NO AS custNoC,
+           C.CUST_NM AS custNmC
+      FROM TB_ORD_H H
+     JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="countWithFilter109" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_PRD_M
+     WHERE 1 = 1
+     <include refid="filter_prd_m"/>
+  </select>
+
+  <select id="union110" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT CUST_NO AS v, 'A' AS src FROM TB_CUST_M WHERE RGN_CD IS NOT NULL
+    UNION ALL
+    SELECT RGN_CD AS v, 'B' AS src FROM TB_CUST_M WHERE CUST_NO IS NULL
+  </select>
+
+  <insert id="insert111" parameterClass="map">
+    INSERT INTO TB_CUST_M (
+      CUST_NO, CUST_NM, RGN_CD, USE_YN, REG_DT, TEL_NO, EMAIL
+    ) VALUES (
+      #custNo#, #custNm#, #rgnCd#, #useYn#, #regDt#, #telNo#, #email#
+    )
+  </insert>
+
+  <insert id="insert112" parameterClass="map">
+    INSERT INTO LEGACY.TB_PAY_H (
+      PAY_NO, ORD_NO, PAY_AMT, PAY_DT, PAY_MTHD_CD
+    ) VALUES (
+      #payNo#, #ordNo#, #payAmt#, #payDt#, #payMthdCd#
+    )
+  </insert>
+
+  <select id="selectByKey113" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_CUST_M 단건 조회
+    SELECT C.CUST_NO AS custNo,
+           C.EMAIL,
+           C.CUST_NM AS custNm,
+           C.REG_DT AS regDt
+      FROM TB_CUST_M C
+     WHERE C.CUST_NO = #custNo#
+       AND C.TEL_NO IS NOT NULL
+  </select>
+
+  <select id="aggregate114" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.PAY_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT PAY_NO, COUNT(*) AS CNT, MAX(PAY_DT) AS MAX_VAL
+              FROM LEGACY.TB_PAY_H
+             GROUP BY PAY_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <update id="refreshTotal115" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="customerSummary116" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <insert id="copyItems117" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <insert id="insert118" parameterClass="map">
+    <selectKey keyProperty="ordNo" resultClass="string" type="pre">
+      SELECT 'O' || LPAD(SEQ_ORD_NO.NEXTVAL, 9, '0') FROM DUAL
+    </selectKey>
+    INSERT INTO TB_ORD_H (
+      ORD_NO, CUST_NO, ORD_DT, ORD_STAT_CD, TOT_AMT, REG_ID, UPD_DT
+    ) VALUES (
+      #ordNo#, #custNo#, #ordDt#, #ordStatCd#, #totAmt#, #regId#, #updDt#
+    )
+  </insert>
+
+  <select id="cte119" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT PRD_CD, ORD_QTY
+        FROM TB_ORD_D
+       WHERE ITEM_SEQ IS NOT NULL
+    )
+    SELECT B.PRD_CD AS prdCd, B.ORD_QTY AS ordQty
+      FROM BASE B
+  </select>
+
+  <update id="update120" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="custNo" prepend=",">CUST_NO = #custNo#</isNotNull>
+      <isNotNull property="ordDt" prepend=",">ORD_DT = #ordDt#</isNotNull>
+      <isNotNull property="updDt" prepend=",">UPD_DT = #updDt#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <insert id="insert121" parameterClass="map">
+    INSERT INTO TB_CMM_CD (
+      GRP_CD, CD, CD_NM, SORT_SEQ, RMK
+    ) VALUES (
+      #grpCd#, #cd#, #cdNm#, #sortSeq#, #rmk#
+    )
+  </insert>
+
+  <insert id="copyItems122" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="cte123" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_STAT_CD, ORD_DT
+        FROM TB_ORD_H
+       WHERE ORD_NO IS NOT NULL
+    )
+    SELECT B.ORD_STAT_CD AS ordStatCd, B.ORD_DT AS ordDt
+      FROM BASE B
+  </select>
+
+  <update id="refreshTotal124" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <update id="update125" parameterClass="map">
+    UPDATE TB_ORD_D
+    <dynamic prepend="SET">
+      <isNotNull property="unitPrc" prepend=",">UNIT_PRC = #unitPrc#</isNotNull>
+      <isNotNull property="ordQty" prepend=",">ORD_QTY = #ordQty#</isNotNull>
+      <isNotNull property="ordNo" prepend=",">ORD_NO = #ordNo#</isNotNull>
+    </dynamic>
+     WHERE ITEM_SEQ = #itemSeq#
+  </update>
+
+  <select id="countWithFilter126" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_D
+     WHERE 1 = 1
+     <include refid="filter_ord_d"/>
+  </select>
+
+  <select id="union127" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT REG_DT AS v, 'A' AS src FROM TB_CUST_M WHERE CUST_NM IS NOT NULL
+    UNION ALL
+    SELECT CUST_NM AS v, 'B' AS src FROM TB_CUST_M WHERE REG_DT IS NULL
+  </select>
+
+  <insert id="insert128" parameterClass="map">
+    INSERT INTO TB_ORD_D (
+      ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC, DC_AMT
+    ) VALUES (
+      #ordNo#, #itemSeq#, #prdCd#, #ordQty#, #unitPrc#, #dcAmt#
+    )
+  </insert>
+
+  <select id="selectByKey129" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_ORD_H 단건 조회
+    SELECT H.ORD_NO AS ordNo,
+           H.UPD_DT AS updDt,
+           H.TOT_AMT AS totAmt
+      FROM TB_ORD_H H
+     WHERE H.ORD_NO = #ordNo#
+  </select>
+
+  <select id="aggregate130" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ORD_NO, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORD_NO, COUNT(*) AS CNT, MAX(PAY_AMT) AS MAX_VAL
+              FROM LEGACY.TB_PAY_H
+             GROUP BY ORD_NO
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="customerSummary131" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <insert id="copyItems132" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="aggregate133" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ORD_DT, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ORD_DT, COUNT(*) AS CNT, MAX(TOT_AMT) AS MAX_VAL
+              FROM TB_ORD_H
+             GROUP BY ORD_DT
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <select id="cte134" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CUST_NO, CUST_NM
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.CUST_NO AS custNo, B.CUST_NM AS custNm
+      FROM BASE B
+  </select>
+
+  <insert id="copyItems135" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="customerSummary136" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <select id="union137" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT USE_YN AS v, 'A' AS src FROM TB_PRD_M WHERE CTG_CD IS NOT NULL
+    UNION ALL
+    SELECT CTG_CD AS v, 'B' AS src FROM TB_PRD_M WHERE USE_YN IS NULL
+  </select>
+
+  <select id="selectByKey138" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 LEGACY.TB_PAY_H 단건 조회
+    SELECT ORD_NO AS ordNo,
+           PAY_NO AS payNo
+      FROM LEGACY.TB_PAY_H
+     WHERE PAY_NO = #payNo#
+  </select>
+
+  <select id="union139" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT PAY_NO AS v, 'A' AS src FROM LEGACY.TB_PAY_H WHERE PAY_AMT IS NOT NULL
+    UNION ALL
+    SELECT PAY_AMT AS v, 'B' AS src FROM LEGACY.TB_PAY_H WHERE PAY_NO IS NULL
+  </select>
+
+  <select id="selectByKey140" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 TB_ORD_H 단건 조회
+    SELECT H.CUST_NO,
+           H.ORD_NO AS ordNo
+      FROM TB_ORD_H H
+     WHERE H.ORD_NO = #ordNo#
+  </select>
+
+  <update id="refreshTotal141" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="customerSummary142" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <update id="refreshTotal143" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="countWithFilter144" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM LEGACY.TB_PAY_H
+     WHERE 1 = 1
+     <include refid="filter_pay_h"/>
+  </select>
+
+  <insert id="insert145" parameterClass="map">
+    INSERT INTO LEGACY.TB_PAY_H (
+      PAY_NO, ORD_NO, PAY_AMT, PAY_DT, PAY_MTHD_CD
+    ) VALUES (
+      #payNo#, #ordNo#, #payAmt#, #payDt#, #payMthdCd#
+    )
+  </insert>
+
+  <select id="union146" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT SORT_SEQ AS v, 'A' AS src FROM TB_CMM_CD WHERE CD_NM IS NOT NULL
+    UNION ALL
+    SELECT CD_NM AS v, 'B' AS src FROM TB_CMM_CD WHERE SORT_SEQ IS NULL
+  </select>
+
+  <select id="search147" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT PAY_NO, PAY_DT, PAY_AMT
+      FROM LEGACY.TB_PAY_H
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="payAmtFrom" prepend="AND">
+        <![CDATA[ PAY_AMT >= #payAmtFrom# ]]>
+      </isNotEmpty>
+      <isNotNull property="ordNo" prepend="AND">
+        ORD_NO = #ordNo#
+      </isNotNull>
+      <isNotEmpty property="payMthdCd" prepend="AND">
+        PAY_MTHD_CD = #payMthdCd#
+      </isNotEmpty>
+      <isNotEmpty property="payNo" prepend="AND">
+        PAY_NO = #payNo#
+      </isNotEmpty>
+      <isNotEmpty property="ordNoList" prepend="AND">
+        ORD_NO IN
+        <iterate property="ordNoList" open="(" close=")" conjunction=",">#ordNoList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <delete id="deleteOrphan148" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="countWithFilter149" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM LEGACY.TB_PAY_H
+     WHERE 1 = 1
+     <include refid="filter_pay_h"/>
+  </select>
+
+  <select id="search150" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT CD, SORT_SEQ, RMK
+      FROM TB_CMM_CD
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="cdNmFrom" prepend="AND">
+        <![CDATA[ CD_NM >= #cdNmFrom# ]]>
+      </isNotEmpty>
+      <isNotEmpty property="rmk" prepend="AND">
+        RMK = #rmk#
+      </isNotEmpty>
+      <isNotEmpty property="cdNmList" prepend="AND">
+        CD_NM IN
+        <iterate property="cdNmList" open="(" close=")" conjunction=",">#cdNmList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <insert id="copyItems151" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="joinSelect152" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO AS ordNo,
+           H.UPD_DT AS updDt,
+           PY.PAY_DT AS payDtPY,
+           PY.PAY_MTHD_CD AS payMthdCdPY,
+           L.MSG AS logMsg
+      FROM TB_ORD_H H
+     INNER JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="joinSelect153" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.CUST_NO AS custNo,
+           H.UPD_DT AS updDt,
+           CC.GRP_CD AS grpCdCC,
+           CC.CD AS cdCC
+      FROM TB_ORD_H H
+     INNER JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <update id="refreshTotal154" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="countWithFilter155" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_D
+     WHERE 1 = 1
+     <include refid="filter_ord_d"/>
+  </select>
+
+  <select id="cte156" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CUST_NO, CUST_NM
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.CUST_NO AS custNo, B.CUST_NM AS custNm
+      FROM BASE B
+  </select>
+
+  <select id="customerSummary157" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <select id="search158" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT GRP_CD, CD_NM, CD
+      FROM TB_CMM_CD
+    <dynamic prepend="WHERE">
+      <isNotNull property="cd" prepend="AND">
+        CD = #cd#
+      </isNotNull>
+      <isNotEmpty property="sortSeqFrom" prepend="AND">
+        <![CDATA[ SORT_SEQ >= #sortSeqFrom# ]]>
+      </isNotEmpty>
+      <isNotEmpty property="cdList" prepend="AND">
+        CD IN
+        <iterate property="cdList" open="(" close=")" conjunction=",">#cdList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+    ORDER BY $sortColumn$
+  </select>
+
+  <select id="countWithFilter159" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_CUST_M
+     WHERE 1 = 1
+     <include refid="filter_cust_m"/>
+  </select>
+
+  <select id="cte160" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CD_NM, SORT_SEQ
+        FROM TB_CMM_CD
+       WHERE CD IS NOT NULL
+    )
+    SELECT B.CD_NM AS cdNm, B.SORT_SEQ AS sortSeq
+      FROM BASE B
+  </select>
+
+  <select id="customerSummary161" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <update id="refreshTotal162" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="countWithFilter163" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM LEGACY.TB_PAY_H
+     WHERE 1 = 1
+     <include refid="filter_pay_h"/>
+  </select>
+
+  <update id="refreshTotal164" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <insert id="insert165" parameterClass="map">
+    INSERT INTO TB_CMM_CD (
+      GRP_CD, CD, CD_NM, SORT_SEQ, RMK
+    ) VALUES (
+      #grpCd#, #cd#, #cdNm#, #sortSeq#, #rmk#
+    )
+  </insert>
+
+  <update id="refreshTotal166" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="selectByKey167" parameterClass="map" resultClass="java.util.HashMap">
+    -- 레거시 LEGACY.TB_PAY_H 단건 조회
+    SELECT PY.PAY_DT AS payDt,
+           PY.PAY_AMT,
+           PY.PAY_MTHD_CD AS payMthdCd,
+           PY.PAY_NO
+      FROM LEGACY.TB_PAY_H PY
+     WHERE PY.PAY_NO = #payNo#
+       AND PY.ORD_NO &lt;&gt; 'TB_ORD_H.ORD_NO'
+  </select>
+
+  <delete id="deleteOrphan168" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="joinSelect169" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.CUST_NO AS custNo,
+           H.ORD_DT AS ordDt,
+           PY.PAY_DT AS payDtPY,
+           PY.ORD_NO AS ordNoPY,
+           CC.SORT_SEQ AS sortSeqCC,
+           CC.CD AS cdCC,
+           D.ITEM_SEQ AS itemSeqD,
+           D.ORD_QTY AS ordQtyD,
+           L.MSG AS logMsg
+      FROM TB_ORD_H H
+     INNER JOIN LEGACY.TB_PAY_H PY ON PY.ORD_NO = H.ORD_NO
+     LEFT OUTER JOIN TB_CMM_CD CC ON CC.CD = H.ORD_STAT_CD AND CC.GRP_CD = 'ORD_STAT'
+     INNER JOIN TB_ORD_D D ON D.ORD_NO = H.ORD_NO
+     LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
+     WHERE H.ORD_DT &gt;= #fromDt#
+     ORDER BY H.ORD_NO DESC
+  </select>
+
+  <select id="cte170" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT CUST_NO, USE_YN
+        FROM TB_CUST_M
+       WHERE CUST_NO IS NOT NULL
+    )
+    SELECT B.CUST_NO AS custNo, B.USE_YN AS useYn
+      FROM BASE B
+  </select>
+
+  <update id="update171" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="custNo" prepend=",">CUST_NO = #custNo#</isNotNull>
+      <isNotNull property="ordDt" prepend=",">ORD_DT = #ordDt#</isNotNull>
+      <isNotNull property="totAmt" prepend=",">TOT_AMT = #totAmt#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <update id="update172" parameterClass="map">
+    UPDATE LEGACY.TB_PAY_H
+    <dynamic prepend="SET">
+      <isNotNull property="payMthdCd" prepend=",">PAY_MTHD_CD = #payMthdCd#</isNotNull>
+      <isNotNull property="ordNo" prepend=",">ORD_NO = #ordNo#</isNotNull>
+      <isNotNull property="payAmt" prepend=",">PAY_AMT = #payAmt#</isNotNull>
+    </dynamic>
+     WHERE PAY_NO = #payNo#
+  </update>
+
+  <insert id="insert173" parameterClass="map">
+    INSERT INTO TB_ORD_D (
+      ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC, DC_AMT
+    ) VALUES (
+      #ordNo#, #itemSeq#, #prdCd#, #ordQty#, #unitPrc#, #dcAmt#
+    )
+  </insert>
+
+  <select id="cte174" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_NO, TOT_AMT
+        FROM TB_ORD_H
+       WHERE ORD_NO IS NOT NULL
+    )
+    SELECT B.ORD_NO AS ordNo, B.TOT_AMT AS totAmt
+      FROM BASE B
+  </select>
+
+  <insert id="copyItems175" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <insert id="copyItems176" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="union177" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT GRP_CD AS v, 'A' AS src FROM TB_CMM_CD WHERE CD IS NOT NULL
+    UNION ALL
+    SELECT CD AS v, 'B' AS src FROM TB_CMM_CD WHERE GRP_CD IS NULL
+  </select>
+
+  <insert id="copyItems178" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <update id="update179" parameterClass="map">
+    UPDATE TB_CMM_CD
+    <dynamic prepend="SET">
+      <isNotNull property="grpCd" prepend=",">GRP_CD = #grpCd#</isNotNull>
+      <isNotNull property="cdNm" prepend=",">CD_NM = #cdNm#</isNotNull>
+      <isNotNull property="rmk" prepend=",">RMK = #rmk#</isNotNull>
+    </dynamic>
+     WHERE CD = #cd#
+  </update>
+
+  <select id="countWithFilter180" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_ORD_D
+     WHERE 1 = 1
+     <include refid="filter_ord_d"/>
+  </select>
+
+  <update id="refreshTotal181" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="search182" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT CUST_NO, RGN_CD, TEL_NO
+      FROM TB_CUST_M
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="custNmFrom" prepend="AND">
+        <![CDATA[ CUST_NM >= #custNmFrom# ]]>
+      </isNotEmpty>
+      <isNotEmpty property="regDt" prepend="AND">
+        REG_DT = #regDt#
+      </isNotEmpty>
+      <isNotEmpty property="useYnList" prepend="AND">
+        USE_YN IN
+        <iterate property="useYnList" open="(" close=")" conjunction=",">#useYnList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+  <update id="refreshTotal183" parameterClass="map">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC)
+                         FROM TB_ORD_D D
+                        WHERE D.ORD_NO = H.ORD_NO),
+           H.UPD_DT = SYSDATE
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+  <select id="cte184" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT ORD_QTY, UNIT_PRC
+        FROM TB_ORD_D
+       WHERE ITEM_SEQ IS NOT NULL
+    )
+    SELECT B.ORD_QTY AS ordQty, B.UNIT_PRC AS unitPrc
+      FROM BASE B
+  </select>
+
+  <select id="cte185" parameterClass="map" resultClass="java.util.HashMap">
+    WITH BASE AS (
+      SELECT GRP_CD, CD
+        FROM TB_CMM_CD
+       WHERE CD IS NOT NULL
+    )
+    SELECT B.GRP_CD AS grpCd, B.CD AS cd
+      FROM BASE B
+  </select>
+
+  <select id="countWithFilter186" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT COUNT(*)
+      FROM TB_CMM_CD
+     WHERE 1 = 1
+     <include refid="filter_cmm_cd"/>
+  </select>
+
+  <select id="customerSummary187" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT /*+ INDEX(TB_CUST_M IDX_CUST_01) */
+           C.CUST_NO AS custNo,
+           (SELECT COUNT(*) FROM TB_ORD_H H WHERE H.CUST_NO = C.CUST_NO) AS ordCnt
+      FROM TB_CUST_M C
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H2
+                    WHERE H2.CUST_NO = C.CUST_NO
+                      AND H2.ORD_STAT_CD = '90')
+       AND C.USE_YN = 'Y'
+  </select>
+
+  <select id="union188" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT PAY_DT AS v, 'A' AS src FROM LEGACY.TB_PAY_H WHERE ORD_NO IS NOT NULL
+    UNION ALL
+    SELECT ORD_NO AS v, 'B' AS src FROM LEGACY.TB_PAY_H WHERE PAY_DT IS NULL
+  </select>
+
+  <delete id="deleteOrphan189" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <select id="search190" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT TEL_NO, REG_DT, USE_YN
+      FROM TB_CUST_M
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="email" prepend="AND">
+        EMAIL = #email#
+      </isNotEmpty>
+      <isEqual property="rgnCdFlag" compareValue="Y" prepend="AND">
+        RGN_CD IS NOT NULL
+      </isEqual>
+      <isNotNull property="useYn" prepend="AND">
+        USE_YN = #useYn#
+      </isNotNull>
+      <isNotEmpty property="telNoFrom" prepend="AND">
+        <![CDATA[ TEL_NO >= #telNoFrom# ]]>
+      </isNotEmpty>
+      <isNotEmpty property="custNmList" prepend="AND">
+        CUST_NM IN
+        <iterate property="custNmList" open="(" close=")" conjunction=",">#custNmList[]#</iterate>
+      </isNotEmpty>
+    </dynamic>
+    ORDER BY $sortColumn$
+  </select>
+
+  <insert id="copyItems191" parameterClass="map">
+    INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+    SELECT #newOrdNo#, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
+      FROM TB_ORD_D S
+      JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
+     WHERE S.ORD_NO = #srcOrdNo#
+       AND P.USE_YN = 'Y'
+  </insert>
+
+  <select id="aggregate192" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.ITEM_SEQ, T.CNT, T.MAX_VAL AS maxVal
+      FROM (
+            SELECT ITEM_SEQ, COUNT(*) AS CNT, MAX(PRD_CD) AS MAX_VAL
+              FROM TB_ORD_D
+             GROUP BY ITEM_SEQ
+           ) T
+     WHERE T.CNT &gt; #minCnt#
+     ORDER BY T.CNT DESC
+  </select>
+
+  <update id="update193" parameterClass="map">
+    UPDATE TB_ORD_H
+    <dynamic prepend="SET">
+      <isNotNull property="custNo" prepend=",">CUST_NO = #custNo#</isNotNull>
+      <isNotNull property="updDt" prepend=",">UPD_DT = #updDt#</isNotNull>
+      <isNotNull property="ordDt" prepend=",">ORD_DT = #ordDt#</isNotNull>
+    </dynamic>
+     WHERE ORD_NO = #ordNo#
+  </update>
+
+  <delete id="deleteOrphan194" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+</sqlMap>

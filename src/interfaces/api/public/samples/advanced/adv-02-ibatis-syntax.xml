@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE sqlMap PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN" "http://ibatis.apache.org/dtd/sql-map-2.dtd">
+<!--
+  iBATIS 2.x 고급 문법 모음. 실제 레거시에서 자주 보이는 까다로운 형태만 모았다.
+-->
+<sqlMap namespace="advSyntax">
+
+  <typeAlias alias="orderVO" type="com.legacy.order.vo.OrderVO"/>
+
+  <cacheModel id="codeCache" type="LRU" readOnly="true">
+    <flushInterval hours="24"/>
+    <flushOnExecute statement="advSyntax.mergeCode"/>
+    <property name="size" value="1000"/>
+  </cacheModel>
+
+  <!-- resultMap extends + groupBy + 중첩 resultMap + nullValue -->
+  <resultMap id="orderBase" class="orderVO">
+    <result property="ordNo" column="ORD_NO"/>
+    <result property="custNo" column="CUST_NO"/>
+    <result property="totAmt" column="TOT_AMT" jdbcType="NUMERIC" nullValue="0"/>
+  </resultMap>
+  <resultMap id="orderWithItems" class="orderVO" extends="orderBase" groupBy="ordNo">
+    <result property="ordDt" column="ORD_DT" javaType="java.util.Date"/>
+    <result property="items" resultMap="advSyntax.orderItem"/>
+  </resultMap>
+  <resultMap id="orderItem" class="com.legacy.order.vo.OrderItemVO">
+    <result property="itemSeq" column="ITEM_SEQ"/>
+    <result property="prdCd" column="PRD_CD"/>
+    <result property="prdNm" column="PRD_CD" select="advSyntax.getProductName"/>
+  </resultMap>
+
+  <!-- parameterMap + 위치 기반 ? 바인딩 -->
+  <parameterMap id="orderStatusParam" class="map">
+    <parameter property="ordStatCd" jdbcType="VARCHAR"/>
+    <parameter property="updId" jdbcType="VARCHAR"/>
+    <parameter property="ordNo" jdbcType="VARCHAR"/>
+  </parameterMap>
+
+  <!-- 1. 동적 검색: 중첩 dynamic, iterate 안의 iterate, compareProperty, inline jdbcType, $정렬$ -->
+  <select id="searchOrders" parameterClass="map" resultMap="orderWithItems" cacheModel="codeCache">
+    SELECT /*+ LEADING(O) USE_NL(D) INDEX(O IDX_ORD_H_01) */
+           O.ORD_NO, O.CUST_NO, O.TOT_AMT, O.ORD_DT,
+           D.ITEM_SEQ, D.PRD_CD
+      FROM TB_ORD_H O
+     INNER JOIN TB_ORD_D D ON D.ORD_NO = O.ORD_NO
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="custNo" prepend="AND">
+        O.CUST_NO = #custNo:VARCHAR#
+      </isNotEmpty>
+      <isNotEmpty property="minAmt" prepend="AND">
+        O.TOT_AMT &gt;= #minAmt:NUMERIC:0#
+      </isNotEmpty>
+      <isEqual property="useMaxAmt" compareValue="Y" prepend="AND">
+        <![CDATA[ O.TOT_AMT <= #maxAmt# ]]>
+      </isEqual>
+      <isGreaterThan property="itemCount" compareValue="0" prepend="AND">
+        (SELECT COUNT(*) FROM TB_ORD_D X WHERE X.ORD_NO = O.ORD_NO) &gt;= #itemCount#
+      </isGreaterThan>
+      <isNotEmpty property="groups" prepend="AND">
+        <iterate property="groups" open="(" close=")" conjunction="OR">
+          (D.PRD_CD LIKE #groups[].prefix# || '%'
+          <isNotEmpty property="groups[].qtyList">
+            AND D.ORD_QTY IN
+            <iterate property="groups[].qtyList" open="(" close=")" conjunction=",">#groups[].qtyList[]#</iterate>
+          </isNotEmpty>)
+        </iterate>
+      </isNotEmpty>
+      <isPropertyAvailable property="onlyToday">
+        <isEqual property="onlyToday" compareValue="true" prepend="AND">
+          TRUNC(O.ORD_DT) = TRUNC(SYSDATE)
+        </isEqual>
+      </isPropertyAvailable>
+    </dynamic>
+    ORDER BY $sortColumn$ $sortDir$, D.ITEM_SEQ
+  </select>
+
+  <!-- 2. Oracle 구문: (+) 외부조인, CONNECT BY 계층, DECODE/NVL, ROWNUM 페이징(공통 fragment cross-include) -->
+  <select id="categoryTreeWithSales" parameterClass="map" resultClass="java.util.HashMap">
+    <include refid="advCommon.pagingHead"/>
+      SELECT C.CTG_CD, LPAD(' ', (LEVEL - 1) * 2) || C.CTG_NM AS ctgNm, LEVEL AS lvl,
+             NVL(S.SALE_AMT, 0) AS saleAmt,
+             DECODE(C.USE_YN, 'Y', '사용', 'N', '미사용', '-') AS useNm
+        FROM TB_CTG_M C, (SELECT P.CTG_CD, SUM(D.ORD_QTY * D.UNIT_PRC) AS SALE_AMT
+                            FROM TB_PRD_M P, TB_ORD_D D
+                           WHERE D.PRD_CD = P.PRD_CD
+                           GROUP BY P.CTG_CD) S
+       WHERE S.CTG_CD(+) = C.CTG_CD
+       START WITH C.UPPER_CTG_CD IS NULL
+       CONNECT BY PRIOR C.CTG_CD = C.UPPER_CTG_CD
+       ORDER SIBLINGS BY C.SORT_SEQ
+    <include refid="advCommon.pagingTail"/>
+  </select>
+
+  <!-- 3. 공통 fragment 의 cross-namespace + 중첩 include (FROM 없는 fragment 문맥 추론) -->
+  <select id="ordersInPeriod" parameterClass="map" resultClass="orderVO">
+    SELECT O.ORD_NO AS ordNo, <include refid="advCommon.orderAuditColumns"/>
+      FROM TB_ORD_H O
+     WHERE O.CUST_NO = #custNo#
+     <include refid="advCommon.orderPeriodCondition"/>
+  </select>
+
+  <!-- 4. 동적 테이블명($...$)과 iBATIS removeFirstPrepend / dynamic open-close -->
+  <select id="monthlyArchive" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT ORD_NO, TOT_AMT
+      FROM TB_ORD_H_$yyyymm$
+    <dynamic prepend="WHERE" open="(" close=")">
+      <isNotEmpty property="custNo" prepend="AND" removeFirstPrepend="true">
+        CUST_NO = #custNo#
+      </isNotEmpty>
+      <isNotEqual property="statCd" compareProperty="prevStatCd" prepend="AND">
+        ORD_STAT_CD = #statCd#
+      </isNotEqual>
+    </dynamic>
+  </select>
+
+  <!-- 5. isParameterPresent (파라미터 객체 자체 존재 여부) -->
+  <select id="countOrders" resultClass="int">
+    SELECT COUNT(*) FROM TB_ORD_H
+    <isParameterPresent prepend="WHERE">
+      CUST_NO = #value#
+    </isParameterPresent>
+  </select>
+
+  <!-- 6. insert + selectKey(post), inline jdbcType -->
+  <insert id="insertOrder" parameterClass="orderVO">
+    INSERT INTO TB_ORD_H (ORD_NO, CUST_NO, ORD_DT, ORD_STAT_CD, TOT_AMT, REG_ID, REG_DT)
+    VALUES (SEQ_ORD_NO.NEXTVAL, #custNo:VARCHAR#, SYSDATE, '10', #totAmt:NUMERIC#, #regId#, SYSDATE)
+    <selectKey keyProperty="ordNo" resultClass="string" type="post">
+      SELECT SEQ_ORD_NO.CURRVAL FROM DUAL
+    </selectKey>
+  </insert>
+
+  <!-- 7. parameterMap 기반 update (? 위치 바인딩) -->
+  <update id="updateOrderStatus" parameterMap="orderStatusParam">
+    UPDATE TB_ORD_H SET ORD_STAT_CD = ?, UPD_ID = ?, UPD_DT = SYSDATE WHERE ORD_NO = ?
+  </update>
+
+  <!-- 8. Oracle MERGE (upsert) -->
+  <update id="mergeCode" parameterClass="map">
+    MERGE INTO TB_CMM_CD T
+    USING (SELECT #grpCd# AS GRP_CD, #cd# AS CD, #cdNm# AS CD_NM FROM DUAL) S
+       ON (T.GRP_CD = S.GRP_CD AND T.CD = S.CD)
+     WHEN MATCHED THEN
+          UPDATE SET T.CD_NM = S.CD_NM, T.UPD_DT = SYSDATE
+     WHEN NOT MATCHED THEN
+          INSERT (GRP_CD, CD, CD_NM, SORT_SEQ, REG_DT)
+          VALUES (S.GRP_CD, S.CD, S.CD_NM, (SELECT NVL(MAX(SORT_SEQ), 0) + 1 FROM TB_CMM_CD WHERE GRP_CD = S.GRP_CD), SYSDATE)
+  </update>
+
+  <!-- 9. iterate 로 다건 insert (INSERT ALL) -->
+  <insert id="insertItems" parameterClass="map">
+    INSERT ALL
+    <iterate property="items">
+      INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
+      VALUES (#ordNo#, #items[].itemSeq#, #items[].prdCd#, #items[].qty:NUMERIC#, #items[].price:NUMERIC#)
+    </iterate>
+    SELECT * FROM DUAL
+  </insert>
+
+  <!-- 10. delete + 상관 서브쿼리 + 동적 -->
+  <delete id="purgeCancelled" parameterClass="map">
+    DELETE FROM TB_ORD_D D
+     WHERE EXISTS (SELECT 1 FROM TB_ORD_H H
+                    WHERE H.ORD_NO = D.ORD_NO
+                      AND H.ORD_STAT_CD = '99'
+                    <isNotEmpty property="beforeDt" prepend="AND">
+                      H.UPD_DT &lt; TO_DATE(#beforeDt#, 'YYYYMMDD')
+                    </isNotEmpty>)
+  </delete>
+
+  <!-- 11. 프로시저 호출 -->
+  <procedure id="closeMonth" parameterClass="map">
+    { call PKG_SETL.CLOSE_MONTH(#yyyymm,mode=IN,jdbcType=VARCHAR#, #resultCd,mode=OUT,jdbcType=VARCHAR#) }
+  </procedure>
+
+  <!-- 중첩 select 용 -->
+  <select id="getProductName" parameterClass="string" resultClass="string">
+    SELECT PRD_NM FROM TB_PRD_M WHERE PRD_CD = #value#
+  </select>
+
+</sqlMap>

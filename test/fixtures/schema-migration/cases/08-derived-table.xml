@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="stat">
+
+  <!-- 파생 테이블: 안쪽 컬럼명이 바뀌면 바깥 T.xxx 도 따라 바뀜, 스칼라 서브쿼리 -->
+  <select id="topCustomers" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT T.CUST_NO,
+           T.ORD_CNT,
+           (SELECT C.CUST_NM FROM TB_CUST_M C WHERE C.CUST_NO = T.CUST_NO) AS custNm
+      FROM (
+            SELECT CUST_NO, COUNT(*) AS ORD_CNT, SUM(TOT_AMT) AS SUM_AMT
+              FROM TB_ORD_H
+             WHERE ORD_DT >= #fromDt#
+             GROUP BY CUST_NO
+           ) T
+     WHERE T.SUM_AMT > #minAmt#
+     ORDER BY T.ORD_CNT DESC
+  </select>
+
+  <!-- SELECT * 파생 테이블: 원본 테이블 매핑이 그대로 노출 -->
+  <select id="recentOrders" resultClass="java.util.HashMap">
+    SELECT X.ORD_NO AS ordNo, X.ORD_DT AS ordDt
+      FROM (SELECT * FROM TB_ORD_H WHERE ORD_STAT_CD = '90') X
+  </select>
+
+</sqlMap>

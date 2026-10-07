@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <select id="search" parameterClass="map" resultClass="User">
+    SELECT USER_ID
+    FROM USER
+    ORDER BY $orderBy$
+  </select>
+
+</sqlMap>

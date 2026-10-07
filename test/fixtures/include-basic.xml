@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <sql id="baseColumns">
+    USER_ID, USER_NAME
+  </sql>
+
+  <select id="getUser" parameterClass="int" resultClass="User">
+    SELECT
+    <include refid="baseColumns"/>
+    FROM USER
+    WHERE USER_ID = #userId#
+  </select>
+
+</sqlMap>

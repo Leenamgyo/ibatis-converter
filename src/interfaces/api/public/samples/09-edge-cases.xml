@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="edge">
+
+  <!-- Scenario 9 — the cases that are supposed to degrade loudly rather
+       than silently: `$...$` substitution, SQL the flattener can't
+       resolve to one parseable statement, and Oracle-only syntax no
+       available node-sql-parser dialect accepts. Each must still parse,
+       resolve and convert; only table/column/join/lineage analysis is
+       unavailable, with a SQL_PARSE_FAILED warning saying so. -->
+
+  <select id="rawSubstitutionOrderBy" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME
+    FROM CUSTOMER C
+    WHERE C.STATUS = #status#
+    ORDER BY $orderByColumn$ $orderDirection$
+  </select>
+
+  <select id="dynamicTableName" parameterClass="map" resultClass="map">
+    SELECT COUNT(*) AS TOTAL
+    FROM $tableName$
+    WHERE STATUS = #status#
+  </select>
+
+  <!-- Two mutually exclusive branches both supplying the FROM table:
+       SqlFlattener has no runtime values, keeps both, and the result
+       ("FROM ARCHIVED_ORDER O ORDERS O") can't parse. -->
+  <select id="mutuallyExclusiveFromBranches" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID
+    FROM
+    <isEqual property="scope" compareValue="ARCHIVE">
+      ARCHIVED_ORDER O
+    </isEqual>
+    <isNotEqual property="scope" compareValue="ARCHIVE">
+      ORDERS O
+    </isNotEqual>
+    WHERE O.STATUS = #status#
+  </select>
+
+  <!-- Oracle's (+) outer join operator: not supported by any dialect
+       node-sql-parser offers (see docs/SPEC_MAPPING.md). -->
+  <select id="oracleOuterJoinOperator" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, C.CUSTOMER_NAME
+    FROM ORDERS O, CUSTOMER C
+    WHERE C.CUSTOMER_ID = O.CUSTOMER_ID(+)
+      AND O.STATUS = #status#
+  </select>
+
+  <select id="veryLongInListViaIterate" parameterClass="map" resultClass="map">
+    SELECT P.PRODUCT_ID, P.PRODUCT_NAME
+    FROM PRODUCT P
+    WHERE P.PRODUCT_ID IN
+    <iterate property="productIds" open="(" close=")" conjunction=",">
+      #productIds[]#
+    </iterate>
+    AND P.STATUS = #status#
+  </select>
+
+  <select id="selectWithNullValueColumn" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.PHONE
+    FROM CUSTOMER C
+    WHERE C.CUSTOMER_ID = #customerId#
+  </select>
+
+</sqlMap>

@@ -1,0 +1,15 @@
+[SAFE] topCustomers TABLE_RENAMED: TB_CUST_M -> CUSTOMER (alias C kept)
+[SAFE] topCustomers TABLE_RENAMED: TB_ORD_H -> ORDERS
+[SAFE] topCustomers COLUMN_RENAMED: T.CUST_NO -> CUSTOMER_ID through subquery T
+[WARNING] topCustomers RESULT_COLUMN_RENAMED: result column CUST_NO is now labelled CUSTOMER_ID: update resultMap column="CUST_NO" / the mapped property, or enable preserveResultColumnNames
+[SAFE] topCustomers COLUMN_RENAMED: TB_CUST_M.CUST_NM -> CUSTOMER_NAME
+[SAFE] topCustomers COLUMN_RENAMED: TB_CUST_M.CUST_NO -> CUSTOMER_ID
+[SAFE] topCustomers COLUMN_RENAMED: T.CUST_NO -> CUSTOMER_ID through subquery T
+[SAFE] topCustomers COLUMN_RENAMED: TB_ORD_H.CUST_NO -> CUSTOMER_ID
+[SAFE] topCustomers COLUMN_RENAMED: TB_ORD_H.TOT_AMT -> TOTAL_AMOUNT
+[SAFE] topCustomers COLUMN_RENAMED: TB_ORD_H.ORD_DT -> ORDERED_AT
+[SAFE] topCustomers COLUMN_RENAMED: TB_ORD_H.CUST_NO -> CUSTOMER_ID
+[SAFE] recentOrders TABLE_RENAMED: TB_ORD_H -> ORDERS
+[SAFE] recentOrders COLUMN_RENAMED: X.ORD_NO -> ORDER_ID through subquery X
+[SAFE] recentOrders COLUMN_RENAMED: X.ORD_DT -> ORDERED_AT through subquery X
+[SAFE] recentOrders COLUMN_RENAMED: TB_ORD_H.ORD_STAT_CD -> STATUS

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="dyn">
+
+  <!-- Scenario 2 — dynamic SQL: all 12 standardized isXxx tags, nested
+       <dynamic>, <iterate> (flat and nested), and the three places a
+       dynamic block changes the *shape* of the query rather than just its
+       filter: the JOIN list, a subquery, and a UNION branch. -->
+
+  <select id="searchCustomersAllConditions" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME, C.EMAIL, C.STATUS
+    FROM CUSTOMER C
+    <dynamic prepend="WHERE">
+      <isNull property="regionCode" prepend="AND">
+        C.REGION_CODE IS NULL
+      </isNull>
+      <isNotNull property="status" prepend="AND">
+        C.STATUS = #status#
+      </isNotNull>
+      <isEmpty property="email" prepend="AND">
+        C.EMAIL = ''
+      </isEmpty>
+      <isNotEmpty property="customerName" prepend="AND">
+        C.CUSTOMER_NAME LIKE #customerName#
+      </isNotEmpty>
+      <isEqual property="grade" compareValue="VIP" prepend="AND">
+        C.GRADE = 'VIP'
+      </isEqual>
+      <isNotEqual property="grade" compareValue="BLOCKED" prepend="AND">
+        C.GRADE != 'BLOCKED'
+      </isNotEqual>
+      <isGreaterThan property="minOrders" compareValue="0" prepend="AND">
+        C.ORDER_COUNT &gt; #minOrders#
+      </isGreaterThan>
+      <isGreaterEqual property="minPoint" compareValue="0" prepend="AND">
+        C.POINT &gt;= #minPoint#
+      </isGreaterEqual>
+      <isLessThan property="maxOrders" compareValue="1000" prepend="AND">
+        C.ORDER_COUNT &lt; #maxOrders#
+      </isLessThan>
+      <isLessEqual property="maxPoint" compareValue="1000" prepend="AND">
+        C.POINT &lt;= #maxPoint#
+      </isLessEqual>
+      <isPropertyAvailable property="joinedAfter" prepend="AND">
+        C.CREATED_AT &gt;= #joinedAfter#
+      </isPropertyAvailable>
+      <isNotPropertyAvailable property="includeClosed" prepend="AND">
+        C.STATUS != 'CLOSED'
+      </isNotPropertyAvailable>
+    </dynamic>
+  </select>
+
+  <select id="searchOrdersNestedDynamic" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, O.CUSTOMER_ID, O.STATUS, O.TOTAL_AMOUNT
+    FROM ORDERS O
+    <dynamic prepend="WHERE">
+      <isNotNull property="customerId" prepend="AND">
+        O.CUSTOMER_ID = #customerId#
+        <dynamic prepend="AND">
+          <isNotNull property="status" prepend="AND">
+            O.STATUS = #status#
+          </isNotNull>
+          <isGreaterThan property="minAmount" compareValue="0" prepend="AND">
+            O.TOTAL_AMOUNT &gt;= #minAmount#
+          </isGreaterThan>
+        </dynamic>
+      </isNotNull>
+    </dynamic>
+  </select>
+
+  <select id="getOrdersByIdList" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, O.STATUS
+    FROM ORDERS O
+    WHERE O.ORDER_ID IN
+    <iterate property="orderIds" open="(" close=")" conjunction=",">
+      #orderIds[]#
+    </iterate>
+  </select>
+
+  <select id="getOrdersByNestedIterate" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID
+    FROM ORDERS O
+    WHERE
+    <iterate property="groups" open="(" close=")" conjunction="OR">
+      (O.CHANNEL = #groups[].channel# AND O.STATUS IN
+        <iterate property="groups[].statuses" open="(" close=")" conjunction=",">
+          #groups[].statuses[]#
+        </iterate>
+      )
+    </iterate>
+  </select>
+
+  <select id="dynamicJoinShape" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME
+    FROM CUSTOMER C
+    <isNotNull property="withOrders">
+      INNER JOIN ORDERS O ON O.CUSTOMER_ID = C.CUSTOMER_ID
+    </isNotNull>
+    WHERE C.STATUS = #status#
+  </select>
+
+  <select id="dynamicInsideSubquery" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID
+    FROM CUSTOMER C
+    WHERE C.CUSTOMER_ID IN (
+      SELECT O.CUSTOMER_ID
+      FROM ORDERS O
+      <dynamic prepend="WHERE">
+        <isNotNull property="orderStatus" prepend="AND">
+          O.STATUS = #orderStatus#
+        </isNotNull>
+      </dynamic>
+    )
+  </select>
+
+  <select id="dynamicUnionBranch" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME FROM CUSTOMER C WHERE C.STATUS = #status#
+    <isNotNull property="includeArchived">
+      UNION ALL
+      SELECT A.CUSTOMER_ID, A.CUSTOMER_NAME FROM ARCHIVED_CUSTOMER A WHERE A.STATUS = #status#
+    </isNotNull>
+  </select>
+
+</sqlMap>

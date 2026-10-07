@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="order">
+
+  <select id="getOrderDetail" parameterType="string" resultType="java.util.HashMap">
+
+    SELECT H.ORDER_ID       AS ordNo,
+           H.ORDERED_AT       AS ordDt,
+           C.CUSTOMER_NAME      AS custNm,
+           D.LINE_NO     AS itemSeq,
+           P.PRODUCT_NAME       AS prdNm,
+           D.QUANTITY * D.UNIT_PRICE AS lineAmt
+      FROM ORDERS H
+     INNER JOIN CUSTOMER C ON C.CUSTOMER_ID = H.CUSTOMER_ID
+     INNER JOIN ORDER_ITEM  D ON D.ORDER_ID  = H.ORDER_ID
+      LEFT OUTER JOIN PRODUCT P ON P.PRODUCT_ID = D.PRODUCT_ID AND P.IS_SELLABLE = 'Y'
+     WHERE H.ORDER_ID = #{ordNo}
+     ORDER BY D.LINE_NO
+  
+  </select>
+
+  <select id="getOrderWithCode" parameterType="string" resultType="java.util.HashMap">
+
+    SELECT H.ORDER_ID AS ordNo, CC.CODE_NAME AS statNm
+      FROM ORDERS H, COMMON_CODE CC
+     WHERE CC.GROUP_CODE = 'ORD_STAT'
+       AND CC.CODE = H.STATUS
+       AND H.ORDER_ID = #{ordNo}
+  
+  </select>
+
+</mapper>

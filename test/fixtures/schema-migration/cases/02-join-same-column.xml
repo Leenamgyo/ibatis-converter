@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <!-- 같은 이름의 컬럼(CUST_NO, ORD_NO)이 여러 테이블에 있음: alias 기준으로 테이블별 매핑 -->
+  <select id="getOrderDetail" parameterClass="string" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO       AS ordNo,
+           H.ORD_DT       AS ordDt,
+           C.CUST_NM      AS custNm,
+           D.ITEM_SEQ     AS itemSeq,
+           P.PRD_NM       AS prdNm,
+           D.ORD_QTY * D.UNIT_PRC AS lineAmt
+      FROM TB_ORD_H H
+     INNER JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+     INNER JOIN TB_ORD_D  D ON D.ORD_NO  = H.ORD_NO
+      LEFT OUTER JOIN TB_PRD_M P ON P.PRD_CD = D.PRD_CD AND P.USE_YN = 'Y'
+     WHERE H.ORD_NO = #ordNo#
+     ORDER BY D.ITEM_SEQ
+  </select>
+
+  <!-- 콤마 조인 (Oracle 스타일) -->
+  <select id="getOrderWithCode" parameterClass="string" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO AS ordNo, CC.CD_NM AS statNm
+      FROM TB_ORD_H H, TB_CMM_CD CC
+     WHERE CC.GRP_CD = 'ORD_STAT'
+       AND CC.CD = H.ORD_STAT_CD
+       AND H.ORD_NO = #ordNo#
+  </select>
+
+</sqlMap>

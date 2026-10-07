@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <select id="searchUsers" parameterClass="map" resultClass="User">
+    SELECT USER_ID
+    FROM USER
+    <dynamic prepend="WHERE">
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+        <dynamic prepend="AND">
+          <isNotNull property="role" prepend="AND">
+            ROLE = #role#
+          </isNotNull>
+        </dynamic>
+      </isNotNull>
+    </dynamic>
+  </select>
+
+</sqlMap>

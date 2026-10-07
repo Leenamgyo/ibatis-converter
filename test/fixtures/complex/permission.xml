@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="permission">
+
+  <resultMap id="PermissionResult" class="Permission">
+    <result property="permissionId" column="PERMISSION_ID"/>
+    <result property="permissionName" column="PERMISSION_NAME"/>
+    <result property="description" column="DESCRIPTION"/>
+  </resultMap>
+
+  <select id="getAllPermissions" resultMap="PermissionResult">
+    SELECT PERMISSION_ID, PERMISSION_NAME, DESCRIPTION
+    FROM PERMISSIONS
+    ORDER BY PERMISSION_NAME
+  </select>
+
+  <select id="getPermissionById" parameterClass="int" resultMap="PermissionResult">
+    SELECT PERMISSION_ID, PERMISSION_NAME, DESCRIPTION
+    FROM PERMISSIONS
+    WHERE PERMISSION_ID = #permissionId#
+  </select>
+
+  <select id="getPermissionsForUser" parameterClass="int" resultMap="PermissionResult">
+    SELECT DISTINCT P.PERMISSION_ID, P.PERMISSION_NAME, P.DESCRIPTION
+    FROM PERMISSIONS P
+    INNER JOIN ROLE_PERMISSIONS RP ON P.PERMISSION_ID = RP.PERMISSION_ID
+    INNER JOIN USERS U ON U.ROLE_ID = RP.ROLE_ID
+    WHERE U.USER_ID = #userId#
+  </select>
+
+  <select id="searchPermissions" parameterClass="map" resultMap="PermissionResult">
+    SELECT PERMISSION_ID, PERMISSION_NAME, DESCRIPTION
+    FROM PERMISSIONS
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="name" prepend="AND">
+        PERMISSION_NAME LIKE #name#
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+</sqlMap>

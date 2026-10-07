@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="review">
+
+  <resultMap id="ReviewResult" class="ProductReview">
+    <result property="reviewId" column="REVIEW_ID"/>
+    <result property="productId" column="PRODUCT_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="rating" column="RATING"/>
+    <result property="comment" column="COMMENT"/>
+  </resultMap>
+
+  <resultMap id="ReviewWithUserResult" class="ProductReviewDetail" extends="ReviewResult">
+    <result property="username" column="USERNAME"/>
+  </resultMap>
+
+  <select id="getReviewsForProduct" parameterClass="map" resultMap="ReviewWithUserResult">
+    SELECT
+        R.REVIEW_ID, R.PRODUCT_ID, R.USER_ID, R.RATING, R.COMMENT,
+        U.USERNAME
+    FROM PRODUCT_REVIEWS R
+    INNER JOIN USERS U ON R.USER_ID = U.USER_ID
+    WHERE R.PRODUCT_ID = #productId#
+    <dynamic prepend="AND">
+      <isGreaterThan property="minRating" compareValue="0" prepend="AND">
+        R.RATING &gt;= #minRating#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY R.REVIEW_ID DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getAverageRating" parameterClass="int" resultClass="map">
+    SELECT
+        PRODUCT_ID,
+        AVG(RATING) AS AVG_RATING,
+        COUNT(*) AS REVIEW_COUNT
+    FROM PRODUCT_REVIEWS
+    WHERE PRODUCT_ID = #productId#
+    GROUP BY PRODUCT_ID
+  </select>
+
+  <select id="getReviewsByUser" parameterClass="int" resultMap="ReviewResult">
+    SELECT REVIEW_ID, PRODUCT_ID, USER_ID, RATING, COMMENT
+    FROM PRODUCT_REVIEWS
+    WHERE USER_ID = #userId#
+  </select>
+
+  <select id="getFlaggedReviews" resultMap="ReviewWithUserResult">
+    SELECT
+        R.REVIEW_ID, R.PRODUCT_ID, R.USER_ID, R.RATING, R.COMMENT,
+        U.USERNAME
+    FROM PRODUCT_REVIEWS R
+    INNER JOIN USERS U ON R.USER_ID = U.USER_ID
+    WHERE R.RATING &lt;= 2
+    ORDER BY R.REVIEW_ID DESC
+  </select>
+
+</sqlMap>

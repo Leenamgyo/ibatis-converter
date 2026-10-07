@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="rm">
+
+  <!-- Scenario 7 — resultMap: a 3-level `extends` chain, typed columns,
+       a nested-property mapping, and the plain `resultClass="map"` case
+       the dashboard's Java panel has to explain differently. -->
+
+  <resultMap id="CustomerBase" class="CustomerVO">
+    <result property="customerId" column="CUSTOMER_ID" javaType="int" jdbcType="NUMERIC"/>
+    <result property="customerName" column="CUSTOMER_NAME" jdbcType="VARCHAR"/>
+  </resultMap>
+
+  <resultMap id="CustomerContact" class="CustomerVO" extends="CustomerBase">
+    <result property="email" column="EMAIL" jdbcType="VARCHAR"/>
+    <result property="phone" column="PHONE" jdbcType="VARCHAR" nullValue=""/>
+  </resultMap>
+
+  <resultMap id="CustomerFull" class="CustomerDetailVO" extends="CustomerContact">
+    <result property="region.regionCode" column="REGION_CODE" jdbcType="VARCHAR"/>
+    <result property="region.regionName" column="REGION_NAME" jdbcType="VARCHAR"/>
+    <result property="createdAt" column="CREATED_AT" jdbcType="TIMESTAMP"/>
+    <result property="updatedAt" column="UPDATED_AT" jdbcType="TIMESTAMP"/>
+  </resultMap>
+
+  <select id="getCustomerFull" parameterClass="int" resultMap="CustomerFull">
+    SELECT
+        C.CUSTOMER_ID,
+        C.CUSTOMER_NAME,
+        C.EMAIL,
+        C.PHONE,
+        R.REGION_CODE,
+        R.REGION_NAME,
+        C.CREATED_AT,
+        C.UPDATED_AT
+    FROM CUSTOMER C
+    LEFT JOIN REGION R ON R.REGION_CODE = C.REGION_CODE
+    WHERE C.CUSTOMER_ID = #customerId#
+  </select>
+
+  <select id="getCustomerContacts" parameterClass="map" resultMap="CustomerContact">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME, C.EMAIL, C.PHONE
+    FROM CUSTOMER C
+    WHERE C.STATUS = #status#
+  </select>
+
+  <select id="getCustomerRowsAsMap" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID AS customerId, C.CUSTOMER_NAME AS customerName
+    FROM CUSTOMER C
+    WHERE C.REGION_CODE = #regionCode#
+  </select>
+
+</sqlMap>

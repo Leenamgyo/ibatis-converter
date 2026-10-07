@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <select id="getOrdersWithUser" parameterClass="map" resultClass="Order">
+    SELECT
+        U.USER_ID,
+        O.ORDER_ID
+    FROM USER U
+    LEFT JOIN ORDERS O
+        ON U.USER_ID = O.USER_ID
+        AND O.STATUS = 'ACTIVE'
+    WHERE U.STATUS = #status#
+  </select>
+
+</sqlMap>

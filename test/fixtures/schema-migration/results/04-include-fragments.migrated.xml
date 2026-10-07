@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="product">
+
+  <sql id="productColumns">
+
+    P.PRODUCT_ID AS prdCd, P.PRODUCT_NAME AS prdNm, P.CATEGORY_CODE AS ctgCd
+  
+  </sql>
+
+  <sql id="categoryFilter">
+
+    
+    <if test="ctgCd != null and ctgCd != ''">
+
+      AND CATEGORY_CODE = #{ctgCd}
+    
+    </if>
+
+  
+  </sql>
+
+  <sql id="activeOnly">
+
+    AND USE_YN = 'Y'
+  
+  </sql>
+
+  <select id="listProducts" parameterType="map" resultType="Product">
+
+    SELECT 
+    <include refid="productColumns"/>
+
+      FROM PRODUCT P
+     WHERE 1 = 1
+     
+    <include refid="categoryFilter"/>
+
+     
+    <include refid="activeOnly"/>
+
+  
+  </select>
+
+  <select id="countProducts" parameterType="map" resultType="int">
+
+    SELECT COUNT(*)
+      FROM PRODUCT
+     WHERE 1 = 1
+     
+    <include refid="categoryFilter"/>
+
+  
+  </select>
+
+  <select id="countActiveCustomers" resultType="int">
+
+    SELECT COUNT(*) FROM CUSTOMER WHERE 1 = 1
+    
+    <include refid="activeOnly"/>
+
+  
+  </select>
+
+</mapper>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="userProfile">
+
+  <resultMap id="ProfileResult" class="UserProfile">
+    <result property="profileId" column="PROFILE_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="fullName" column="FULL_NAME"/>
+    <result property="phone" column="PHONE"/>
+    <result property="address" column="ADDRESS"/>
+  </resultMap>
+
+  <resultMap id="ProfileWithUserResult" class="UserProfileDetail" extends="ProfileResult">
+    <result property="username" column="USERNAME"/>
+    <result property="email" column="EMAIL"/>
+  </resultMap>
+
+  <select id="getProfileByUserId" parameterClass="int" resultMap="ProfileResult">
+    SELECT PROFILE_ID, USER_ID, FULL_NAME, PHONE, ADDRESS
+    FROM USER_PROFILES
+    WHERE USER_ID = #userId#
+  </select>
+
+  <select id="getProfileWithUser" parameterClass="int" resultMap="ProfileWithUserResult">
+    SELECT
+        P.PROFILE_ID, P.USER_ID, P.FULL_NAME, P.PHONE, P.ADDRESS,
+        U.USERNAME, U.EMAIL
+    FROM USER_PROFILES P
+    INNER JOIN USERS U
+        ON P.USER_ID = U.USER_ID
+    WHERE P.USER_ID = #userId#
+  </select>
+
+  <select id="searchProfiles" parameterClass="map" resultMap="ProfileWithUserResult">
+    SELECT
+        P.PROFILE_ID, P.USER_ID, P.FULL_NAME, P.PHONE, P.ADDRESS,
+        U.USERNAME, U.EMAIL
+    FROM USER_PROFILES P
+    INNER JOIN USERS U
+        ON P.USER_ID = U.USER_ID
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="fullName" prepend="AND">
+        P.FULL_NAME LIKE #fullName#
+      </isNotEmpty>
+      <isNotEmpty property="phone" prepend="AND">
+        P.PHONE = #phone#
+      </isNotEmpty>
+      <isNotNull property="userStatus" prepend="AND">
+        U.STATUS = #userStatus#
+      </isNotNull>
+    </dynamic>
+    <include refid="common.pagination"/>
+  </select>
+
+</sqlMap>

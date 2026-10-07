@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="order">
+
+  <delete id="deleteOrphanItems">
+
+    DELETE FROM ORDER_ITEM D
+     WHERE NOT EXISTS (SELECT 1 FROM ORDERS H WHERE H.ORDER_ID = D.ORDER_ID)
+        OR D.PRODUCT_ID IN (SELECT PRODUCT_ID FROM PRODUCT WHERE IS_SELLABLE = 'N')
+  
+  </delete>
+
+  <delete id="deleteCode" parameterType="map">
+
+    DELETE COMMON_CODE WHERE GROUP_CODE = #{grpCd} AND CODE = #{cd}
+  
+  </delete>
+
+</mapper>

@@ -1,0 +1,14 @@
+{
+  "OLD_CONTENT": {
+    "targetTable": "CONTENT",
+    "columns": { "APP_ID": "APPLICATION_ID", "CONTENT_ID": "ID", "USE_YN": "ENABLED" }
+  },
+  "OLD_COUNTRY": {
+    "targetTable": "COUNTRY",
+    "columns": { "COUNTRY_CD": "COUNTRY_CODE", "COUNTRY_NM": "COUNTRY_NAME", "USE_YN": "IS_ENABLED" }
+  },
+  "OLD_CODE_DETAIL": {
+    "targetTable": "CODE_DETAIL",
+    "columns": { "GRP_ID": "GROUP_ID", "CD": "CODE", "CD_NM": "CODE_NAME" }
+  }
+}

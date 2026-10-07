@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="customer">
+
+  <resultMap id="customerResult" type="Customer">
+    <result property="custNo" column="CUST_NO"/>
+    <result property="custNm" column="CUST_NM"/>
+  </resultMap>
+
+  <select id="getCustomer" parameterType="string" resultType="Customer">
+
+    SELECT C.CUSTOMER_ID   AS custNo,
+           C.CUSTOMER_NAME   AS custNm,
+           C.REGION_CODE    AS rgnCd,
+           C.UPD_DT    AS updDt
+      FROM CUSTOMER C
+     WHERE C.CUSTOMER_ID = #{custNo}
+       AND C.IS_ACTIVE  = 'Y'
+  
+  </select>
+
+  <select id="getCustomerByMap" parameterType="string" resultMap="customerResult">
+
+    SELECT CUSTOMER_ID, CUSTOMER_NAME
+      FROM CUSTOMER
+     WHERE CUSTOMER_ID = #{custNo}
+  
+  </select>
+
+</mapper>

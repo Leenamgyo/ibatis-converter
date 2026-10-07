@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ibatis-migration-analyzer</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="schema.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <h1>ibatis-migration-analyzer</h1>
+    </div>
+    <nav class="tabs" id="screenTabs" role="tablist" aria-label="화면">
+      <button class="tab active" role="tab" id="screenTabAnalysis" data-screen="analysis"
+              aria-selected="true" aria-controls="app">분석</button>
+      <button class="tab" role="tab" id="screenTabDatasets" data-screen="datasets"
+              aria-selected="false" aria-controls="datasetScreen" tabindex="-1">
+        데이터셋 <span class="tab-count" id="datasetCount"></span>
+      </button>
+    </nav>
+    <div class="top-actions">
+      <label class="btn">
+        Upload mapper XML
+        <input type="file" id="fileInput" multiple accept=".xml" hidden>
+      </label>
+      <button class="btn" id="sampleBtn">Load sample</button>
+      <button class="btn" id="advancedBtn" title="2000줄 단일 리포트 쿼리 + 까다로운 iBATIS 2 문법">Load advanced</button>
+      <button class="btn primary" id="analyzeBtn" disabled>Analyze</button>
+      <span class="file-count" id="fileCount"></span>
+    </div>
+  </header>
+
+  <main id="app">
+    <div class="empty-state" id="emptyState">
+      Upload one or more iBATIS mapper XML files (or click "Load sample"), then "Analyze".
+    </div>
+
+    <!-- SQL Lineage Dashboard (spec section 26) -->
+    <section class="screen dashboard" id="lineageScreen" hidden>
+      <header class="dash-stats" id="dashStats"></header>
+      <div class="dash-body">
+        <aside class="dash-left" id="dashLeft">
+          <div class="view-switch" id="viewSwitch" role="tablist" aria-label="보기 전환">
+            <button class="view-tab active" role="tab" id="viewTabLineage"
+                    data-view="lineage" aria-selected="true" aria-controls="lineagePane">
+              리니지
+            </button>
+            <button class="view-tab" role="tab" id="viewTabSchema"
+                    data-view="schema" aria-selected="false" aria-controls="schemaPane" tabindex="-1">
+              변환
+            </button>
+          </div>
+          <div class="panel-head" id="treeHeading">XML 구조 (Tree)</div>
+          <div class="dash-search">
+            <input type="search" id="lineageSearch" placeholder="statement / refid / table / alias 검색" autocomplete="off">
+          </div>
+          <div class="panel-body" id="lineageTree" role="tree" aria-labelledby="treeHeading"></div>
+          <div class="panel-head">Include 사용 현황</div>
+          <div class="usage-list" id="lineageIncludeUsage"></div>
+        </aside>
+
+        <div class="dash-center">
+          <div class="dash-toolbar">
+            <div class="breadcrumb" id="lineageBreadcrumb"></div>
+            <div class="tool-btns">
+              <button class="tool-btn" data-graph-action="expand">전체 펼치기</button>
+              <button class="tool-btn" data-graph-action="collapse">서브쿼리 접기</button>
+              <button class="tool-btn" data-graph-action="zoom-out">−</button>
+              <span class="zoom-level" id="lineageZoomLevel">100%</span>
+              <button class="tool-btn" data-graph-action="zoom-in">＋</button>
+              <button class="tool-btn" data-graph-action="fit">전체 보기</button>
+            </div>
+          </div>
+          <div class="view-pane" id="lineagePane" role="tabpanel" aria-labelledby="viewTabLineage">
+            <div class="graph-viewport" id="lineageViewport">
+              <div class="graph-content" id="lineageContent">
+                <svg class="graph-edges" id="lineageEdges" xmlns="http://www.w3.org/2000/svg"></svg>
+                <div class="graph-nodes" id="lineageNodes"></div>
+              </div>
+            </div>
+            <div class="dash-legend" id="lineageLegend"></div>
+          </div>
+          <div class="view-pane" id="schemaPane" role="tabpanel" aria-labelledby="viewTabSchema" hidden></div>
+        </div>
+
+        <aside class="dash-right" id="lineageRight"></aside>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Schema-migration datasets: named old -> new mapping definitions, edited as JSON -->
+  <section class="screen ds-screen" id="datasetScreen" role="tabpanel" aria-labelledby="screenTabDatasets" hidden>
+    <aside class="ds-list">
+      <div class="ds-list-head">
+        <span>데이터셋</span>
+        <button class="btn primary small" id="dsNewBtn" type="button">＋ 새 데이터셋</button>
+      </div>
+      <div class="ds-items" id="dsItems"></div>
+      <div class="ds-list-foot">
+        <button class="btn small" id="dsSampleBtn" type="button">샘플 데이터셋 불러오기</button>
+        <button class="btn small" id="dsAdvancedBtn" type="button">advanced 샘플 데이터셋 불러오기</button>
+        <label class="btn small">
+          JSON 파일 가져오기
+          <input type="file" id="dsImportInput" accept=".json,application/json" hidden>
+        </label>
+      </div>
+    </aside>
+    <div class="ds-main" id="dsMain"></div>
+  </section>
+
+  <script src="app.js"></script>
+  <script src="lineage.js"></script>
+  <script src="schema.js"></script>
+  <script src="datasets.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="warehouse">
+
+  <resultMap id="WarehouseResult" class="Warehouse">
+    <result property="warehouseId" column="WAREHOUSE_ID"/>
+    <result property="warehouseName" column="WAREHOUSE_NAME"/>
+    <result property="region" column="REGION"/>
+  </resultMap>
+
+  <select id="getAllWarehouses" resultMap="WarehouseResult">
+    SELECT WAREHOUSE_ID, WAREHOUSE_NAME, REGION
+    FROM WAREHOUSES
+    ORDER BY WAREHOUSE_NAME
+  </select>
+
+  <select id="getWarehouseById" parameterClass="int" resultMap="WarehouseResult">
+    SELECT WAREHOUSE_ID, WAREHOUSE_NAME, REGION
+    FROM WAREHOUSES
+    WHERE WAREHOUSE_ID = #warehouseId#
+  </select>
+
+  <select id="getWarehousesByRegion" parameterClass="map" resultMap="WarehouseResult">
+    SELECT WAREHOUSE_ID, WAREHOUSE_NAME, REGION
+    FROM WAREHOUSES
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="region" prepend="AND">
+        REGION = #region#
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+</sqlMap>

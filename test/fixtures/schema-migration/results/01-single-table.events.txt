@@ -1,0 +1,12 @@
+[SAFE] getCustomer TABLE_RENAMED: TB_CUST_M -> CUSTOMER (alias C kept)
+[SAFE] getCustomer COLUMN_RENAMED: TB_CUST_M.CUST_NO -> CUSTOMER_ID
+[SAFE] getCustomer COLUMN_RENAMED: TB_CUST_M.CUST_NM -> CUSTOMER_NAME
+[SAFE] getCustomer COLUMN_RENAMED: TB_CUST_M.RGN_CD -> REGION_CODE
+[SAFE] getCustomer COLUMN_RENAMED: TB_CUST_M.CUST_NO -> CUSTOMER_ID
+[SAFE] getCustomer COLUMN_RENAMED: TB_CUST_M.USE_YN -> IS_ACTIVE
+[SAFE] getCustomerByMap TABLE_RENAMED: TB_CUST_M -> CUSTOMER
+[SAFE] getCustomerByMap COLUMN_RENAMED: TB_CUST_M.CUST_NO -> CUSTOMER_ID
+[WARNING] getCustomerByMap RESULT_COLUMN_RENAMED: result column CUST_NO is now labelled CUSTOMER_ID: update resultMap column="CUST_NO" / the mapped property, or enable preserveResultColumnNames
+[SAFE] getCustomerByMap COLUMN_RENAMED: TB_CUST_M.CUST_NM -> CUSTOMER_NAME
+[WARNING] getCustomerByMap RESULT_COLUMN_RENAMED: result column CUST_NM is now labelled CUSTOMER_NAME: update resultMap column="CUST_NM" / the mapped property, or enable preserveResultColumnNames
+[SAFE] getCustomerByMap COLUMN_RENAMED: TB_CUST_M.CUST_NO -> CUSTOMER_ID

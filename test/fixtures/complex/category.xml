@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="category">
+
+  <resultMap id="CategoryResult" class="Category">
+    <result property="categoryId" column="CATEGORY_ID"/>
+    <result property="categoryName" column="CATEGORY_NAME"/>
+    <result property="parentId" column="PARENT_ID"/>
+  </resultMap>
+
+  <resultMap id="CategoryWithParentResult" class="CategoryDetail" extends="CategoryResult">
+    <result property="parentName" column="PARENT_NAME"/>
+  </resultMap>
+
+  <select id="getAllCategories" resultMap="CategoryResult">
+    SELECT CATEGORY_ID, CATEGORY_NAME, PARENT_ID
+    FROM CATEGORIES
+    ORDER BY CATEGORY_NAME
+  </select>
+
+  <select id="getRootCategories" resultMap="CategoryResult">
+    SELECT CATEGORY_ID, CATEGORY_NAME, PARENT_ID
+    FROM CATEGORIES
+    WHERE PARENT_ID IS NULL
+  </select>
+
+  <select id="getCategoryWithParent" parameterClass="int" resultMap="CategoryWithParentResult">
+    SELECT
+        C.CATEGORY_ID, C.CATEGORY_NAME, C.PARENT_ID,
+        P.CATEGORY_NAME AS PARENT_NAME
+    FROM CATEGORIES C
+    LEFT JOIN CATEGORIES P
+        ON C.PARENT_ID = P.CATEGORY_ID
+    WHERE C.CATEGORY_ID = #categoryId#
+  </select>
+
+  <select id="getChildCategories" parameterClass="int" resultMap="CategoryResult">
+    SELECT CATEGORY_ID, CATEGORY_NAME, PARENT_ID
+    FROM CATEGORIES
+    WHERE PARENT_ID = #parentId#
+  </select>
+
+  <select id="getCategoriesByIds" parameterClass="map" resultMap="CategoryResult">
+    SELECT CATEGORY_ID, CATEGORY_NAME, PARENT_ID
+    FROM CATEGORIES
+    WHERE CATEGORY_ID IN
+    <iterate property="ids" open="(" close=")" conjunction=",">
+      #ids[]#
+    </iterate>
+  </select>
+
+</sqlMap>

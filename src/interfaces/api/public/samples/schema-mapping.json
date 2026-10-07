@@ -1,0 +1,44 @@
+{
+  "CUSTOMER": {
+    "targetTable": "CRM.CUSTOMER_MASTER",
+    "columns": {
+      "CUSTOMER_ID": "CUST_ID",
+      "CUSTOMER_NAME": "CUST_NAME",
+      "REGION_CODE": "RGN_CODE",
+      "STATUS": "CUST_STATUS",
+      "GRADE": "CUST_GRADE",
+      "CREATED_AT": "REG_DTM",
+      "UPDATED_AT": "MOD_DTM"
+    }
+  },
+  "ORDERS": {
+    "targetTable": "SALES_ORDER",
+    "columns": {
+      "ORDER_ID": "ORD_ID",
+      "CUSTOMER_ID": "CUST_ID",
+      "STATUS": "ORD_STATUS",
+      "TOTAL_AMOUNT": "ORD_AMT",
+      "ORDER_DATE": "ORD_DTM",
+      "CHANNEL": "SALES_CHANNEL"
+    }
+  },
+  "ORDER_DETAIL": {
+    "targetTable": "SALES_ORDER_ITEM",
+    "columns": { "ORDER_ID": "ORD_ID", "PRODUCT_ID": "PRD_ID", "QUANTITY": "ITEM_QTY", "UNIT_PRICE": "ITEM_PRICE" }
+  },
+  "PRODUCT": {
+    "targetTable": "PRD_PRODUCT",
+    "columns": { "PRODUCT_ID": "PRD_ID", "PRODUCT_NAME": "PRD_NAME", "CATEGORY_ID": "CTG_ID", "STATUS": "SALE_STATUS" }
+  },
+  "PAYMENT": {
+    "targetTable": "BILLING.PAYMENT",
+    "columns": { "CUSTOMER_ID": "CUST_ID", "ORDER_ID": "ORD_ID", "PAYMENT_AMOUNT": "PAY_AMT", "PAYMENT_TYPE": "PAY_METHOD" }
+  },
+  "CATEGORY": {
+    "targetTable": "PRD_CATEGORY",
+    "columns": { "CATEGORY_ID": "CTG_ID", "CATEGORY_NAME": "CTG_NAME", "PARENT_ID": "PARENT_CTG_ID" }
+  },
+  "REGION": {
+    "columns": { "REGION_CODE": "RGN_CODE", "REGION_NAME": "RGN_NAME" }
+  }
+}

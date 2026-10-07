@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="auditLog">
+
+  <resultMap id="AuditLogResult" class="AuditLog">
+    <result property="logId" column="LOG_ID"/>
+    <result property="entityName" column="ENTITY_NAME"/>
+    <result property="entityId" column="ENTITY_ID"/>
+    <result property="action" column="ACTION"/>
+    <result property="changedBy" column="CHANGED_BY"/>
+    <result property="changedAt" column="CHANGED_AT"/>
+  </resultMap>
+
+  <select id="getLogsForEntity" parameterClass="map" resultMap="AuditLogResult">
+    SELECT LOG_ID, ENTITY_NAME, ENTITY_ID, ACTION, CHANGED_BY, CHANGED_AT
+    FROM AUDIT_LOGS
+    WHERE ENTITY_NAME = #entityName#
+      AND ENTITY_ID = #entityId#
+    ORDER BY CHANGED_AT DESC
+  </select>
+
+  <select id="searchLogs" parameterClass="map" resultMap="AuditLogResult">
+    SELECT LOG_ID, ENTITY_NAME, ENTITY_ID, ACTION, CHANGED_BY, CHANGED_AT
+    FROM AUDIT_LOGS
+    <dynamic prepend="WHERE">
+      <isNotNull property="entityName" prepend="AND">
+        ENTITY_NAME = #entityName#
+      </isNotNull>
+      <isNotNull property="action" prepend="AND">
+        ACTION = #action#
+      </isNotNull>
+      <isNotNull property="changedBy" prepend="AND">
+        CHANGED_BY = #changedBy#
+      </isNotNull>
+      <isGreaterThan property="since" compareValue="0" prepend="AND">
+        CHANGED_AT &gt;= #since#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY $orderBy$
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getRecentLogsByUser" parameterClass="map" resultMap="AuditLogResult">
+    SELECT LOG_ID, ENTITY_NAME, ENTITY_ID, ACTION, CHANGED_BY, CHANGED_AT
+    FROM AUDIT_LOGS
+    WHERE CHANGED_BY = #changedBy#
+    ORDER BY CHANGED_AT DESC
+    <include refid="common.pagination"/>
+  </select>
+
+</sqlMap>

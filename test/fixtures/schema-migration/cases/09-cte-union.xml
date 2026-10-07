@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="stat">
+
+  <!-- CTE + UNION ALL, 매핑에 없는 테이블(TB_ORD_H_ARCH)은 그대로 -->
+  <select id="monthlySales" parameterClass="map" resultClass="java.util.HashMap">
+    WITH MONTHLY AS (
+      SELECT TO_CHAR(ORD_DT, 'YYYYMM') AS YM, TOT_AMT
+        FROM TB_ORD_H
+       WHERE ORD_STAT_CD = '90'
+      UNION ALL
+      SELECT TO_CHAR(ORD_DT, 'YYYYMM') AS YM, TOT_AMT
+        FROM TB_ORD_H_ARCH
+    )
+    SELECT M.YM AS ym, SUM(M.TOT_AMT) AS salesAmt
+      FROM MONTHLY M
+     GROUP BY M.YM
+     ORDER BY ym
+  </select>
+
+  <!-- 코드 테이블 CTE: CTE 컬럼이 원본 매핑을 따라 바뀜 -->
+  <select id="statusSummary" resultClass="java.util.HashMap">
+    WITH STAT_CD AS (
+      SELECT CD, CD_NM FROM TB_CMM_CD WHERE GRP_CD = 'ORD_STAT'
+    )
+    SELECT S.CD_NM AS statNm, COUNT(H.ORD_NO) AS cnt
+      FROM STAT_CD S
+      LEFT JOIN TB_ORD_H H ON H.ORD_STAT_CD = S.CD
+     GROUP BY S.CD_NM
+  </select>
+
+</sqlMap>

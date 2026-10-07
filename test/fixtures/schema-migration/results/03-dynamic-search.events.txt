@@ -1,0 +1,10 @@
+[SAFE] searchOrders TABLE_RENAMED: TB_ORD_H -> ORDERS (alias H kept)
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.ORD_NO -> ORDER_ID
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.TOT_AMT -> TOTAL_AMOUNT
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.ORD_STAT_CD -> STATUS
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.CUST_NO -> CUSTOMER_ID
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.ORD_DT -> ORDERED_AT
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.TOT_AMT -> TOTAL_AMOUNT
+[SAFE] searchOrders COLUMN_RENAMED: TB_ORD_H.ORD_STAT_CD -> STATUS
+[WARNING] searchOrders RUNTIME_SUBSTITUTION: ${sortColumn} is substituted at runtime: any table or column name it carries is not migrated here — check the values the caller passes
+[WARNING] searchOrders RUNTIME_SUBSTITUTION: ${sortDir} is substituted at runtime: any table or column name it carries is not migrated here — check the values the caller passes

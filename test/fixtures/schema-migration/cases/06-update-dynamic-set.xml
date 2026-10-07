@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="customer">
+
+  <!-- dynamic SET -> <set>, 각 조각의 컬럼 변환 -->
+  <update id="updateCustomer" parameterClass="Customer">
+    UPDATE TB_CUST_M
+    <dynamic prepend="SET">
+      <isNotNull property="custNm" prepend=",">CUST_NM = #custNm#</isNotNull>
+      <isNotNull property="rgnCd" prepend=",">RGN_CD = #rgnCd#</isNotNull>
+      <isNotNull property="useYn" prepend=",">USE_YN = #useYn#</isNotNull>
+    </dynamic>
+     WHERE CUST_NO = #custNo#
+  </update>
+
+  <!-- 서브쿼리로 값 갱신 -->
+  <update id="refreshOrderTotal" parameterClass="string">
+    UPDATE TB_ORD_H H
+       SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC) FROM TB_ORD_D D WHERE D.ORD_NO = H.ORD_NO)
+     WHERE H.ORD_NO = #ordNo#
+  </update>
+
+</sqlMap>

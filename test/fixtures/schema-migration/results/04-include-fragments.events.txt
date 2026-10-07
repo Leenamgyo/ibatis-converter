@@ -1,0 +1,11 @@
+[SAFE] listProducts TABLE_RENAMED: TB_PRD_M -> PRODUCT (alias P kept)
+[SAFE] countProducts TABLE_RENAMED: TB_PRD_M -> PRODUCT
+[SAFE] countActiveCustomers TABLE_RENAMED: TB_CUST_M -> CUSTOMER
+[SAFE] productColumns FRAGMENT_CONTEXT_INFERRED: <sql id="productColumns"> has no table of its own; resolved against TB_PRD_M P from its 1 include site(s)
+[SAFE] productColumns COLUMN_RENAMED: TB_PRD_M.PRD_CD -> PRODUCT_ID
+[SAFE] productColumns COLUMN_RENAMED: TB_PRD_M.PRD_NM -> PRODUCT_NAME
+[SAFE] productColumns COLUMN_RENAMED: TB_PRD_M.CTG_CD -> CATEGORY_CODE
+[SAFE] categoryFilter FRAGMENT_CONTEXT_INFERRED: <sql id="categoryFilter"> has no table of its own; resolved against TB_PRD_M P, TB_PRD_M from its 2 include site(s)
+[SAFE] categoryFilter COLUMN_RENAMED: TB_PRD_M.CTG_CD -> CATEGORY_CODE
+[MANUAL] activeOnly FRAGMENT_CONTEXT_CONFLICT: <sql id="activeOnly"> converts differently depending on which statement includes it; only its self-contained references were migrated — pass fragmentContexts["product.activeOnly"] or split the fragment
+[WARNING] activeOnly NO_TABLE_CONTEXT: "USE_YN" is a legacy column name but no table is in scope (a <sql> fragment nothing includes, or no contextTable given); left as is — pass contextTable / fragmentContexts

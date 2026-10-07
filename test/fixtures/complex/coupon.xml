@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="coupon">
+
+  <resultMap id="CouponResult" class="Coupon">
+    <result property="couponId" column="COUPON_ID"/>
+    <result property="couponCode" column="COUPON_CODE"/>
+    <result property="discountRate" column="DISCOUNT_RATE"/>
+    <result property="startDate" column="START_DATE"/>
+    <result property="endDate" column="END_DATE"/>
+    <result property="status" column="STATUS"/>
+  </resultMap>
+
+  <select id="getCouponByCode" parameterClass="string" resultMap="CouponResult">
+    SELECT COUPON_ID, COUPON_CODE, DISCOUNT_RATE, START_DATE, END_DATE, STATUS
+    FROM COUPONS
+    WHERE COUPON_CODE = #couponCode#
+  </select>
+
+  <select id="getActiveCoupons" parameterClass="map" resultMap="CouponResult">
+    SELECT COUPON_ID, COUPON_CODE, DISCOUNT_RATE, START_DATE, END_DATE, STATUS
+    FROM COUPONS
+    WHERE
+    <include refid="common.activeStatusCondition"/>
+    <dynamic prepend="AND">
+      <isGreaterThan property="asOf" compareValue="0" prepend="AND">
+        END_DATE &gt;= #asOf#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY END_DATE ASC
+  </select>
+
+  <select id="searchCoupons" parameterClass="map" resultMap="CouponResult">
+    SELECT COUPON_ID, COUPON_CODE, DISCOUNT_RATE, START_DATE, END_DATE, STATUS
+    FROM COUPONS
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="code" prepend="AND">
+        COUPON_CODE LIKE #code#
+      </isNotEmpty>
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+      </isNotNull>
+      <isGreaterThan property="startAfter" compareValue="0" prepend="AND">
+        START_DATE &gt;= #startAfter#
+      </isGreaterThan>
+      <isLessThan property="endBefore" compareValue="0" prepend="AND">
+        END_DATE &lt;= #endBefore#
+      </isLessThan>
+    </dynamic>
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getCouponsByCodes" parameterClass="map" resultMap="CouponResult">
+    SELECT COUPON_ID, COUPON_CODE, DISCOUNT_RATE, START_DATE, END_DATE, STATUS
+    FROM COUPONS
+    WHERE COUPON_CODE IN
+    <iterate property="codes" open="(" close=")" conjunction=",">
+      #codes[]#
+    </iterate>
+  </select>
+
+</sqlMap>

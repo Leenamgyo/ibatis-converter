@@ -1,0 +1,16 @@
+[SAFE] paymentAudit TABLE_RENAMED: LEGACY.TB_PAY_H -> BILLING.PAYMENT (alias PY kept)
+[SAFE] paymentAudit TABLE_RENAMED: TB_ORD_H -> ORDERS (alias H kept)
+[SAFE] paymentAudit COLUMN_RENAMED: TB_PAY_H.PAY_NO -> PAYMENT_ID
+[SAFE] paymentAudit COLUMN_RENAMED: TB_PAY_H.PAY_AMT -> AMOUNT
+[SAFE] paymentAudit COLUMN_RENAMED: TB_ORD_H.ORD_NO -> ORDER_ID
+[SAFE] paymentAudit COLUMN_RENAMED: TB_PAY_H.ORD_NO -> ORDER_ID
+[SAFE] paymentAudit COLUMN_RENAMED: TB_ORD_H.ORD_NO -> ORDER_ID
+[SAFE] paymentAudit COLUMN_RENAMED: TB_PAY_H.PAY_DT -> PAID_AT
+[WARNING] paymentAudit HINT_NOT_MIGRATED: optimizer hint /*+ INDEX(TB_ORD_H IDX_ORD_01) */ names TB_ORD_H; hints are comments and are not rewritten
+[SAFE] logJoin TABLE_RENAMED: TB_ORD_H -> ORDERS (alias H kept)
+[WARNING] logJoin COLUMN_ASSUMED: TB_ORD_H.ORD_STAT_CD -> STATUS (assumed: TB_LOG L in the same scope is not in the mapping)
+[WARNING] logJoin RESULT_COLUMN_RENAMED: result column ORD_STAT_CD is now labelled STATUS: update resultMap column="ORD_STAT_CD" / the mapped property, or enable preserveResultColumnNames
+[SAFE] logJoin COLUMN_RENAMED: TB_ORD_H.ORD_NO -> ORDER_ID
+[SAFE] ambiguousColumn TABLE_RENAMED: TB_CUST_M -> CUSTOMER (alias C kept)
+[SAFE] ambiguousColumn TABLE_RENAMED: TB_PRD_M -> PRODUCT (alias P kept)
+[MANUAL] ambiguousColumn COLUMN_AMBIGUOUS: unqualified "USE_YN" could be TB_CUST_M.USE_YN -> IS_ACTIVE or TB_PRD_M.USE_YN -> IS_SELLABLE; qualify it with a table alias

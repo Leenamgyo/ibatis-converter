@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+
+  <!-- 상관 서브쿼리 EXISTS + IN 서브쿼리 -->
+  <delete id="deleteOrphanItems">
+    DELETE FROM TB_ORD_D D
+     WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
+        OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
+  </delete>
+
+  <!-- FROM 없는 Oracle 스타일 DELETE -->
+  <delete id="deleteCode" parameterClass="map">
+    DELETE TB_CMM_CD WHERE GRP_CD = #grpCd# AND CD = #cd#
+  </delete>
+
+</sqlMap>

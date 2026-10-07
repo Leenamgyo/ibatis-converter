@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="shipping">
+
+  <resultMap id="ShippingAddressResult" class="ShippingAddress">
+    <result property="addressId" column="ADDRESS_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="receiver" column="RECEIVER"/>
+    <result property="addressLine" column="ADDRESS_LINE"/>
+    <result property="city" column="CITY"/>
+    <result property="zipCode" column="ZIP_CODE"/>
+    <result property="isDefault" column="IS_DEFAULT"/>
+  </resultMap>
+
+  <select id="getAddressesForUser" parameterClass="int" resultMap="ShippingAddressResult">
+    SELECT ADDRESS_ID, USER_ID, RECEIVER, ADDRESS_LINE, CITY, ZIP_CODE, IS_DEFAULT
+    FROM SHIPPING_ADDRESSES
+    WHERE USER_ID = #userId#
+    ORDER BY IS_DEFAULT DESC
+  </select>
+
+  <select id="getDefaultAddress" parameterClass="int" resultMap="ShippingAddressResult">
+    SELECT ADDRESS_ID, USER_ID, RECEIVER, ADDRESS_LINE, CITY, ZIP_CODE, IS_DEFAULT
+    FROM SHIPPING_ADDRESSES
+    WHERE USER_ID = #userId#
+      AND IS_DEFAULT = 1
+  </select>
+
+  <select id="searchAddresses" parameterClass="map" resultMap="ShippingAddressResult">
+    SELECT ADDRESS_ID, USER_ID, RECEIVER, ADDRESS_LINE, CITY, ZIP_CODE, IS_DEFAULT
+    FROM SHIPPING_ADDRESSES
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="city" prepend="AND">
+        CITY = #city#
+      </isNotEmpty>
+      <isNotEmpty property="zipCode" prepend="AND">
+        ZIP_CODE = #zipCode#
+      </isNotEmpty>
+    </dynamic>
+  </select>
+
+</sqlMap>

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="basic">
+
+  <!-- The write side of the old scenario 1. These moved out of the sample
+       project (which is SELECT-only, so the UI's lineage/dynamic-SQL
+       screens only ever show reads) but the behaviour they cover is real
+       and still shipped: both <selectKey> timings, a parameterMap-driven
+       insert the converter refuses to auto-convert, INSERT ... SELECT's
+       read side, and UPDATE/DELETE driven by a subquery.
+       See test/integration/writeStatements.test.js. -->
+
+  <parameterMap id="customerInsertParams" class="CustomerVO">
+    <parameter property="customerName" jdbcType="VARCHAR"/>
+    <parameter property="email" jdbcType="VARCHAR"/>
+    <parameter property="regionCode" jdbcType="VARCHAR"/>
+  </parameterMap>
+
+  <insert id="insertCustomer" parameterClass="CustomerVO">
+    <selectKey keyProperty="customerId" resultClass="int" type="pre">
+      SELECT NEXT_CUSTOMER_ID AS ID FROM ID_SEQUENCE
+    </selectKey>
+    INSERT INTO CUSTOMER (CUSTOMER_ID, CUSTOMER_NAME, EMAIL, STATUS, REGION_CODE)
+    VALUES (#customerId#, #customerName#, #email#, 'ACTIVE', #regionCode#)
+  </insert>
+
+  <insert id="insertOrderWithPostKey" parameterClass="OrderVO">
+    INSERT INTO ORDERS (CUSTOMER_ID, STATUS, TOTAL_AMOUNT)
+    VALUES (#customerId#, #status#, #totalAmount#)
+    <selectKey keyProperty="orderId" resultClass="int" type="post">
+      SELECT LAST_ORDER_ID AS ID FROM ID_SEQUENCE
+    </selectKey>
+  </insert>
+
+  <insert id="insertCustomerByParameterMap" parameterMap="customerInsertParams">
+    INSERT INTO CUSTOMER (CUSTOMER_NAME, EMAIL, REGION_CODE)
+    VALUES (?, ?, ?)
+  </insert>
+
+  <update id="updateCustomerEmail" parameterClass="CustomerVO">
+    UPDATE CUSTOMER
+    SET EMAIL = #email#, UPDATED_AT = #updatedAt#
+    WHERE CUSTOMER_ID = #customerId#
+  </update>
+
+  <update id="closeCustomersWithoutOrders" parameterClass="map">
+    UPDATE CUSTOMER
+    SET STATUS = 'CLOSED', UPDATED_AT = #updatedAt#
+    WHERE CUSTOMER_ID NOT IN (SELECT O.CUSTOMER_ID FROM ORDERS O WHERE O.STATUS = 'COMPLETED')
+  </update>
+
+  <delete id="deleteOrphanOrderDetails" parameterClass="map">
+    DELETE FROM ORDER_DETAIL
+    WHERE ORDER_ID IN (SELECT O.ORDER_ID FROM ORDERS O WHERE O.STATUS = #status#)
+  </delete>
+
+  <delete id="deleteCustomer" parameterClass="int">
+    DELETE FROM CUSTOMER
+    WHERE CUSTOMER_ID = #customerId#
+  </delete>
+
+  <insert id="archiveCustomersFromSelect" parameterClass="map">
+    INSERT INTO ARCHIVED_CUSTOMER (CUSTOMER_ID, CUSTOMER_NAME, ARCHIVED_AT)
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME, #archivedAt#
+    FROM CUSTOMER C
+    WHERE C.STATUS = 'CLOSED'
+  </insert>
+
+</sqlMap>

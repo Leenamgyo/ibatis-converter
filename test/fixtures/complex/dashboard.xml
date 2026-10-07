@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="dashboard">
+
+  <select id="getDailyOrderCounts" parameterClass="map" resultClass="map">
+    SELECT
+        DATE(ORDERED_AT) AS ORDER_DATE,
+        COUNT(*) AS ORDER_COUNT,
+        SUM(TOTAL_AMOUNT) AS DAILY_TOTAL
+    FROM ORDERS
+    WHERE ORDERED_AT &gt;= #since#
+    <dynamic prepend="AND">
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+      </isNotNull>
+    </dynamic>
+    GROUP BY DATE(ORDERED_AT)
+    ORDER BY ORDER_DATE ASC
+  </select>
+
+  <select id="getRevenueByCategory" resultClass="map">
+    SELECT
+        C.CATEGORY_NAME,
+        SUM(OI.QUANTITY * OI.UNIT_PRICE) AS REVENUE
+    FROM CATEGORIES C
+    INNER JOIN PRODUCTS P ON C.CATEGORY_ID = P.CATEGORY_ID
+    INNER JOIN ORDER_ITEMS OI ON P.PRODUCT_ID = OI.PRODUCT_ID
+    INNER JOIN ORDERS O ON OI.ORDER_ID = O.ORDER_ID
+    WHERE O.STATUS = 'COMPLETED'
+    GROUP BY C.CATEGORY_NAME
+    ORDER BY REVENUE DESC
+  </select>
+
+  <select id="getPendingPaymentOrders" resultClass="map">
+    SELECT
+        O.ORDER_ID,
+        O.TOTAL_AMOUNT,
+        COALESCE(SUM(P.AMOUNT), 0) AS PAID_SO_FAR
+    FROM ORDERS O
+    LEFT JOIN PAYMENTS P
+        ON O.ORDER_ID = P.ORDER_ID
+        AND P.STATUS = 'COMPLETED'
+    WHERE O.STATUS = 'PENDING'
+    GROUP BY O.ORDER_ID, O.TOTAL_AMOUNT
+    HAVING O.TOTAL_AMOUNT &gt; COALESCE(SUM(P.AMOUNT), 0)
+  </select>
+
+  <select id="getActiveCouponUsageEstimate" parameterClass="map" resultClass="map">
+    SELECT
+        CO.COUPON_CODE,
+        CO.DISCOUNT_RATE,
+        (SELECT COUNT(*) FROM ORDERS O WHERE O.ORDERED_AT BETWEEN CO.START_DATE AND CO.END_DATE) AS ORDERS_IN_WINDOW
+    FROM COUPONS CO
+    WHERE CO.STATUS = 'ACTIVE'
+    <dynamic prepend="AND">
+      <isGreaterThan property="minDiscountRate" compareValue="0" prepend="AND">
+        CO.DISCOUNT_RATE &gt;= #minDiscountRate#
+      </isGreaterThan>
+    </dynamic>
+  </select>
+
+  <select id="getLowStockAlerts" parameterClass="map" resultClass="map">
+    SELECT
+        P.PRODUCT_ID,
+        P.PRODUCT_NAME,
+        I.QUANTITY,
+        W.WAREHOUSE_NAME
+    FROM INVENTORY I
+    INNER JOIN PRODUCTS P ON I.PRODUCT_ID = P.PRODUCT_ID
+    INNER JOIN WAREHOUSES W ON I.WAREHOUSE_ID = W.WAREHOUSE_ID
+    WHERE I.QUANTITY &lt; #threshold#
+    ORDER BY I.QUANTITY ASC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getUnreadNotificationSummary" resultClass="map">
+    SELECT
+        U.USER_ID,
+        U.USERNAME,
+        COUNT(N.NOTIFICATION_ID) AS UNREAD_COUNT
+    FROM USERS U
+    INNER JOIN NOTIFICATIONS N
+        ON U.USER_ID = N.USER_ID
+        AND N.IS_READ = 0
+    GROUP BY U.USER_ID, U.USERNAME
+    HAVING COUNT(N.NOTIFICATION_ID) &gt; 0
+    ORDER BY UNREAD_COUNT DESC
+  </select>
+
+</sqlMap>

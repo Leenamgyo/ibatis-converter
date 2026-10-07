@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="auth">
+
+  <resultMap id="LoginHistoryResult" class="LoginHistory">
+    <result property="loginId" column="LOGIN_ID"/>
+    <result property="userId" column="USER_ID"/>
+    <result property="loginAt" column="LOGIN_AT"/>
+    <result property="ipAddress" column="IP_ADDRESS"/>
+    <result property="success" column="SUCCESS"/>
+  </resultMap>
+
+  <select id="getLoginHistoryForUser" parameterClass="map" resultMap="LoginHistoryResult">
+    SELECT LOGIN_ID, USER_ID, LOGIN_AT, IP_ADDRESS, SUCCESS
+    FROM LOGIN_HISTORY
+    WHERE USER_ID = #userId#
+    <dynamic prepend="AND">
+      <isNotNull property="success" prepend="AND">
+        SUCCESS = #success#
+      </isNotNull>
+      <isGreaterThan property="since" compareValue="0" prepend="AND">
+        LOGIN_AT &gt;= #since#
+      </isGreaterThan>
+    </dynamic>
+    ORDER BY LOGIN_AT DESC
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getRecentFailedLogins" parameterClass="map" resultMap="LoginHistoryResult">
+    SELECT LOGIN_ID, USER_ID, LOGIN_AT, IP_ADDRESS, SUCCESS
+    FROM LOGIN_HISTORY
+    WHERE SUCCESS = 0
+      AND LOGIN_AT &gt;= #since#
+    ORDER BY LOGIN_AT DESC
+  </select>
+
+  <select id="countFailedLoginsByIp" parameterClass="map" resultClass="int">
+    SELECT COUNT(*)
+    FROM LOGIN_HISTORY
+    WHERE IP_ADDRESS = #ipAddress#
+      AND SUCCESS = 0
+      AND LOGIN_AT &gt;= #since#
+  </select>
+
+</sqlMap>

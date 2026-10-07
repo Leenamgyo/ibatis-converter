@@ -1,0 +1,15 @@
+{
+  "name": "sample iBATIS project (9 SELECT scenarios + shared fragments)",
+  "files": [
+    "common.xml",
+    "01-basic-select.xml",
+    "02-dynamic.xml",
+    "03-join.xml",
+    "04-subquery.xml",
+    "05-union-cte.xml",
+    "06-refid.xml",
+    "07-resultmap.xml",
+    "08-legacy-report.xml",
+    "09-edge-cases.xml"
+  ]
+}

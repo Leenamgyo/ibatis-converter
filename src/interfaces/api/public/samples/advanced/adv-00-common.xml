@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE sqlMap PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN" "http://ibatis.apache.org/dtd/sql-map-2.dtd">
+<!-- 여러 매퍼가 공유하는 fragment (다른 namespace에서 cross-include) -->
+<sqlMap namespace="advCommon">
+
+  <!-- Oracle 페이징 머리/꼬리: 중첩 include 로 조립 -->
+  <sql id="pagingHead">
+    SELECT * FROM (SELECT ROWNUM AS RNUM, PG.* FROM (
+  </sql>
+  <sql id="pagingTail">
+    ) PG WHERE ROWNUM &lt;= #endRow#) WHERE RNUM &gt;= #startRow#
+  </sql>
+
+  <!-- FROM 없는 공통 감사 컬럼: alias O 문맥은 include 지점에서 추론 -->
+  <sql id="orderAuditColumns">
+    O.REG_ID AS regId, O.REG_DT AS regDt, O.UPD_ID AS updId, O.UPD_DT AS updDt
+  </sql>
+
+  <!-- 중첩 include: 기간 조건 안에서 다시 상태 조건 include -->
+  <sql id="orderPeriodCondition">
+    <isNotEmpty property="fromDt" prepend="AND">
+      O.ORD_DT &gt;= TO_DATE(#fromDt#, 'YYYYMMDD')
+    </isNotEmpty>
+    <isNotEmpty property="toDt" prepend="AND">
+      O.ORD_DT &lt; TO_DATE(#toDt#, 'YYYYMMDD') + 1
+    </isNotEmpty>
+    <include refid="advCommon.orderStatusCondition"/>
+  </sql>
+  <sql id="orderStatusCondition">
+    <isNotEmpty property="statList" prepend="AND">
+      O.ORD_STAT_CD IN
+      <iterate property="statList" open="(" close=")" conjunction=",">#statList[]#</iterate>
+    </isNotEmpty>
+  </sql>
+
+</sqlMap>

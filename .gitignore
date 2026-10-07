@@ -1,0 +1,5 @@
+node_modules/
+# schema-migration datasets saved from the UI (local working data)
+data/
+.DS_Store
+*.log

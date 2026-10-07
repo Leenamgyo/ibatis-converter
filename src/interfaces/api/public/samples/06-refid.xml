@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="frag">
+
+  <!-- Scenario 6 — <include refid> in every form the resolver has to
+       handle, including the two that are supposed to FAIL loudly as
+       diagnostics (missing target, circular chain) rather than throw. -->
+
+  <sql id="customerColumns">
+    C.CUSTOMER_ID, C.CUSTOMER_NAME, C.EMAIL
+  </sql>
+
+  <sql id="orderColumns">
+    O.ORDER_ID, O.ORDER_DATE, O.TOTAL_AMOUNT
+  </sql>
+
+  <!-- A fragment made of fragments, one of them from another mapper. -->
+  <sql id="customerAndAudit">
+    <include refid="customerColumns"/>,
+    <include refid="common.auditColumns"/>
+  </sql>
+
+  <sql id="orderJoin">
+    INNER JOIN ORDERS O ON O.CUSTOMER_ID = C.CUSTOMER_ID
+  </sql>
+
+  <select id="sameFileInclude" parameterClass="map" resultClass="map">
+    SELECT <include refid="customerColumns"/>
+    FROM CUSTOMER C
+    WHERE C.CUSTOMER_ID = #customerId#
+  </select>
+
+  <select id="crossMapperInclude" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, <include refid="common.auditColumns"/>
+    FROM CUSTOMER C
+    WHERE <include refid="common.activeCondition"/>
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="nestedFragmentInclude" parameterClass="map" resultClass="map">
+    SELECT <include refid="customerAndAudit"/>
+    FROM CUSTOMER C
+    WHERE C.CUSTOMER_ID = #customerId#
+  </select>
+
+  <!-- A fragment that contributes a JOIN, not columns: the include changes
+       the FROM shape. -->
+  <select id="includeSuppliesJoin" parameterClass="map" resultClass="map">
+    SELECT <include refid="customerColumns"/>, <include refid="orderColumns"/>
+    FROM CUSTOMER C
+    <include refid="orderJoin"/>
+    WHERE O.STATUS = #status#
+  </select>
+
+  <!-- A fragment nested two levels deep, from inside a dynamic block. -->
+  <select id="includeInsideDynamic" parameterClass="map" resultClass="map">
+    SELECT <include refid="customerColumns"/>
+    FROM CUSTOMER C
+    <dynamic prepend="WHERE">
+      <isNotNull property="onlyLive" prepend="AND">
+        <include refid="common.liveRowCondition"/>
+      </isNotNull>
+      <isNotNull property="customerId" prepend="AND">
+        C.CUSTOMER_ID = #customerId#
+      </isNotNull>
+    </dynamic>
+  </select>
+
+  <!-- Deliberately broken: refid points at nothing. Must surface as a
+       diagnostic + an UnresolvedInclude node, never as a thrown error. -->
+  <select id="missingRefid" parameterClass="map" resultClass="map">
+    SELECT <include refid="common.doesNotExist"/>
+    FROM CUSTOMER C
+  </select>
+
+  <!-- Deliberately broken: A -> B -> A. -->
+  <sql id="circularA">
+    C.CUSTOMER_ID, <include refid="circularB"/>
+  </sql>
+  <sql id="circularB">
+    C.CUSTOMER_NAME, <include refid="circularA"/>
+  </sql>
+
+  <select id="circularRefid" resultClass="map">
+    SELECT <include refid="circularA"/>
+    FROM CUSTOMER C
+  </select>
+
+</sqlMap>

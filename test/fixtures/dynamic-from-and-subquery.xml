@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="edge">
+
+  <!-- Where dynamic SQL and subqueries meet, in one file: five shapes
+       that flatten to valid SQL and one that can't. See
+       test/analyzer/dynamicFromAndSubquery.test.js. -->
+
+  <select id="subqueryInSelectList" parameterClass="map" resultClass="map">
+    SELECT P.PRODUCT_ID,
+           (SELECT COUNT(*) FROM PRODUCT_REVIEWS R WHERE R.PRODUCT_ID = P.PRODUCT_ID) AS REVIEW_COUNT
+    FROM PRODUCTS P
+  </select>
+
+  <select id="subqueryInFrom" parameterClass="map" resultClass="map">
+    SELECT T.ORDER_ID, T.TOTAL
+    FROM (SELECT ORDER_ID, SUM(TOTAL_AMOUNT) AS TOTAL FROM ORDERS GROUP BY ORDER_ID) T
+    WHERE T.TOTAL &gt;= #minTotal#
+  </select>
+
+  <select id="dynamicJoin" parameterClass="map" resultClass="map">
+    SELECT U.USER_ID
+    FROM USERS U
+    <isNotNull property="withOrders">
+      INNER JOIN ORDERS O ON U.USER_ID = O.USER_ID
+    </isNotNull>
+    WHERE U.STATUS = #status#
+  </select>
+
+  <select id="dynamicInsideSubquery" parameterClass="map" resultClass="map">
+    SELECT USER_ID FROM USERS
+    WHERE USER_ID IN (
+      SELECT USER_ID FROM ORDERS
+      <dynamic prepend="WHERE">
+        <isNotNull property="orderStatus" prepend="AND">STATUS = #orderStatus#</isNotNull>
+      </dynamic>
+    )
+  </select>
+
+  <select id="dynamicUnionBranch" parameterClass="map" resultClass="map">
+    SELECT USER_ID FROM USERS WHERE STATUS = #status#
+    <isNotNull property="includeArchived">
+      UNION
+      SELECT USER_ID FROM ARCHIVED_USERS WHERE STATUS = #status#
+    </isNotNull>
+  </select>
+
+  <!-- The one that can't flatten: two mutually exclusive branches each
+       supplying the FROM table. SqlFlattener keeps every branch (it has
+       no runtime parameter values to choose with), so this flattens to
+       "FROM ARCHIVED_ORDERS O ORDERS O" - not parseable, and reported as
+       a SQL_PARSE_FAILED warning rather than a thrown error. -->
+  <select id="mutuallyExclusiveFromBranches" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID
+    FROM
+    <isEqual property="scope" compareValue="ARCHIVE">
+      ARCHIVED_ORDERS O
+    </isEqual>
+    <isNotEqual property="scope" compareValue="ARCHIVE">
+      ORDERS O
+    </isNotEqual>
+    WHERE O.STATUS = #status#
+  </select>
+
+</sqlMap>

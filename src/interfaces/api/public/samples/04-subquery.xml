@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="sub">
+
+  <!-- Scenario 4 — every place a SELECT can nest inside another SELECT,
+       which is what the lineage dashboard's containment boxes are for:
+       SELECT list, FROM, JOIN, WHERE IN, WHERE EXISTS, and three levels
+       of nesting in one statement. -->
+
+  <select id="scalarSubqueryInSelectList" parameterClass="map" resultClass="map">
+    SELECT
+        C.CUSTOMER_ID,
+        C.CUSTOMER_NAME,
+        (SELECT MAX(O.ORDER_DATE) FROM ORDERS O WHERE O.CUSTOMER_ID = C.CUSTOMER_ID) AS lastOrderDate,
+        (SELECT COUNT(*) FROM ORDERS O2 WHERE O2.CUSTOMER_ID = C.CUSTOMER_ID) AS orderCount
+    FROM CUSTOMER C
+    WHERE C.STATUS = #status#
+  </select>
+
+  <select id="derivedTableInFrom" parameterClass="map" resultClass="map">
+    SELECT T.CUSTOMER_ID, T.TOTAL_PAYMENT
+    FROM (
+      SELECT PM.CUSTOMER_ID, SUM(PM.PAYMENT_AMOUNT) AS TOTAL_PAYMENT
+      FROM PAYMENT PM
+      GROUP BY PM.CUSTOMER_ID
+    ) T
+    WHERE T.TOTAL_PAYMENT &gt;= #minPayment#
+  </select>
+
+  <select id="derivedTableJoined" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME, P1.TOTAL_PAYMENT AS totalPayment
+    FROM CUSTOMER C
+    LEFT JOIN (
+      SELECT PM.CUSTOMER_ID, SUM(PM.PAYMENT_AMOUNT) AS TOTAL_PAYMENT
+      FROM PAYMENT PM
+      GROUP BY PM.CUSTOMER_ID
+    ) P1 ON P1.CUSTOMER_ID = C.CUSTOMER_ID
+    WHERE C.REGION_CODE = #regionCode#
+  </select>
+
+  <select id="whereInSubquery" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME
+    FROM CUSTOMER C
+    WHERE C.CUSTOMER_ID IN (
+      SELECT O.CUSTOMER_ID FROM ORDERS O WHERE O.STATUS = #orderStatus#
+    )
+  </select>
+
+  <select id="whereExistsCorrelated" parameterClass="map" resultClass="map">
+    SELECT P.PRODUCT_ID, P.PRODUCT_NAME
+    FROM PRODUCT P
+    WHERE EXISTS (
+      SELECT 1 FROM PRODUCT_REVIEW R WHERE R.PRODUCT_ID = P.PRODUCT_ID AND R.SCORE &gt;= #minScore#
+    )
+  </select>
+
+  <!-- Three levels: MAIN -> inline view -> its WHERE subquery. The
+       dashboard has to draw each one inside the one that owns it. -->
+  <select id="threeLevelNesting" parameterClass="map" resultClass="map">
+    SELECT C.CUSTOMER_ID, C.CUSTOMER_NAME, P1.TOTAL_PAYMENT AS totalPayment
+    FROM CUSTOMER C
+    LEFT JOIN (
+      SELECT PM.CUSTOMER_ID, SUM(PM.PAYMENT_AMOUNT) AS TOTAL_PAYMENT
+      FROM PAYMENT PM
+      WHERE PM.ORDER_ID IN (
+        SELECT OD.ORDER_ID FROM ORDER_DETAIL OD WHERE OD.QUANTITY &gt; #minQuantity#
+      )
+      GROUP BY PM.CUSTOMER_ID
+    ) P1 ON P1.CUSTOMER_ID = C.CUSTOMER_ID
+    WHERE C.STATUS = #status#
+  </select>
+
+  <select id="derivedTableOfDerivedTable" resultClass="map">
+    SELECT OUTER_T.CUSTOMER_ID, OUTER_T.PAID
+    FROM (
+      SELECT INNER_T.CUSTOMER_ID, SUM(INNER_T.AMOUNT) AS PAID
+      FROM (
+        SELECT PM.CUSTOMER_ID, PM.PAYMENT_AMOUNT AS AMOUNT
+        FROM PAYMENT PM
+        WHERE PM.PAYMENT_TYPE = 'CARD'
+      ) INNER_T
+      GROUP BY INNER_T.CUSTOMER_ID
+    ) OUTER_T
+  </select>
+
+</sqlMap>

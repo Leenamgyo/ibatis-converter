@@ -1,0 +1,116 @@
+{
+  "TB_ORD_H": {
+    "targetTable": "ORDERS",
+    "columns": {
+      "ORD_NO": "ORDER_ID",
+      "CUST_NO": "CUSTOMER_ID",
+      "ORD_DT": "ORDERED_AT",
+      "ORD_STAT_CD": "STATUS",
+      "TOT_AMT": "TOTAL_AMOUNT",
+      "ORD_CHNL_CD": "CHANNEL_CODE",
+      "SALE_EMP_NO": "SALES_REP_ID"
+    }
+  },
+  "TB_ORD_D": {
+    "targetTable": "ORDER_ITEM",
+    "columns": {
+      "ORD_NO": "ORDER_ID",
+      "ITEM_SEQ": "LINE_NO",
+      "PRD_CD": "PRODUCT_ID",
+      "ORD_QTY": "QUANTITY",
+      "UNIT_PRC": "UNIT_PRICE"
+    }
+  },
+  "TB_CUST_M": {
+    "targetTable": "CUSTOMER",
+    "columns": {
+      "CUST_NO": "CUSTOMER_ID",
+      "CUST_NM": "CUSTOMER_NAME",
+      "RGN_CD": "REGION_CODE",
+      "USE_YN": "IS_ACTIVE",
+      "CUST_GRD_CD": "GRADE_CODE"
+    }
+  },
+  "TB_PRD_M": {
+    "targetTable": "PRODUCT",
+    "columns": {
+      "PRD_CD": "PRODUCT_ID",
+      "PRD_NM": "PRODUCT_NAME",
+      "CTG_CD": "CATEGORY_ID",
+      "USE_YN": "IS_SELLABLE"
+    }
+  },
+  "TB_CTG_M": {
+    "targetTable": "CATEGORY",
+    "columns": {
+      "CTG_CD": "CATEGORY_ID",
+      "CTG_NM": "CATEGORY_NAME",
+      "UPPER_CTG_CD": "PARENT_CATEGORY_ID",
+      "SORT_SEQ": "SORT_ORDER"
+    }
+  },
+  "LEGACY.TB_PAY_H": {
+    "targetTable": "BILLING.PAYMENT",
+    "columns": {
+      "PAY_NO": "PAYMENT_ID",
+      "ORD_NO": "ORDER_ID",
+      "PAY_AMT": "AMOUNT",
+      "PAY_DT": "PAID_AT",
+      "PAY_MTHD_CD": "METHOD_CODE"
+    }
+  },
+  "TB_DLV_H": {
+    "targetTable": "DELIVERY",
+    "columns": {
+      "DLV_NO": "DELIVERY_ID",
+      "ORD_NO": "ORDER_ID",
+      "DLV_STAT_CD": "DELIVERY_STATUS",
+      "DLV_DT": "DELIVERED_AT",
+      "DLV_CMP_CD": "CARRIER_CODE",
+      "DLV_REQ_DT": "PROMISED_AT"
+    }
+  },
+  "TB_RTN_H": {
+    "targetTable": "RETURN_ORDER",
+    "columns": {
+      "RTN_NO": "RETURN_ID",
+      "ORD_NO": "ORDER_ID",
+      "RTN_AMT": "RETURN_AMOUNT",
+      "RTN_DT": "RETURNED_AT",
+      "RTN_RSN_CD": "REASON_CODE"
+    }
+  },
+  "TB_CPN_U": {
+    "targetTable": "COUPON_USAGE",
+    "columns": {
+      "CPN_NO": "COUPON_ID",
+      "ORD_NO": "ORDER_ID",
+      "DC_AMT": "DISCOUNT_AMOUNT"
+    }
+  },
+  "TB_EMP_M": {
+    "targetTable": "EMPLOYEE",
+    "columns": {
+      "EMP_NO": "EMPLOYEE_ID",
+      "EMP_NM": "EMPLOYEE_NAME",
+      "DEPT_CD": "DEPARTMENT_ID"
+    }
+  },
+  "TB_DEPT_M": {
+    "targetTable": "DEPARTMENT",
+    "columns": {
+      "DEPT_CD": "DEPARTMENT_ID",
+      "DEPT_NM": "DEPARTMENT_NAME",
+      "UPPER_DEPT_CD": "PARENT_DEPARTMENT_ID"
+    }
+  },
+  "TB_CMM_CD": {
+    "targetTable": "COMMON_CODE",
+    "columns": {
+      "GRP_CD": "GROUP_CODE",
+      "CD": "CODE",
+      "CD_NM": "CODE_NAME",
+      "SORT_SEQ": "SORT_ORDER"
+    }
+  }
+}

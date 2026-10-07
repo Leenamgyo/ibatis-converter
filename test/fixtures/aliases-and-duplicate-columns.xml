@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="report">
+
+  <select id="getUserOrderStatus" parameterClass="map" resultClass="map">
+    SELECT
+        U.STATUS,
+        O.STATUS
+    FROM USER U
+    INNER JOIN ORDERS O
+        ON U.USER_ID = O.USER_ID
+    WHERE U.STATUS = #userStatus#
+      AND O.STATUS = #orderStatus#
+  </select>
+
+</sqlMap>

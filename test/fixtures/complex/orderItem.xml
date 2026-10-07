@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="orderItem">
+
+  <resultMap id="OrderItemResult" class="OrderItem">
+    <result property="orderItemId" column="ORDER_ITEM_ID"/>
+    <result property="orderId" column="ORDER_ID"/>
+    <result property="productId" column="PRODUCT_ID"/>
+    <result property="quantity" column="QUANTITY"/>
+    <result property="unitPrice" column="UNIT_PRICE"/>
+  </resultMap>
+
+  <resultMap id="OrderItemDetailResult" class="OrderItemDetail" extends="OrderItemResult">
+    <result property="productName" column="PRODUCT_NAME"/>
+  </resultMap>
+
+  <select id="getItemsForOrder" parameterClass="int" resultMap="OrderItemDetailResult">
+    SELECT
+        OI.ORDER_ITEM_ID, OI.ORDER_ID, OI.PRODUCT_ID, OI.QUANTITY, OI.UNIT_PRICE,
+        P.PRODUCT_NAME
+    FROM ORDER_ITEMS OI
+    INNER JOIN PRODUCTS P
+        ON OI.PRODUCT_ID = P.PRODUCT_ID
+    WHERE OI.ORDER_ID = #orderId#
+  </select>
+
+  <select id="getItemsForOrders" parameterClass="map" resultMap="OrderItemResult">
+    SELECT ORDER_ITEM_ID, ORDER_ID, PRODUCT_ID, QUANTITY, UNIT_PRICE
+    FROM ORDER_ITEMS
+    WHERE ORDER_ID IN
+    <iterate property="orderIds" open="(" close=")" conjunction=",">
+      #orderIds[]#
+    </iterate>
+  </select>
+
+  <select id="getBestSellingProducts" parameterClass="map" resultClass="map">
+    SELECT
+        PRODUCT_ID,
+        SUM(QUANTITY) AS TOTAL_SOLD
+    FROM ORDER_ITEMS
+    GROUP BY PRODUCT_ID
+    ORDER BY TOTAL_SOLD DESC
+    <include refid="common.pagination"/>
+  </select>
+
+</sqlMap>

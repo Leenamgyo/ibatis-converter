@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="customer">
+
+  <resultMap id="customerResult" class="Customer">
+    <result property="custNo" column="CUST_NO"/>
+    <result property="custNm" column="CUST_NM"/>
+  </resultMap>
+
+  <!-- 단일 테이블 + alias, 컬럼 alias(AS) 유지, 매핑에 없는 컬럼(UPD_DT) 유지 -->
+  <select id="getCustomer" parameterClass="string" resultClass="Customer">
+    SELECT C.CUST_NO   AS custNo,
+           C.CUST_NM   AS custNm,
+           C.RGN_CD    AS rgnCd,
+           C.UPD_DT    AS updDt
+      FROM TB_CUST_M C
+     WHERE C.CUST_NO = #custNo#
+       AND C.USE_YN  = 'Y'
+  </select>
+
+  <!-- 컬럼 alias 없이 SELECT: resultMap column="CUST_NO" 와 어긋나므로 WARNING -->
+  <select id="getCustomerByMap" parameterClass="string" resultMap="customerResult">
+    SELECT CUST_NO, CUST_NM
+      FROM TB_CUST_M
+     WHERE CUST_NO = #custNo#
+  </select>
+
+</sqlMap>

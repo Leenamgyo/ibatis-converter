@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="common">
+
+  <sql id="memberCondition">
+    MEMBER_FLAG = 'Y'
+  </sql>
+
+  <sql id="activeCondition">
+    STATUS = 'ACTIVE'
+    AND
+    <include refid="memberCondition"/>
+  </sql>
+
+  <sql id="baseWhere">
+    WHERE
+    <include refid="activeCondition"/>
+  </sql>
+
+  <select id="getUser" parameterClass="map" resultClass="User">
+    SELECT USER_ID
+    FROM USER
+    <include refid="baseWhere"/>
+  </select>
+
+</sqlMap>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="user">
+
+  <parameterMap id="userParam" class="User">
+    <parameter property="id" jdbcType="NUMERIC" javaType="int"/>
+    <parameter property="name" jdbcType="VARCHAR" javaType="string"/>
+  </parameterMap>
+
+  <select id="getUserByParamMap" parameterMap="userParam" resultClass="User">
+    SELECT USER_ID, USER_NAME
+    FROM USER
+    WHERE USER_ID = ? AND USER_NAME = ?
+  </select>
+
+</sqlMap>

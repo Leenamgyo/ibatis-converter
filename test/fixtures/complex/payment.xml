@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="payment">
+
+  <resultMap id="PaymentResult" class="Payment">
+    <result property="paymentId" column="PAYMENT_ID"/>
+    <result property="orderId" column="ORDER_ID"/>
+    <result property="amount" column="AMOUNT"/>
+    <result property="method" column="METHOD"/>
+    <result property="status" column="STATUS"/>
+  </resultMap>
+
+  <select id="getPaymentsForOrder" parameterClass="int" resultMap="PaymentResult">
+    SELECT PAYMENT_ID, ORDER_ID, AMOUNT, METHOD, STATUS
+    FROM PAYMENTS
+    WHERE ORDER_ID = #orderId#
+  </select>
+
+  <select id="getPaymentById" parameterClass="int" resultMap="PaymentResult">
+    SELECT PAYMENT_ID, ORDER_ID, AMOUNT, METHOD, STATUS
+    FROM PAYMENTS
+    WHERE PAYMENT_ID = #paymentId#
+  </select>
+
+  <select id="searchPayments" parameterClass="map" resultMap="PaymentResult">
+    SELECT PAYMENT_ID, ORDER_ID, AMOUNT, METHOD, STATUS
+    FROM PAYMENTS
+    <dynamic prepend="WHERE">
+      <isNotNull property="method" prepend="AND">
+        METHOD = #method#
+      </isNotNull>
+      <isNotNull property="status" prepend="AND">
+        STATUS = #status#
+      </isNotNull>
+      <isGreaterThan property="minAmount" compareValue="0" prepend="AND">
+        AMOUNT &gt;= #minAmount#
+      </isGreaterThan>
+    </dynamic>
+    <include refid="common.pagination"/>
+  </select>
+
+  <select id="getTotalPaidForOrder" parameterClass="int" resultClass="map">
+    SELECT ORDER_ID, SUM(AMOUNT) AS TOTAL_PAID
+    FROM PAYMENTS
+    WHERE ORDER_ID = #orderId#
+      AND STATUS = 'COMPLETED'
+    GROUP BY ORDER_ID
+  </select>
+
+</sqlMap>
