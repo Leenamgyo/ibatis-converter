@@ -279,6 +279,9 @@ async function uploadPicked(entries, { buildCopies = 0, skippedDirs = 0 } = {}) 
   await uploadProject(mappers.map(({ sourceFile, file }) => fileItem(sourceFile, file, decodeXml)), progress);
   const mybatisCount = state.index?.files.filter((f) => f.syntax === 'mybatis').length ?? 0;
   const copies = state.index?.skipped.filter((x) => x.kind === 'BUILD_COPY').length ?? 0;
+  // an upload holds only the chosen folder: refids into another module can't be looked up from here
+  const missingRefids = state.index?.errors.filter((e) => e.code === 'MISSING_REFERENCE').length ?? 0;
+  fileCount.title = `${fileCount.title}${missingRefids ? `${fileCount.title ? '\n\n' : ''}찾지 못한 refid ${missingRefids}개: 다른 모듈의 <sql>이면 "경로 열기"/프로젝트 폴더(이 컴퓨터)로 여세요 — 같은 저장소 안에서 자동으로 찾습니다` : ''}`;
   fileCount.textContent = `매퍼 ${(state.index?.totals.files ?? mappers.length).toLocaleString()}개${mybatisCount ? ` (MyBatis ${mybatisCount.toLocaleString()})` : ''} · XML ${xmlCount.toLocaleString()}개 중${copies ? ` · 같은 매퍼 빌드 복사본 ${copies.toLocaleString()}개 제외` : ''}${buildCopies + skippedDirs ? ` · 도구 폴더(.git, node_modules…) 건너뜀` : ''}`;
 }
 
@@ -460,6 +463,8 @@ async function openByPath(dir) {
   fileCount.textContent = body.totals.files
     ? `매퍼 ${body.totals.files}개${mybatis ? ` (MyBatis ${mybatis})` : ''} · statement ${body.totals.statements.toLocaleString()}개${body.skipped.length ? ` · XML ${body.skipped.length}개 제외` : ''}`
     : `SQL 매퍼(iBATIS <sqlMap> / MyBatis <mapper>)를 찾지 못했습니다${body.skipped.length ? ` (XML ${body.skipped.length}개는 매퍼가 아님)` : ''}`;
+  // refid targets found outside the folder (a sibling module of the same repository)
+  if (body.references?.files) fileCount.textContent += ` · 프로젝트 밖 refid 대상 ${body.references.files}개 (${body.references.repoRoot})`;
   fileCount.title = body.skipped.length ? `건너뛴 XML:\n${body.skipped.map((x) => `${x.sourceFile} — ${x.reason}`).join('\n')}` : '';
   document.getElementById('pathInput').value = dir;
   try { localStorage.setItem('project.path', dir); } catch { /* not remembered */ }

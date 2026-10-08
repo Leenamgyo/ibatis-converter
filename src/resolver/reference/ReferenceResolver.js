@@ -38,19 +38,24 @@ export class ReferenceResolver {
   /**
    * @param {object} symbolTable
    * @param {DiagnosticBag} [diagnostics]
-   * @param {{ strictNamespaces?: Set<string> }} [options] strictNamespaces: mappers that are
-   *   MyBatis 3 — MyBatis resolves a bare refid in its own namespace only, never by a
-   *   project-wide unique id (iBATIS's useStatementNamespaces=false rule)
+   * @param {{ strictNamespaces?: Set<string>, mybatisNamespaces?: Set<string> }} [options]
+   *   strictNamespaces: no project-wide bare-id fallback for these namespaces at all.
+   *   mybatisNamespaces: MyBatis 3 mappers. A bare refid naming ANOTHER file's <sql> is still
+   *   found (projects do rely on it, and the tool must show where it points), with a
+   *   MYBATIS_BARE_REFID warning: MyBatis's own lookup prefixes the current namespace.
    */
-  constructor(symbolTable, diagnostics = new DiagnosticBag(), { strictNamespaces = new Set() } = {}) {
+  constructor(symbolTable, diagnostics = new DiagnosticBag(), { strictNamespaces = new Set(), mybatisNamespaces = new Set() } = {}) {
     this.symbolTable = symbolTable;
     this.diagnostics = diagnostics;
     this.strictNamespaces = strictNamespaces;
+    this.mybatisNamespaces = mybatisNamespaces;
     this.dependencyGraph = new DependencyGraph();
     /** @type {CircularReferenceInfo[]} */
     this.circularReferences = [];
     /** fragment qualifiedId -> namespaces of the statements that (transitively) include it */
     this.includerNamespaces = new Map();
+    /** `<include>`s that resolved nowhere: { refid, namespace (written in), root } — what to look for elsewhere */
+    this.missingIncludes = [];
     this._warned = new Set();
   }
 
@@ -227,6 +232,9 @@ export class ReferenceResolver {
     const target = this.includeTarget(refid, namespace, root);
     let { symbol } = target;
     const { missingMessage } = target;
+    if (target.rule === 'GLOBAL_UNIQUE' && this.mybatisNamespaces.has(namespace)) {
+      this._warnOnce(`mb|${namespace}|${refid}`, `<include refid="${refid}"> in MyBatis mapper ${namespace} names ${symbol.qualifiedId} in another file by its bare id. Shown as that fragment; MyBatis 3 looks a bare refid up as "${namespace}.${refid}" — write refid="${symbol.qualifiedId}" if the runtime can't find it`, includeNode, 'MYBATIS_BARE_REFID');
+    }
     if (target.rule === 'RUNTIME_SHADOWED') {
       this._warnOnce(`${namespace}|${refid}|${root}`, `<include refid="${refid}"> in a fragment of ${namespace}, included from ${root}: iBATIS/MyBatis resolve it against ${root} -> ${target.runtime.qualifiedId}, not ${target.written.qualifiedId}. Analysed as the runtime does; qualify the refid if ${target.written.qualifiedId} was meant`, includeNode, 'NESTED_REFID_SHADOWED');
     } else if (target.written && !target.runtime && root !== undefined && root !== namespace && !refid.includes('.')) {
@@ -238,6 +246,7 @@ export class ReferenceResolver {
       const key = `missing|${includeNode.sourceFile}|${includeNode.sourceLine}|${includeNode.refid}|${root}`;
       if (!this._warned.has(key)) {
         this._warned.add(key);
+        this.missingIncludes.push({ refid: includeNode.refid, namespace, root });
         this.diagnostics.error(
           missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found`,
           includeNode.sourceFile,

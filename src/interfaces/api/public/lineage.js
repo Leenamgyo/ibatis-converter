@@ -340,9 +340,17 @@ function renderXmlTree() {
   const summary = search ? el('div', { class: 'tree-search-summary', role: 'status' }) : null;
   if (summary) tree.appendChild(summary);
 
-  // built from the index alone: no file is read or parsed to draw the tree
-  for (const mapper of state.index?.files ?? []) {
+  // built from the index alone: no file is read or parsed to draw the tree.
+  // Mapper files found OUTSIDE the opened folder (refid targets in a sibling module) come last, apart.
+  const allFiles = state.index?.files ?? [];
+  const ordered = [...allFiles.filter((f) => !f.external), ...allFiles.filter((f) => f.external)];
+  let externalHeaderShown = false;
+  for (const mapper of ordered) {
     const hit = hitsByFile?.get(mapper.sourceFile);
+    if (mapper.external && !externalHeaderShown && (!hitsByFile || hit)) {
+      externalHeaderShown = true;
+      tree.appendChild(el('div', { class: 'tree-group', title: '열린 폴더 밖(같은 저장소의 다른 모듈)에서, 이 프로젝트의 refid가 가리키는 <sql>을 정의한 매퍼만 찾아 참조로 불러왔습니다' }, '프로젝트 밖 · refid 참조'));
+    }
     if (hitsByFile && !hit) continue;
     const fileKey = `file:${mapper.sourceFile}`;
     const folded = !search && lineageState.collapsedTree.has(fileKey);

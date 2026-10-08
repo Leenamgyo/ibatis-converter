@@ -8,6 +8,7 @@ import { IGNORED_DIRECTORIES } from '../../application/mapperDetection.js';
 import { ProjectSession, DirectorySource, UploadSource, createUploadSource } from '../../application/ProjectSession.js';
 import { DependencyAnalyzer } from '../../analyzer/dependency/DependencyAnalyzer.js';
 import { SessionManager } from './SessionManager.js';
+import { openProjectFolder } from '../../application/ReferenceDiscovery.js';
 import { XmlGenerator } from '../../generator/xml/XmlGenerator.js';
 import { IbatisXmlGenerator } from '../../generator/xml/IbatisXmlGenerator.js';
 import { validateMappingDefinition } from '../../converter/schema/index.js';
@@ -162,8 +163,9 @@ export function createApp({
       res.status(400).json({ error: 'Expected { path } naming an existing folder' });
       return;
     }
-    const session = new ProjectSession(new DirectorySource(dir)).open();
-    sendJson(req, res, indexBody(sessions.add(session), session));
+    // refids into a sibling module are looked up outside the folder too (ReferenceDiscovery)
+    const { session, references } = openProjectFolder(dir);
+    sendJson(req, res, { ...indexBody(sessions.add(session), session), references: { repoRoot: references.repoRoot, files: references.files.length, scanned: references.scanned } });
   });
 
   // The UI's version: the newest modification time of its static files. A tab left open across

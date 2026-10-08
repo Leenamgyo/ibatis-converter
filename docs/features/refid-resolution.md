@@ -27,7 +27,7 @@ happen to be loaded.
 |---|---|
 | QUALIFIED | the refid is a qualified id (`ns.id`) |
 | NAMESPACE | `<include>`'s own mapper has that id |
-| GLOBAL_UNIQUE | a bare id defined exactly once in the project (iBATIS `useStatementNamespaces=false`). **Not for MyBatis 3 mappers**: MyBatis looks in its own namespace only (`strictNamespaces`) |
+| GLOBAL_UNIQUE | a bare id defined exactly once in the project (iBATIS `useStatementNamespaces=false`). Also for MyBatis 3 mappers, which projects rely on: found, plus a `MYBATIS_BARE_REFID` warning, because MyBatis's own lookup prefixes the current namespace. A short-lived strict mode reported these as missing, which hid real cross-file references. |
 | RUNTIME_SHADOWED | a bare refid inside a fragment, included from a statement of another namespace that has its own fragment of that id: iBATIS / MyBatis resolve against the statement's namespace |
 | AUTHOR_NAMESPACE | …the statement's namespace has none: the fragment author's (MyBatis output writes it qualified) |
 | MISSING / CIRCULAR | not found, or two candidates (ambiguous), or a cycle |
@@ -93,6 +93,34 @@ every statement's refid chain exact (12 projects in `npm test`, 40 with
 `FUZZ_SEEDS`). On `../demo`, the `bin/` and `build/` copies are recognised
 as copies of the `src/` mappers. Each missing refid is now reported once per
 `<include>`, not once per statement that reaches it.
+
+## Fragments in another module (outside the opened folder)
+
+MyBatis loads mappers from the whole classpath, so a module's refids often
+point into a common module next to it. Opening only the module used to
+leave those "not found". Now, when opening a folder by path (경로 열기 /
+프로젝트 폴더 on this machine, and the CLI), unresolved refids are looked up
+**outside** it (`application/ReferenceDiscovery.js`, `openProjectFolder`):
+
+- **Where:** only inside the repository the folder belongs to: the nearest
+  ancestor with `.git`, else a multi-module build root (an ancestor with
+  pom.xml / build.gradle / settings.gradle). Never a plain parent folder
+  (`~/projects/*` are unrelated projects), never the home or root folder.
+- **What:** only files that define something missing. That is a qualified
+  refid's namespace, read from the file's head, or a bare refid's
+  `<sql id>`, which must be defined by exactly one file there.
+- **Rounds:** up to 3, since a fragment found outside may include another.
+- **How they're used:** they join the project as `external` reference files
+  (`ReferencedSource`, names like `../common/…/CommonMapper.xml`). They are
+  used for resolution and analysis, shown last in the tree under
+  "프로젝트 밖 · refid 참조", and never written out by the CLI.
+- **Uploads:** a browser upload holds only the chosen folder, so it can't
+  look outside. Its status says to open the folder by path instead.
+
+Test: `test/application/referenceDiscovery.test.js`. A `.git` repo with
+app / common / batch modules: qualified, bare and nested refids into common
+are found; a bare id defined in two modules is not guessed; an unrelated
+folder next to the repo is never read; the CLI writes only the app's files.
 
 ## Showing it
 

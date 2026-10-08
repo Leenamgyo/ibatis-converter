@@ -107,6 +107,35 @@ export class DirectorySource {
 }
 
 /**
+ * A folder plus mapper files found OUTSIDE it (ReferenceDiscovery: the
+ * `<sql>` its refids name, in a sibling module). External files are listed
+ * under their path relative to the folder (`../common/…/CommonMapper.xml`)
+ * and flagged `external`: they take part in reference resolution and
+ * analysis, and are shown apart; the CLI never writes them out.
+ */
+export class ReferencedSource extends DirectorySource {
+  constructor(root, externalFiles) {
+    super(root);
+    this.external = new Map(externalFiles.map((abs) => [path.relative(this.root, abs).split(path.sep).join('/'), abs]));
+  }
+
+  list() {
+    const own = super.list();
+    const external = [...this.external].map(([sourceFile, abs]) => ({ sourceFile, size: fs.statSync(abs).size, external: true }));
+    return [...own, ...external];
+  }
+
+  read(sourceFile) {
+    const abs = this.external.get(sourceFile);
+    return abs ? decodeXml(fs.readFileSync(abs)) : super.read(sourceFile);
+  }
+
+  classify(sourceFile) {
+    return this.external.has(sourceFile) ? null : super.classify(sourceFile); // externals were picked as mappers already
+  }
+}
+
+/**
  * Uploaded files (the browser's folder upload) are written to a temporary
  * directory and read back from disk like any project, so the server holds
  * no copy of their text; the directory is removed when the session closes.
@@ -208,7 +237,7 @@ export class ProjectSession {
     const skipped = [];
     const stubMappers = [];
     const candidates = []; // every mapper file read; copies are dropped below, by content
-    for (const { sourceFile, size } of this.source.list()) {
+    for (const { sourceFile, size, external = false } of this.source.list()) {
       // the same guards as scanProject: an oversized or unreadable file is listed, not fatal
       if (size > this.maxFileBytes) {
         skipped.push({ sourceFile, kind: 'TOO_LARGE', reason: `${Math.round(size / 1024 / 1024)}MB — ${Math.round(this.maxFileBytes / 1024 / 1024)}MB 초과` });
@@ -235,7 +264,7 @@ export class ProjectSession {
         continue;
       }
       const { sqlMap, mybatis, diagnostics: fileDiagnostics } = parseMapper(text, sourceFile, syntax);
-      const entry = { sourceFile, size, encoding, syntax, lines: text.split('\n').length, namespace: sqlMap?.namespace ?? null, parsed: Boolean(sqlMap), statements: [], fragments: [], resultMaps: [] };
+      const entry = { sourceFile, size, encoding, syntax, external, lines: text.split('\n').length, namespace: sqlMap?.namespace ?? null, parsed: Boolean(sqlMap), statements: [], fragments: [], resultMaps: [] };
       const candidate = { entry, fileDiagnostics, stub: null, signature: null };
       candidates.push(candidate);
       if (!sqlMap) continue;
@@ -292,9 +321,9 @@ export class ProjectSession {
 
     // project-wide reference graph on the stubs: same resolver, same rules, no file reads
     const { symbolTable } = buildSymbolTable(stubMappers, diagnostics);
-    // MyBatis mappers resolve a bare refid in their own namespace only
-    this.strictNamespaces = new Set(files.filter((f) => f.syntax === 'mybatis' && f.namespace !== null).map((f) => f.namespace));
-    const graph = new ReferenceResolver(symbolTable, diagnostics, { strictNamespaces: this.strictNamespaces });
+    // MyBatis mappers: a bare refid into another file is found, and flagged (MYBATIS_BARE_REFID)
+    this.mybatisNamespaces = new Set(files.filter((f) => f.syntax === 'mybatis' && f.namespace !== null).map((f) => f.namespace));
+    const graph = new ReferenceResolver(symbolTable, diagnostics, { mybatisNamespaces: this.mybatisNamespaces });
     for (const { sqlMap } of stubMappers) {
       for (const st of sqlMap.statements) {
         const qid = qualify(sqlMap.namespace, st.id);
@@ -396,7 +425,7 @@ export class ProjectSession {
 
   /** a resolver over the real (lazily loading) symbols — fresh per use, nothing accumulates */
   #realResolver() {
-    return new ReferenceResolver(this.realSymbols, new DiagnosticBag(), { strictNamespaces: this.strictNamespaces });
+    return new ReferenceResolver(this.realSymbols, new DiagnosticBag(), { mybatisNamespaces: this.mybatisNamespaces });
   }
 
   // ---------------------------------------------------------------- per statement
@@ -977,6 +1006,7 @@ export class ProjectSession {
         namespace: f.namespace,
         encoding: f.encoding,
         syntax: f.syntax,
+        external: f.external,
         lines: f.lines,
         parsed: f.parsed,
         statements: f.statements.map((s) => ({ ...s, includes: this.includedFragments(s.qualifiedId).length })),

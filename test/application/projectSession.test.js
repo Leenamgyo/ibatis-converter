@@ -297,7 +297,7 @@ test('refid accuracy: the schema converter resolves every include exactly as the
   }
 });
 
-test('MyBatis mappers resolve a bare refid in their own namespace only (no project-wide fallback)', () => {
+test('a MyBatis mapper\'s bare refid into another file is found, and flagged (MyBatis looks in its own namespace)', () => {
   const session = new ProjectSession(createUploadSource([
     { sourceFile: 'common.xml', source: '<sqlMap namespace="common"><sql id="cols">A, B</sql></sqlMap>' },
     { sourceFile: 'legacy.xml', source: '<sqlMap namespace="legacy"><select id="q">SELECT <include refid="cols"/> FROM T</select></sqlMap>' },
@@ -305,8 +305,11 @@ test('MyBatis mappers resolve a bare refid in their own namespace only (no proje
   ])).open();
   try {
     assert.equal(session.includeTree('legacy.q')[0].rule, 'GLOBAL_UNIQUE', 'iBATIS: a bare id unique in the project');
-    assert.equal(session.includeTree('mb.q')[0].unresolved, 'MISSING', 'MyBatis would not find it either');
-    assert.ok(session.summary().errors.some((e) => e.code === 'MISSING_REFERENCE' && e.sourceFile === 'mb.xml'));
+    const [include] = session.includeTree('mb.q');
+    assert.equal(include.qualifiedId, 'common.cols', 'found in the other file');
+    assert.equal(include.rule, 'GLOBAL_UNIQUE');
+    assert.ok(session.summary().warnings.some((w) => w.code === 'MYBATIS_BARE_REFID' && w.sourceFile === 'mb.xml'), 'with the runtime caveat');
+    assert.equal(session.summary().errors.length, 0);
   } finally {
     session.close();
   }

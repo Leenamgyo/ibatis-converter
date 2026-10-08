@@ -19,7 +19,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProjectSession, DirectorySource } from '../../application/ProjectSession.js';
+import { openProjectFolder } from '../../application/ReferenceDiscovery.js';
 import { XmlGenerator } from '../../generator/xml/XmlGenerator.js';
 import { validateMappingDefinition } from '../../converter/schema/index.js';
 
@@ -91,13 +91,16 @@ export function migrateProject(options, log = () => {}) {
   // files one step needs are in memory (bounded caches), whatever the project's size.
   // Includer context for fragments is not sampled here (schemaSiteFiles: Infinity), so the
   // output is the same as migrating every mapper at once.
-  const session = new ProjectSession(new DirectorySource(root), { dialect: options.dialect, schemaSiteFiles: Infinity }).open();
+  // refids into fragments outside the folder (a sibling module) are found too; those files are
+  // used to resolve them and never written to out/ (ReferenceDiscovery)
+  const { session, references } = openProjectFolder(root, { dialect: options.dialect, schemaSiteFiles: Infinity });
+  if (references.files.length) log(`프로젝트 밖에서 refid 대상 매퍼 ${references.files.length}개를 찾아 참조로 사용 (${references.repoRoot})`);
   try {
     log(`매퍼 ${session.files.length}개 발견 (XML ${session.files.length + session.skipped.length}개 중, 나머지는 건너뜀)`);
     fs.mkdirSync(outDir, { recursive: true });
     const schemaOptions = { preserveResultColumnNames: options.preserveResultColumnNames };
     const xml = new XmlGenerator({ formatSql: options.formatSql });
-    const files = session.files.map((entry) => {
+    const files = session.files.filter((entry) => !entry.external).map((entry) => {
       const { sourceFile } = entry;
       if (!entry.parsed) return fileReport(session, entry, [], null);
       const conversion = session.convertFile(sourceFile);
