@@ -421,13 +421,15 @@ export function createApp({
     return mapping;
   }
   const migrationOptions = (req) => ({ preserveResultColumnNames: Boolean(req.body?.preserveResultColumnNames) });
+  // "쿼리 정렬": how the texts are written out, not part of the migration itself
+  const formatSql = (req) => Boolean(req.body?.formatSql);
 
   // One statement: only its file, its fragments' files and (capped) their includers' are loaded.
   app.post('/api/v1/statements/:id/schema-migration', (req, res) => {
     const project = resolveProject(req, res);
     if (!project || !knownStatement(project, req.params.id, res)) return;
     const mapping = requestMapping(req, res);
-    if (mapping) sendJson(req, res, project.schemaMigration(req.params.id, mapping, migrationOptions(req)));
+    if (mapping) sendJson(req, res, project.schemaMigration(req.params.id, mapping, migrationOptions(req), { formatSql: formatSql(req) }));
   });
 
   // Counts per statement (tree badges, totals), computed file by file.
@@ -454,11 +456,11 @@ export function createApp({
         res.status(404).json({ error: `Unknown mapper file "${file}"` });
         return;
       }
-      sendJson(req, res, shapeSchemaMigration(scoped.results, { files: new Set([file]), fragments: new Set(scoped.fragmentIds), sampled: scoped.sampled, project }));
+      sendJson(req, res, shapeSchemaMigration(scoped.results, { files: new Set([file]), fragments: new Set(scoped.fragmentIds), sampled: scoped.sampled, project, formatSql: formatSql(req) }));
       return;
     }
     // no dataset yet is fine: the view still shows the iBATIS -> MyBatis conversion
-    sendJson(req, res, shapeSchemaMigration(project.migrateFiles(project.files.filter((f) => f.parsed).map((f) => f.sourceFile), mapping, migrationOptions(req))));
+    sendJson(req, res, shapeSchemaMigration(project.migrateFiles(project.files.filter((f) => f.parsed).map((f) => f.sourceFile), mapping, migrationOptions(req)), { formatSql: formatSql(req) }));
   });
 
   // The API answers in JSON even when the request never reached a route:
@@ -496,9 +498,9 @@ export function createApp({
  * a missing after as "unchanged"). Per file: its statement / fragment ids and
  * a summary.
  */
-function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onlyFragments = null, sampled = new Map(), project = null } = {}) {
-  const mybatisXml = new XmlGenerator();
-  const ibatisXml = new IbatisXmlGenerator();
+function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onlyFragments = null, sampled = new Map(), project = null, formatSql = false } = {}) {
+  const mybatisXml = new XmlGenerator({ formatSql });
+  const ibatisXml = new IbatisXmlGenerator({ formatSql });
   const qualify = (namespace, id) => (namespace ? `${namespace}.${id}` : id);
   const tally = (events) => {
     const counts = { SAFE: 0, WARNING: 0, MANUAL: 0, ERROR: 0 };

@@ -182,3 +182,22 @@ test('GET /api/v1/search filters a project by ids, paths and SQL text', async ()
     stop();
   }
 });
+
+test('formatSql (쿼리 정렬) changes only the layout of the returned texts', async () => {
+  const { call, stop } = startServer();
+  try {
+    const { mapping } = JSON.parse(fs.readFileSync(path.join(SCAN, 'mapping.json'), 'utf8'));
+    const { body: { projectId, files: index } } = await call('POST', '/api/v1/projects', { files: files() });
+    const file = index[0].sourceFile;
+    const url = `/api/v1/schema-migration?projectId=${projectId}&file=${encodeURIComponent(file)}`;
+    const plain = (await call('POST', url, { mapping })).body;
+    const formatted = (await call('POST', url, { mapping, formatSql: true })).body;
+    const squash = (s) => s.replace(/\s+/g, '');
+    for (const id of Object.keys(plain.statements)) {
+      assert.equal(squash(formatted.statements[id].mybatisBefore), squash(plain.statements[id].mybatisBefore), id);
+      assert.deepEqual(formatted.statements[id].events, plain.statements[id].events, id);
+    }
+  } finally {
+    stop();
+  }
+});

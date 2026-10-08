@@ -34,6 +34,7 @@ const schemaState = {
   datasetsLoaded: false,
   datasetId: readStored('schema.datasetId'),
   preserveResultColumnNames: readStored('schema.preserve') === 'true',
+  formatSql: readStored('schema.formatSql') === 'true', // "쿼리 정렬": pretty-print each SQL block (server-side, MyBatis-aware)
   mybatis: readStored('schema.mybatis') === 'true', // the syntax-conversion toggle
   scope: 'statement', // 'statement' | 'file'
   onlyChanged: false,
@@ -116,7 +117,7 @@ function invalidateSchemaResult() {
 const SCHEMA_RESULT_CACHE = 6;
 
 function schemaKey() {
-  return `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}`;
+  return `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}|${schemaState.formatSql}`;
 }
 
 function schemaRequest() {
@@ -125,7 +126,7 @@ function schemaRequest() {
   return {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...body, preserveResultColumnNames: schemaState.preserveResultColumnNames }),
+    body: JSON.stringify({ ...body, preserveResultColumnNames: schemaState.preserveResultColumnNames, formatSql: schemaState.formatSql }),
   };
 }
 
@@ -363,6 +364,11 @@ function schemaToolbar() {
       el('span', { class: 'sm-sep', 'aria-hidden': 'true' }),
       el('div', { class: 'mb-scope' }, scopeButton('statement', '이 statement'), scopeButton('file', '파일 전체')),
       toggle('변경 줄만', schemaState.onlyChanged, (e) => { schemaState.onlyChanged = e.target.checked; renderSchemaView(); }),
+      toggle('쿼리 정렬', schemaState.formatSql, (e) => {
+        schemaState.formatSql = e.target.checked;
+        writeStored('schema.formatSql', e.target.checked);
+        renderSchemaView();
+      }, 'SQL을 절(SELECT/FROM/WHERE/JOIN…)마다 줄을 나누고 AND/OR·서브쿼리를 들여써 정렬합니다. MyBatis 태그(<if>, <where>…) 경계와 #{…}, 문자열, 주석은 건드리지 않습니다'),
       toggle('결과 컬럼명 유지 (AS)', schemaState.preserveResultColumnNames, (e) => {
         schemaState.preserveResultColumnNames = e.target.checked;
         writeStored('schema.preserve', e.target.checked);

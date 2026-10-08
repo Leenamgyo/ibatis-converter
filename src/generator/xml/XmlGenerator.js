@@ -17,11 +17,11 @@ function attrsString(pairs) {
     .join('');
 }
 
-function renderChildren(nodes, level, lines) {
-  for (const node of nodes) renderNode(node, level, lines);
+function renderChildren(nodes, level, lines, opts) {
+  for (const node of nodes) renderNode(node, level, lines, opts);
 }
 
-function renderNode(node, level, lines) {
+function renderNode(node, level, lines, opts = {}) {
   const pad = '  '.repeat(level);
   switch (node.type) {
     case 'TextSql':
@@ -29,29 +29,29 @@ function renderNode(node, level, lines) {
       // indentation and the blank lines around it change, never a character
       // of the SQL itself ("SQL 내용 임의 변경 금지"), nor anything inside a
       // multi-line string literal. Re-escaped for XML.
-      for (const line of layoutSqlText(node.text, pad)) lines.push(escapeText(line));
+      for (const line of layoutSqlText(node.text, pad, { format: opts.formatSql })) lines.push(escapeText(line));
       break;
     case 'Include':
       lines.push(`${pad}<include${attrsString([['refid', node.refid]])}/>`);
       break;
     case 'If':
       lines.push(`${pad}<if${attrsString([['test', node.test]])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</if>`);
       break;
     case 'Choose':
       lines.push(`${pad}<choose>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</choose>`);
       break;
     case 'When':
       lines.push(`${pad}<when${attrsString([['test', node.test]])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</when>`);
       break;
     case 'Otherwise':
       lines.push(`${pad}<otherwise>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</otherwise>`);
       break;
     case 'Bind':
@@ -59,12 +59,12 @@ function renderNode(node, level, lines) {
       break;
     case 'Where':
       lines.push(`${pad}<where>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</where>`);
       break;
     case 'Set':
       lines.push(`${pad}<set>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</set>`);
       break;
     case 'Trim':
@@ -74,7 +74,7 @@ function renderNode(node, level, lines) {
         ['prefixOverrides', node.prefixOverrides],
         ['suffixOverrides', node.suffixOverrides],
       ])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</trim>`);
       break;
     case 'Foreach':
@@ -86,7 +86,7 @@ function renderNode(node, level, lines) {
         ['close', node.close],
         ['separator', node.separator],
       ])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</foreach>`);
       break;
     case 'SelectKey':
@@ -95,12 +95,12 @@ function renderNode(node, level, lines) {
         ['resultType', node.resultType],
         ['order', node.order],
       ])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</selectKey>`);
       break;
     case 'SqlFragment':
       lines.push(`${pad}<sql${attrsString([['id', node.id]])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</sql>`);
       break;
     case 'ResultMap': {
@@ -145,7 +145,7 @@ function renderNode(node, level, lines) {
         ['statementType', node.callable ? 'CALLABLE' : null],
         ...(node.otherAttributes ?? []),
       ])}>`);
-      renderChildren(node.children, level + 1, lines);
+      renderChildren(node.children, level + 1, lines, opts);
       lines.push(`${pad}</${tagName}>`);
       break;
     }
@@ -176,9 +176,14 @@ export class XmlGenerator {
    * node (the schema-migration view diffs these).
    * @returns {string}
    */
+  /** @param {{ formatSql?: boolean }} [options] formatSql: "쿼리 정렬" — pretty-print each SQL text block (formatSqlText) */
+  constructor({ formatSql = false } = {}) {
+    this.options = { formatSql };
+  }
+
   generateNode(node) {
     const lines = [];
-    renderNode(node, 0, lines);
+    renderNode(node, 0, lines, this.options);
     return lines.join('\n');
   }
 
@@ -191,15 +196,15 @@ export class XmlGenerator {
 
     for (const fragment of mapperNode.sqlFragments) {
       lines.push('');
-      renderNode(fragment, 1, lines);
+      renderNode(fragment, 1, lines, this.options);
     }
     for (const resultMap of mapperNode.resultMaps) {
       lines.push('');
-      renderNode(resultMap, 1, lines);
+      renderNode(resultMap, 1, lines, this.options);
     }
     for (const statement of mapperNode.statements) {
       lines.push('');
-      renderNode(statement, 1, lines);
+      renderNode(statement, 1, lines, this.options);
     }
 
     lines.push('', '</mapper>');

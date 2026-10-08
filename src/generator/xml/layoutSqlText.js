@@ -1,3 +1,5 @@
+import { formatSqlText } from './formatSqlText.js';
+
 /**
  * Lays out one SQL text node at the depth of the tag it sits in.
  *
@@ -23,11 +25,14 @@
  *
  * @param {string} text the node's text (unescaped)
  * @param {string} pad the indentation of the enclosing depth
+ * @param {{ format?: boolean }} [options] format: pretty-print the SQL first ("쿼리 정렬")
  * @returns {string[]} lines, unescaped
  */
-export function layoutSqlText(text, pad) {
+export function layoutSqlText(text, pad, { format = false } = {}) {
   if (text.trim() === '') return [];
-  const raw = text.replace(/\r\n?/g, '\n').split('\n');
+  // 쿼리 정렬 on: the SQL is first pretty-printed (formatSqlText); its first line is the block's base
+  const source = format ? `\n${formatSqlText(text)}` : text;
+  const raw = source.replace(/\r\n?/g, '\n').split('\n');
 
   // which lines start / end inside a quoted literal (a block comment is not a literal)
   const startsInLiteral = [];

@@ -82,6 +82,24 @@ renames only.
 - **Scopes.** **이 statement**, or **파일 전체**, which lists every fragment
   and statement of the file as its own collapsible pair view (changed ones
   open). **변경 줄만** keeps two lines of context around each change.
+- **쿼리 정렬** (toggle, remembered per browser; CLI `--format-sql`).
+  Pretty-prints each SQL text block (`generator/xml/formatSqlText.js`).
+  It is neither an XML formatter nor a generic SQL formatter: it works on
+  the text between two tags, from the lossless SqlLexer tokens.
+  - Clause keywords start lines; `AND` / `OR` are indented; a SELECT list
+    is one item per line, aligned; `(SELECT …)` nests.
+  - Function parens (`EXTRACT(YEAR FROM d)`), `CASE … END` and
+    `BETWEEN … AND` never break, and `a.from` is a column, not a clause.
+  - A block's first token stays put, so `AND x = #{x}` in an `<if>` is not
+    pushed down.
+  - `#{}` / `${}` / `#x#`, strings and comments are untouched single
+    tokens; tokens glued in the source (`TB_${yyyymm}`) stay glued, and a
+    `--` comment ends its line.
+  - Checked over every corpus block: identical SQL tokens. With renames,
+    before / after keep the same line count, so the pair view still lines
+    them up.
+  - Off = the SQL's own line structure, laid out at its tag's depth
+    (`layoutSqlText`).
 - **Tree badges.** While this view is open, each statement gets `Δn` (green;
   WARNING orange; MANUAL blue; `!` when there is nothing renamed but
   something to review). The lineage view never shows them.

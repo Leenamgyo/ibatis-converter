@@ -3,7 +3,7 @@
  * Command-line migration of a whole project folder:
  *
  *   npm run migrate -- <projectDir> [--out <dir>] [--mapping <mapping.json>]
- *                      [--preserve-result-columns] [--dialect mysql|oracle|...]
+ *                      [--preserve-result-columns] [--format-sql] [--dialect mysql|oracle|...]
  *                      [--fail-on manual|warning]
  *
  * Finds every iBATIS mapper under <projectDir> (by root element, skipping
@@ -28,12 +28,13 @@ const USAGE = `사용법: npm run migrate -- <프로젝트폴더> [옵션]
   --out <dir>                 결과 폴더 (기본 ./migration-output)
   --mapping <file.json>       레거시 -> 신규 스키마 매핑 (데이터셋 JSON 그대로)
   --preserve-result-columns   이름이 바뀐 SELECT 항목에 "AS 기존이름" 유지
+  --format-sql                쿼리 정렬: 생성하는 XML의 SQL을 절마다 줄을 나눠 정렬 (태그·#{}·문자열은 그대로)
   --dialect <name>            SQL 분석 방언 (기본 mysql)
   --fail-on manual|warning    해당 등급이 하나라도 있으면 종료 코드 2 (CI용)
   -h, --help`;
 
 export function parseArgs(argv) {
-  const options = { out: 'migration-output', mapping: null, preserveResultColumnNames: false, dialect: 'mysql', failOn: null, help: false, root: null };
+  const options = { out: 'migration-output', mapping: null, preserveResultColumnNames: false, formatSql: false, dialect: 'mysql', failOn: null, help: false, root: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => {
@@ -45,6 +46,7 @@ export function parseArgs(argv) {
     else if (arg === '--out') options.out = value();
     else if (arg === '--mapping') options.mapping = value();
     else if (arg === '--preserve-result-columns') options.preserveResultColumnNames = true;
+    else if (arg === '--format-sql') options.formatSql = true;
     else if (arg === '--dialect') options.dialect = value();
     else if (arg === '--fail-on') {
       options.failOn = value().toUpperCase();
@@ -94,13 +96,13 @@ export function migrateProject(options, log = () => {}) {
     log(`매퍼 ${session.files.length}개 발견 (XML ${session.files.length + session.skipped.length}개 중, 나머지는 건너뜀)`);
     fs.mkdirSync(outDir, { recursive: true });
     const schemaOptions = { preserveResultColumnNames: options.preserveResultColumnNames };
-    const xml = new XmlGenerator();
+    const xml = new XmlGenerator({ formatSql: options.formatSql });
     const files = session.files.map((entry) => {
       const { sourceFile } = entry;
       if (!entry.parsed) return fileReport(session, entry, [], null);
       const conversion = session.convertFile(sourceFile);
       // a mapper that already is MyBatis is copied as written; its renames still go to mybatis-schema/
-      writeInside(outDir, path.join('mybatis', sourceFile), entry.syntax === 'mybatis' ? session.text(sourceFile) : conversion.xml);
+      writeInside(outDir, path.join('mybatis', sourceFile), entry.syntax === 'mybatis' ? session.text(sourceFile) : xml.generate(conversion.mapperNode));
       const conversionEvents = [...conversion.statements].flatMap(([id, c]) => c.events.map((e) => ({ ...e, statementId: id })));
       let schemaEvents = null;
       if (mapping) {

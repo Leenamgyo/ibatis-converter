@@ -31,17 +31,17 @@ function attrs(pairs) {
     .join('');
 }
 
-function render(node, level, lines) {
+function render(node, level, lines, opts = {}) {
   const pad = '  '.repeat(level);
   const block = (tag, attributes) => {
     lines.push(`${pad}<${tag}${attrs(attributes)}>`);
-    for (const child of node.children ?? []) render(child, level + 1, lines);
+    for (const child of node.children ?? []) render(child, level + 1, lines, opts);
     lines.push(`${pad}</${tag}>`);
   };
   switch (node.type) {
     case 'TextSql':
       // laid out at this tag's depth, like XmlGenerator's (same rule, so the 변환 view's sides line up)
-      for (const line of layoutSqlText(node.text, pad)) lines.push(escapeText(line));
+      for (const line of layoutSqlText(node.text, pad, { format: opts.formatSql })) lines.push(escapeText(line));
       break;
     case 'Include':
       lines.push(`${pad}<include${attrs([['refid', node.refid]])}/>`);
@@ -80,15 +80,20 @@ function render(node, level, lines) {
       ]);
       break;
     default:
-      for (const child of node.children ?? []) render(child, level, lines);
+      for (const child of node.children ?? []) render(child, level, lines, opts);
   }
 }
 
 export class IbatisXmlGenerator {
   /** One statement / `<sql>` fragment, without the `<sqlMap>` wrapper. */
+  /** @param {{ formatSql?: boolean }} [options] formatSql: "쿼리 정렬" (formatSqlText) */
+  constructor({ formatSql = false } = {}) {
+    this.options = { formatSql };
+  }
+
   generateNode(node) {
     const lines = [];
-    render(node, 0, lines);
+    render(node, 0, lines, this.options);
     return lines.join('\n');
   }
 }

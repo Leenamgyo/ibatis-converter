@@ -566,7 +566,9 @@ export class ProjectSession {
    * fragments, which the migration needs to infer a FROM-less fragment's
    * tables.
    */
-  schemaMigration(qualifiedId, mapping, options = {}) {
+  schemaMigration(qualifiedId, mapping, options = {}, { formatSql = false } = {}) {
+    const mybatisXml = formatSql ? new XmlGenerator({ formatSql }) : this.xml;
+    const sourceXml = (r) => (r.syntax === 'mybatis' ? mybatisXml : formatSql ? new IbatisXmlGenerator({ formatSql }) : this.ibatisXml);
     const at = this.#locate(qualifiedId);
     if (!at) return null;
     const fragmentIds = this.includedFragments(qualifiedId);
@@ -580,10 +582,10 @@ export class ProjectSession {
       const list = (side) => (kind === 'statement' ? side.mapper.statements : side.mapper.sqlFragments);
       const originalList = (side) => (kind === 'statement' ? side.original.statements : side.original.sqlFragments);
       const texts = {
-        ibatisBefore: this.#sourceXml(r).generateNode(originalList(r.ibatis)[i]),
-        ibatisAfter: this.#sourceXml(r).generateNode(list(r.ibatis)[i]),
-        mybatisBefore: this.xml.generateNode(originalList(r.mybatis)[i]),
-        mybatisAfter: this.xml.generateNode(list(r.mybatis)[i]),
+        ibatisBefore: sourceXml(r).generateNode(originalList(r.ibatis)[i]),
+        ibatisAfter: sourceXml(r).generateNode(list(r.ibatis)[i]),
+        mybatisBefore: mybatisXml.generateNode(originalList(r.mybatis)[i]),
+        mybatisAfter: mybatisXml.generateNode(list(r.mybatis)[i]),
       };
       if (texts.ibatisAfter === texts.ibatisBefore) delete texts.ibatisAfter;
       if (texts.mybatisAfter === texts.mybatisBefore) delete texts.mybatisAfter;
@@ -615,11 +617,6 @@ export class ProjectSession {
     ])];
     const scope = this.#schemaFiles([sourceFile], fragmentIds);
     return { ...this.#migrateFiles(scope, mapping, options), fragmentIds };
-  }
-
-  /** the generator for a file's own syntax (the left side of the 변환 view) */
-  #sourceXml(result) {
-    return result.syntax === 'mybatis' ? this.xml : this.ibatisXml;
   }
 
   /** the files a schema migration of `seedFiles` + `fragmentIds` needs, includer sites capped */
