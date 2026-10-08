@@ -182,3 +182,6 @@ table.data td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); 
 .fd-foot .btn.primary { margin-left: auto; }
 .fd-error { font-size: 0.75rem; color: var(--manual, #c0563b); }
 .btn.link { border: none; background: none; color: var(--text-muted); text-decoration: underline; padding: 0.4rem 0; }
+
+.update-bar { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.45rem 1rem; background: var(--warning-soft, #fff4d6); color: var(--warning, #8a5a00); font-size: 0.8rem; border-bottom: 1px solid var(--border); }
+.update-bar[hidden] { display: none; }

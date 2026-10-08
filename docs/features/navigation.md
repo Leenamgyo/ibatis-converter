@@ -64,6 +64,15 @@ after 30 idle minutes, and a server restart loses all of them, so the
 - **Uploaded:** it says the project was closed and has to be opened again,
   because the browser deliberately keeps no copy of uploaded files.
 
+## A tab older than the code
+
+A tab left open across an update keeps running the old script. That is
+how the old folder picker's "시스템 파일이 포함되어 있으므로 … 열 수 없습니다"
+kept appearing after it was replaced. `GET /api/v1/version` returns the
+newest mtime of `public/*.{js,css,html}`, uncached. The page reads it on
+load and again on focus / visibility. When it differs, a bar says
+"화면이 업데이트되었습니다" with a **새로고침** button.
+
 ## Removed screens
 
 The **Statements** and **Tables** tabs were removed, and every mermaid

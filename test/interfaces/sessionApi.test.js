@@ -156,3 +156,15 @@ test('GET /api/v1/fs/dirs lists folder names only (no dot or build folders), for
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('GET /api/v1/version names the UI build, uncached, so an old tab can tell it is stale', async () => {
+  const { call, stop } = startServer();
+  try {
+    const first = await call('GET', '/api/v1/version');
+    assert.equal(first.status, 200);
+    assert.match(first.body.ui, /^\d+$/);
+    assert.deepEqual((await call('GET', '/api/v1/version')).body, first.body, 'stable while nothing changes');
+  } finally {
+    stop();
+  }
+});

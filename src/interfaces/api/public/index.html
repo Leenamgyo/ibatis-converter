@@ -62,6 +62,11 @@
     </form>
   </dialog>
 
+  <div class="update-bar" id="updateBar" role="status" hidden>
+    화면이 업데이트되었습니다. 이 탭은 이전 버전으로 실행 중입니다.
+    <button class="btn small primary" type="button" onclick="location.reload()">새로고침</button>
+  </div>
+
   <main id="app">
     <div class="empty-state" id="emptyState">
       Upload one or more iBATIS mapper XML files (or click "Load sample"), then "Analyze".

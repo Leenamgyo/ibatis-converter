@@ -166,6 +166,17 @@ export function createApp({
     sendJson(req, res, indexBody(sessions.add(session), session));
   });
 
+  // The UI's version: the newest modification time of its static files. A tab left open across
+  // an update keeps running the old script; the page compares this on focus and offers a reload.
+  const publicDir = path.join(__dirname, 'public');
+  app.get('/api/v1/version', (req, res) => {
+    let newest = 0;
+    for (const name of fs.readdirSync(publicDir)) {
+      if (/\.(js|css|html)$/.test(name)) newest = Math.max(newest, fs.statSync(path.join(publicDir, name)).mtimeMs);
+    }
+    res.set('cache-control', 'no-store').json({ ui: String(Math.floor(newest)) });
+  });
+
   // The in-app folder browser behind 프로젝트 폴더: folder NAMES under a path on this machine
   // (never file contents), so a project is picked without the browser's own picker — which
   // refuses folders it deems sensitive ("시스템 파일이 포함되어 있으므로 열 수 없습니다") and,

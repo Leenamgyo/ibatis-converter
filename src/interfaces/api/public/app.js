@@ -141,6 +141,22 @@ async function reopenProject() {
   return true;
 }
 
+/* ------------------------------------------------------------------ *
+ * Stale tab check: a tab opened before an update runs the old script  *
+ * (e.g. the old folder picker) until reloaded — say so.               *
+ * ------------------------------------------------------------------ */
+let loadedUiVersion = null;
+async function checkUiVersion() {
+  try {
+    const { ui } = await fetch('/api/v1/version', { cache: 'no-store' }).then((r) => r.json());
+    if (loadedUiVersion === null) loadedUiVersion = ui;
+    else if (ui !== loadedUiVersion) document.getElementById('updateBar').hidden = false;
+  } catch { /* server down: nothing to compare */ }
+}
+checkUiVersion();
+window.addEventListener('focus', checkUiVersion);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUiVersion(); });
+
 /** Closes the open project on the server (its caches and any uploaded copy go with it). */
 function closeProject() {
   if (!state.projectId) return;
@@ -322,8 +338,9 @@ async function pickWithBrowser() {
   try {
     handle = await window.showDirectoryPicker({ mode: 'read' });
   } catch (e) {
+    // Chrome's "시스템 파일이 포함되어 있으므로 … 열 수 없습니다" refusal arrives here as a plain AbortError
     fileCount.textContent = e.name === 'AbortError'
-      ? '폴더를 고르지 않았습니다 — 브라우저가 “시스템 파일” 때문에 막았다면 그 안의 프로젝트 폴더를 직접 고르세요'
+      ? '폴더를 열지 않았습니다. 브라우저가 “시스템 파일” 때문에 막았다면: 이 컴퓨터에서 연 화면의 “프로젝트 폴더”(앱 안의 폴더 목록)나 “경로 열기”를 쓰세요'
       : `브라우저가 폴더를 열 수 없습니다: ${e.message}`;
     return;
   }
