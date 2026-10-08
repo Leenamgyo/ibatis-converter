@@ -66,11 +66,24 @@ function operandFromExpr(expr, ctx) {
   }
 }
 
+function isLogical(expr) {
+  return expr?.type === 'binary_expr' && (expr.operator === 'AND' || expr.operator === 'OR');
+}
+
 function buildConditionTree(expr, ctx) {
   if (!expr) return null;
   if (isSubqueryDescriptor(expr)) return operandFromExpr(expr, ctx);
-  if (expr.type === 'binary_expr' && (expr.operator === 'AND' || expr.operator === 'OR')) {
-    return new LogicalNode({ op: expr.operator, children: [buildConditionTree(expr.left, ctx), buildConditionTree(expr.right, ctx)] });
+  if (isLogical(expr)) {
+    // a WHERE built from many included fragments is an AND chain thousands deep (the parser
+    // nests it left-deep): collect the same-operator chain with a stack, not recursion
+    const children = [];
+    const stack = [expr];
+    while (stack.length) {
+      const e = stack.pop();
+      if (isLogical(e) && e.operator === expr.operator && !isSubqueryDescriptor(e)) stack.push(e.right, e.left);
+      else children.push(buildConditionTree(e, ctx));
+    }
+    return new LogicalNode({ op: expr.operator, children });
   }
   if (expr.type === 'binary_expr') {
     return new ComparisonNode({ operator: expr.operator, left: operandFromExpr(expr.left, ctx), right: operandFromExpr(expr.right, ctx) });

@@ -150,6 +150,8 @@ main#app[hidden] { display: none; }
 .sd-row del { background: var(--del-bg); color: var(--del-fg); text-decoration: line-through; text-decoration-thickness: 1px; border-radius: 2px; padding: 0 1px; }
 .sd-row ins { background: var(--ins-bg); color: var(--ins-fg); text-decoration: none; font-weight: 700; border-radius: 2px; padding: 0 1px; transition: box-shadow 0.2s; }
 .sd-row ins.flash { background: var(--flash); color: var(--text); box-shadow: 0 0 0 2px var(--flash); }
+.sd-more { display: block; width: 100%; padding: 0.35rem 0.7rem; font: inherit; font-size: 0.75rem; color: var(--accent, inherit); background: var(--bg-sunken); border: 0; border-block: 1px dashed var(--border); cursor: pointer; }
+.sd-more:hover { text-decoration: underline; }
 .sd-gap { padding: 0.15rem 0.7rem; font-size: 0.7rem; color: var(--text-faint); background: var(--bg-sunken); border-block: 1px dashed var(--border); text-align: center; }
 
 /* -------- fragments -------- */

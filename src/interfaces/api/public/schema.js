@@ -117,6 +117,8 @@ function invalidateSchemaResult() {
 }
 
 const SCHEMA_RESULT_CACHE = 6;
+/** statement text (chars) past which a result is cached alone */
+const SCHEMA_RESULT_HUGE = 4_000_000;
 
 function schemaKey() {
   return `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}|${schemaState.formatSql}|${schemaState.inlineRefid}`;
@@ -149,7 +151,11 @@ async function ensureSchemaResult() {
     result = await api(`/api/v1/schema-migration?file=${encodeURIComponent(sourceFile)}`, schemaRequest());
   }
   schemaState.results.set(key, result);
-  while (schemaState.results.size > SCHEMA_RESULT_CACHE) schemaState.results.delete(schemaState.results.keys().next().value);
+  // a result with refids spliced into 100k-line queries is tens of MB: it is the only one kept
+  const huge = (r) => Object.values(r.statements ?? {}).reduce((n, e) => n + e.ibatisBefore.length, 0) > SCHEMA_RESULT_HUGE;
+  const keep = huge(result) ? 1 : SCHEMA_RESULT_CACHE;
+  for (const [k, r] of schemaState.results) if (k !== key && huge(r)) schemaState.results.delete(k);
+  while (schemaState.results.size > keep) schemaState.results.delete(schemaState.results.keys().next().value);
   schemaState.result = result;
   ensureSchemaSummary()
     .then((fresh) => {
@@ -237,7 +243,7 @@ function drawSchemaView(pane, result) {
     !schemaState.inlineRefid && statement.includeTree?.length
       ? el('section', { class: 'sm-section' },
         el('h3', { class: 'sm-h' }, '포함된 <sql> (refid)', el('span', { class: 'sm-h-sub' }, `${countIncludes(statement.includeTree)}개 · 쿼리 안에 펼쳐 보려면 "refid 쿼리에 통합"`)),
-        ...statement.includeTree.map((node) => includeBlock(node, { fragments: result.fragments, depth: 0, seen: new Set([qualifiedId]), openNested: true, inline: false })))
+        ...((budget) => statement.includeTree.map((node) => includeBlock(node, { fragments: result.fragments, depth: 0, seen: new Set([qualifiedId]), openNested: true, inline: false, budget })))(openBudget()))
       : null,
     // the server sent no include tree (whole-project API): the fragments as a flat list
     !statement.includeTree && shown.length
@@ -298,6 +304,7 @@ function located(events, qualifiedId) {
 
 /** Does this statement/fragment change in the current mode (renames, or syntax when the toggle is on)? */
 function entryChanged(entry) {
+  if (entry.renamed) return true; // sent without its texts (another file's fragment, refids inlined)
   if (entry.ibatisAfter !== undefined && entry.ibatisBefore !== entry.ibatisAfter) return true;
   if (entry.events.some((e) => e.grade !== 'SAFE')) return true;
   return schemaState.mybatis && (entry.conversion?.events ?? []).some((e) => e.grade !== 'SAFE');
@@ -663,6 +670,7 @@ function lineKey(line) {
  * (e.g. the <trim> MyBatis needs where iBATIS used an attribute).
  */
 function alignLines(left, right) {
+  if (left.length !== right.length && left.length * right.length > 6e6) return null; // before keying 100k lines
   const a = left.map(lineKey);
   const b = right.map(lineKey);
   if (a.length === b.length && a.every((k, i) => k === b[i])) return a.map((_, i) => [i, i]);
@@ -696,15 +704,22 @@ function alignLines(left, right) {
  * vs MyBatis, both before or both after the renames, paired by alignLines),
  * never between the iBATIS original and the final MyBatis text directly.
  */
-function pairView(entry, { compact = false, includeTree = null, fragments = null, depth = 0, seen = new Set(), openNested = true } = {}) {
+function pairView(entry, { compact = false, includeTree = null, fragments = null, depth = 0, seen = new Set(), openNested = true, budget = openBudget() } = {}) {
   const mybatis = schemaState.mybatis;
   // the server leaves out an "after" that didn't change
   const L = entry.ibatisBefore.split('\n');
-  const LA = (entry.ibatisAfter ?? entry.ibatisBefore).split('\n');
-  const MB = entry.mybatisBefore.split('\n');
-  const MA = (entry.mybatisAfter ?? entry.mybatisBefore).split('\n');
-  const renamesLineUp = L.length === LA.length && MB.length === MA.length;
-  const pairs = !mybatis ? L.map((_, i) => [i, i]) : renamesLineUp ? alignLines(L, MB) : null;
+  const LA = entry.ibatisAfter === undefined ? L : entry.ibatisAfter.split('\n');
+  const MB = mybatis ? entry.mybatisBefore.split('\n') : L; // only read with the MyBatis toggle on
+  const MA = !mybatis ? LA : entry.mybatisAfter === undefined ? MB : entry.mybatisAfter.split('\n');
+  const R = mybatis ? MA : LA; // the right side
+  const RB = mybatis ? MB : L; // the right side before the renames
+  const leftRenames = L.length === LA.length;
+  const rightRenames = RB.length === R.length;
+  // iBATIS and MyBatis lines paired by alignLines; otherwise line i beside line i
+  const pairs = mybatis && leftRenames && rightRenames ? alignLines(L, MB) : null;
+  const aligned = pairs !== null;
+  const total = aligned ? pairs.length : Math.max(L.length, R.length);
+  const pairOf = (k) => (aligned ? pairs[k] : [k < L.length ? k : null, k < R.length ? k : null]);
 
   // which <include> lines of the original carry which include-tree nodes (both are in document order)
   const includeAt = new Map();
@@ -715,81 +730,110 @@ function pairView(entry, { compact = false, includeTree = null, fragments = null
       if (n) includeAt.set(i, includeTree.slice(k, k += n));
     });
   }
-  const nestedOpts = { fragments, depth, seen, openNested };
-  const rows = [];
-  // an <include> line is followed by the fragment it brings in, expanded to every depth
-  const pushIncludes = (i) => {
-    for (const node of includeAt.get(i) ?? []) rows.push({ kinds: [], keep: true, nested: node });
-  };
-  if (pairs) {
-    for (const [i, j] of pairs) {
-      const leftText = i === null ? '' : L[i];
-      const rightText = j === null ? '' : (mybatis ? MA[j] : LA[j]);
-      if (isBlank(leftText) && isBlank(rightText)) continue; // blank layout lines
-      const renameL = i === null ? null : tokenFlags(L[i], LA[i]);
-      const renameR = j === null ? null : mybatis ? tokenFlags(MB[j], MA[j]) : tokenFlags(L[j], LA[j]);
-      // syntax: what MyBatis replaced (left) / introduced (right) on this pair of lines
-      const syntaxL = mybatis && i !== null ? (j === null ? { removed: splitTokens(L[i]).map((x) => !/^\s+$/.test(x)) } : tokenFlags(L[i], MB[j])) : null;
-      const syntaxR = mybatis && j !== null ? (i === null ? { added: splitTokens(MA[j]).map((x) => !/^\s+$/.test(x)) } : tokenFlags(LA[i], MA[j])) : null;
-      const left = i === null ? [document.createTextNode(' ')]
-        : markTokens(renameL.at, (k) => (renameL.removed[k] ? 'r' : syntaxL?.removed[k] ? 's' : null), 'del');
-      const right = j === null ? [document.createTextNode(' ')]
-        : markTokens(renameR.bt, (k) => (renameR.added[k] ? 'r' : syntaxR?.added[k] ? 's' : null), 'ins');
-      const kinds = [
-        renameL?.removed.some(Boolean) || renameR?.added.some(Boolean) ? 'r' : null,
-        syntaxL?.removed.some(Boolean) || syntaxR?.added.some(Boolean) ? 's' : null,
-      ].filter(Boolean);
-      rows.push({ kinds, leftNo: i === null ? '' : i + 1, rightNo: j === null ? '' : j + 1, left, right });
-      if (i !== null) pushIncludes(i);
-    }
-  } else {
-    // too large to align (or renames changed the line count): side by side, renames only
-    const R = mybatis ? MA : LA;
-    const n = Math.max(L.length, R.length);
-    for (let i = 0; i < n; i++) {
-      if (isBlank(L[i]) && isBlank(R[i])) continue;
-      const lf = i < L.length && L.length === LA.length ? tokenFlags(L[i], LA[i]) : { at: splitTokens(L[i]), removed: [] };
-      const rf = i < R.length && (mybatis ? MB.length === MA.length : L.length === LA.length) ? tokenFlags(mybatis ? MB[i] : L[i], R[i]) : { bt: splitTokens(R[i]), added: [] };
-      rows.push({
-        kinds: lf.removed.some(Boolean) || rf.added.some(Boolean) ? ['r'] : [],
-        leftNo: i < L.length ? i + 1 : '',
-        rightNo: i < R.length ? i + 1 : '',
-        left: i < L.length ? markTokens(lf.at, (k) => (lf.removed[k] ? 'r' : null), 'del') : [document.createTextNode(' ')],
-        right: i < R.length ? markTokens(rf.bt, (k) => (rf.added[k] ? 'r' : null), 'ins') : [document.createTextNode(' ')],
-      });
-      if (i < L.length) pushIncludes(i);
-    }
-  }
+  const nestedOpts = { fragments, depth, seen, openNested, budget };
 
-  const changedRows = rows.filter((r) => r.kinds.length);
-  const renameRows = rows.filter((r) => r.kinds.includes('r')).length;
-  const syntaxRows = rows.filter((r) => r.kinds.includes('s')).length;
+  // One cheap pass: what kind of change each line pair has (1 rename, 2 syntax). A query whose
+  // refids are spliced in can be 100k lines — its marked cells are built only for the rows drawn.
+  const hasText = (line) => splitTokens(line ?? '').some((x) => !/^\s+$/.test(x));
+  const kindAt = new Uint8Array(total);
+  const visible = [];
+  for (let k = 0; k < total; k++) {
+    const [i, j] = pairOf(k);
+    if (isBlank(i === null ? '' : L[i]) && isBlank(j === null ? '' : R[j])) continue; // blank layout lines
+    visible.push(k);
+    if ((i !== null && leftRenames && L[i] !== LA[i]) || (j !== null && rightRenames && RB[j] !== R[j])) kindAt[k] |= 1;
+    // syntax: what MyBatis replaced (left) / introduced (right) on this pair of lines
+    if (aligned && (i === null ? hasText(MA[j]) : j === null ? hasText(L[i])
+      : tokenFlags(L[i], MB[j]).removed.some(Boolean) || tokenFlags(LA[i], MA[j]).added.some(Boolean))) kindAt[k] |= 2;
+  }
+  const kindsOf = (k) => [kindAt[k] & 1 ? 'r' : null, kindAt[k] & 2 ? 's' : null].filter(Boolean);
+  const cellsAt = (k) => {
+    const [i, j] = pairOf(k);
+    const renameL = i === null ? null : leftRenames ? tokenFlags(L[i], LA[i]) : { at: splitTokens(L[i]), removed: [] };
+    const renameR = j === null ? null : rightRenames ? tokenFlags(RB[j], R[j]) : { bt: splitTokens(R[j]), added: [] };
+    const syntaxL = aligned && i !== null ? (j === null ? { removed: splitTokens(L[i]).map((x) => !/^\s+$/.test(x)) } : tokenFlags(L[i], MB[j])) : null;
+    const syntaxR = aligned && j !== null ? (i === null ? { added: splitTokens(MA[j]).map((x) => !/^\s+$/.test(x)) } : tokenFlags(LA[i], MA[j])) : null;
+    return {
+      left: i === null ? [document.createTextNode(' ')]
+        : markTokens(renameL.at, (t) => (renameL.removed[t] ? 'r' : syntaxL?.removed[t] ? 's' : null), 'del'),
+      right: j === null ? [document.createTextNode(' ')]
+        : markTokens(renameR.bt, (t) => (renameR.added[t] ? 'r' : syntaxR?.added[t] ? 's' : null), 'ins'),
+    };
+  };
+
+  let renameRows = 0;
+  let syntaxRows = 0;
+  for (const k of visible) {
+    if (kindAt[k] & 1) renameRows++;
+    if (kindAt[k] & 2) syntaxRows++;
+  }
+  const changedRows = visible.filter((k) => kindAt[k]).length;
+  // only changed rows: each with 2 rows of context, the rest folded into gap markers
+  const keep = new Uint8Array(visible.length);
+  if (schemaState.onlyChanged) {
+    visible.forEach((k, v) => {
+      if (!kindAt[k]) return;
+      for (let w = Math.max(0, v - 2); w <= Math.min(visible.length - 1, v + 2); w++) keep[w] = 1;
+    });
+  } else keep.fill(1);
+
   const head = el('div', { class: 'sd-head' },
     el('div', {}, entry.syntax === 'mybatis' ? '원본 · MyBatis' : '원본 · iBATIS'),
     el('div', {}, mybatis || entry.syntax === 'mybatis' ? '결과 · MyBatis + 신규 스키마' : '결과 · iBATIS + 신규 스키마',
       el('span', { class: 'sd-count' },
         renameRows ? el('span', { class: 'r' }, `컬럼명 ${renameRows}줄`) : null,
         syntaxRows ? el('span', { class: 's' }, `문법 ${syntaxRows}줄`) : null,
-        changedRows.length ? null : '변경 없음')),
+        changedRows ? null : '변경 없음')),
   );
   const body = el('div', { class: `sd-body${compact ? ' compact' : ''}${depth ? ' nested' : ''}` });
-  if (!pairs && mybatis) body.appendChild(el('div', { class: 'sd-gap' }, '이 항목은 너무 커서 iBATIS와 MyBatis 줄을 맞추지 않고, 컬럼명 변경만 표시합니다'));
-  for (const item of collapseRows(rows, schemaState.onlyChanged ? 2 : Infinity)) {
-    if (item.gap) {
-      body.appendChild(el('div', { class: 'sd-gap' }, `⋯ 변경 없는 ${item.gap}줄`));
-      continue;
+  if (!aligned && mybatis) body.appendChild(el('div', { class: 'sd-gap' }, '이 항목은 너무 커서 iBATIS와 MyBatis 줄을 맞추지 않고, 컬럼명 변경만 표시합니다'));
+
+  // rows, gap markers and the expanded <include>s under their lines, in order, made as drawn
+  const progress = { v: 0 };
+  function* items() {
+    let gap = 0;
+    for (; progress.v < visible.length; progress.v++) {
+      const k = visible[progress.v];
+      if (keep[progress.v]) {
+        if (gap) yield { gap };
+        gap = 0;
+        yield { k };
+      } else gap++;
+      const [i] = pairOf(k);
+      for (const node of (i === null ? null : includeAt.get(i)) ?? []) {
+        if (gap) yield { gap };
+        gap = 0;
+        yield { nested: node };
+      }
     }
-    if (item.nested) {
-      body.appendChild(includeBlock(item.nested, nestedOpts));
-      continue;
-    }
-    body.appendChild(el('div', { class: `sd-row ${item.kinds.map((k) => `k-${k}`).join(' ')}` },
-      el('span', { class: 'ln' }, String(item.leftNo)),
-      el('code', { class: 'sd-l' }, ...item.left),
-      el('span', { class: 'ln' }, String(item.rightNo)),
-      el('code', { class: 'sd-r' }, ...item.right),
-    ));
+    if (gap) yield { gap };
   }
+  const renderItem = (item) => {
+    if (item.gap) return el('div', { class: 'sd-gap' }, `⋯ 변경 없는 ${item.gap}줄`);
+    if (item.nested) return includeBlock(item.nested, nestedOpts);
+    const [i, j] = pairOf(item.k);
+    const { left, right } = cellsAt(item.k);
+    return el('div', { class: `sd-row ${kindsOf(item.k).map((x) => `k-${x}`).join(' ')}` },
+      el('span', { class: 'ln' }, i === null ? '' : String(i + 1)),
+      el('code', { class: 'sd-l' }, ...left),
+      el('span', { class: 'ln' }, j === null ? '' : String(j + 1)),
+      el('code', { class: 'sd-r' }, ...right),
+    );
+  };
+  // a few thousand rows at a time: a refid-spliced query can be 100k lines
+  const stream = items();
+  const renderMore = () => {
+    for (let n = 0; n < ROW_CHUNK; n++) {
+      const { value, done } = stream.next();
+      if (done) return;
+      body.appendChild(renderItem(value));
+    }
+    if (progress.v >= visible.length) return;
+    const more = el('button', { class: 'sd-more', type: 'button', onclick: () => { more.remove(); renderMore(); } },
+      `나머지 ${(visible.length - progress.v).toLocaleString()}줄 더 보기`);
+    body.appendChild(more);
+  };
+  renderMore();
   return el('div', { class: 'sd-diff' }, head, body);
 }
 
@@ -831,7 +875,7 @@ function ruleChip(rule) {
  * inline: inside the query, right under the include line (refid 쿼리에 통합 on);
  * otherwise listed below the query, each nested include as an indented block under its fragment.
  */
-function includeBlock(node, { fragments, depth, seen, openNested, inline = schemaState.inlineRefid }) {
+function includeBlock(node, { fragments, depth, seen, openNested, inline = schemaState.inlineRefid, budget = openBudget() }) {
   const level = depth + 1;
   const label = el('span', { class: 'mono' }, `<include refid="${node.refid}">`);
   const note = (text) => el('div', { class: 'sd-include note', style: `--level:${level}` },
@@ -841,7 +885,12 @@ function includeBlock(node, { fragments, depth, seen, openNested, inline = schem
   const entry = fragments?.[node.qualifiedId];
   if (!entry) return note(`${node.qualifiedId}: 결과에 없음`);
   const changed = includeChanged(node, fragments);
-  const open = openNested || changed;
+  // nested refids can expand to thousands of blocks: a fragment already shown in this view, and
+  // everything past the line budget, starts collapsed and is drawn when opened
+  const repeat = budget.shown.has(node.qualifiedId);
+  budget.shown.add(node.qualifiedId);
+  const open = (openNested || changed) && !repeat && budget.lines > 0;
+  if (open) budget.lines -= lineCount(entry.ibatisBefore);
   const details = el('details', { class: `sd-include${changed ? ' changed' : ''}`, style: `--level:${level}`, ...(open ? { open: '' } : {}) },
     el('summary', {},
       el('span', { class: 'sd-inc-arrow' }, '↳'),
@@ -851,45 +900,41 @@ function includeBlock(node, { fragments, depth, seen, openNested, inline = schem
       node.unparsed ? el('span', { class: 'sd-inc-rule rule-missing', title: `${node.file}: XML을 파싱할 수 없어 SQL을 펼칠 수 없습니다 (위치는 찾았습니다) — 그 파일의 오류를 먼저 고치세요` }, '파일 파싱 오류') : null,
       el('span', { class: 'sd-inc-depth' }, `depth ${level}`),
       node.children?.length ? el('span', { class: 'sd-inc-sub' }, `하위 include ${countIncludes(node.children)}`) : null,
+      repeat ? el('span', { class: 'sd-inc-sub', title: '같은 fragment를 이 화면에서 이미 펼쳤습니다 — 열면 다시 표시합니다' }, '위에서 펼침') : null,
       gradeDots(tallyEvents(entry.events)),
     ));
   const innerSeen = new Set([...seen, node.qualifiedId]);
   const fill = () => {
     details.appendChild(pairView(entry, inline
-      ? { compact: true, includeTree: node.children, fragments, depth: level, seen: innerSeen, openNested }
+      ? { compact: true, includeTree: node.children, fragments, depth: level, seen: innerSeen, openNested, budget }
       : { compact: true, depth: level }));
     // listed below: the fragment's own includes follow it, one level deeper
-    if (!inline) for (const child of node.children ?? []) details.appendChild(includeBlock(child, { fragments, depth: level, seen: innerSeen, openNested, inline }));
+    if (!inline) for (const child of node.children ?? []) details.appendChild(includeBlock(child, { fragments, depth: level, seen: innerSeen, openNested, inline, budget }));
   };
   if (open) fill();
   else details.addEventListener('toggle', fill, { once: true });
   return details;
 }
 
-function countIncludes(tree) {
-  return tree.reduce((n, node) => n + 1 + countIncludes(node.children ?? []), 0);
+/** rows rendered per chunk of a pair view ("더 보기" renders the next) */
+const ROW_CHUNK = 3000;
+
+/**
+ * How much of a nested include tree a view opens by itself: fragment lines, shared by every
+ * block of one view, and the fragments already shown (a repeat starts collapsed).
+ */
+function openBudget() {
+  return { lines: 4000, shown: new Set() };
 }
 
-/** Every row, or only changed rows with `context` rows around them and gap markers. */
-function collapseRows(rows, context) {
-  if (context === Infinity) return rows;
-  const keep = rows.map(() => false);
-  rows.forEach((r, i) => {
-    if (r.keep) keep[i] = true; // an expanded <include>: always shown
-    if (!r.kinds.length) return;
-    for (let j = Math.max(0, i - context); j <= Math.min(rows.length - 1, i + context); j++) keep[j] = true;
-  });
-  const out = [];
-  let gap = 0;
-  rows.forEach((r, i) => {
-    if (keep[i]) {
-      if (gap) out.push({ gap });
-      gap = 0;
-      out.push(r);
-    } else gap++;
-  });
-  if (gap) out.push({ gap });
-  return out;
+function lineCount(text) {
+  let n = 1;
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) n++;
+  return n;
+}
+
+function countIncludes(tree) {
+  return tree.reduce((n, node) => n + 1 + countIncludes(node.children ?? []), 0);
 }
 
 function lcsTable(a, b) {

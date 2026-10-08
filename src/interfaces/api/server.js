@@ -263,7 +263,11 @@ export function createApp({
   app.get('/api/v1/statements/:id', (req, res) => {
     const project = resolveProject(req, res);
     if (!project || !knownStatement(project, req.params.id, res)) return;
-    sendJson(req, res, project.analyze(req.params.id));
+    const analysis = project.analyze(req.params.id);
+    // ?view=ui: what the lineage view draws. A statement whose includes expand to 100k lines
+    // has 100k parameter / column usages and a WHERE tree as deep — ~100 MB of JSON the
+    // browser would parse and never read
+    sendJson(req, res, req.query.view === 'ui' && analysis ? uiAnalysis(analysis) : analysis);
   });
 
   // "이 결과 컬럼을 없애려면": the column's trace and every place to edit (a guide; nothing is changed)
@@ -592,14 +596,18 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
       if (onlyFragments && !onlyFragments.has(qualifiedId)) return;
       const own = eventsOf(fragment.id);
       if (sampled.has(qualifiedId)) {
-        own.push({ grade: 'WARNING', code: 'FRAGMENT_CONTEXT_SAMPLED', statementId: fragment.id, message: `context inferred from ${project.schemaSiteFiles} of the ${sampled.get(qualifiedId)} files that include this fragment` });
+        own.push({ grade: 'WARNING', code: 'FRAGMENT_CONTEXT_SAMPLED', statementId: fragment.id, message: ProjectSession.sampledMessage(project.schemaSites, sampled.get(qualifiedId)) });
       }
       const conversion = result.conversion.fragments.get(qualifiedId);
       fragments[qualifiedId] = {
         sourceFile,
         id: fragment.id,
         ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
-        ...texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i], result.syntax, namespace, qualifiedId),
+        // inlined, a fragment of another file is never drawn (the statement already holds its
+        // SQL) and nested refids make its text huge: just whether its renames change it
+        ...(inline && onlyFiles && !onlyFiles.has(sourceFile)
+          ? { renamed: ibatisXml.generateNode(sqlMap.sqlFragments[i]) !== ibatisXml.generateNode(ibatisMigrated.sqlFragments[i]) }
+          : texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i], result.syntax, namespace, qualifiedId)),
         syntax: result.syntax ?? 'ibatis',
         events: own,
         summary: tally(own),
@@ -617,6 +625,18 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
     ? [...Object.values(statements), ...Object.values(fragments)].flatMap((e) => e.events)
     : [...results.values()].flatMap((r) => r.mybatis.events);
   return { statements, fragments, files, summary: tally(all) };
+}
+
+/** a StatementAnalysis without what only the full API needs: parameters, the WHERE tree, the SQL; columns once per table */
+function uiAnalysis({ parameters, where, sql, dynamicConditions, columns, ...rest }) {
+  const seen = new Set();
+  const distinct = columns.filter((c) => {
+    const key = `${c.table}\u0000${c.column}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { ...rest, columns: distinct, counts: { parameters: parameters.length, columnUsages: columns.length, dynamicConditions: dynamicConditions.length } };
 }
 
 function collectIncludes(node, namespace, into = []) {

@@ -6,10 +6,13 @@
  */
 export class LruCache {
   /**
-   * @param {{ maxEntries?: number, maxSize?: number, sizeOf?: (value: any) => number }} [options]
+   * @param {{ maxEntries?: number, maxSize?: number, sizeOf?: (value: any) => number, keepOversized?: boolean }} [options]
+   *   keepOversized: a value bigger than maxSize on its own is still kept (as the only entry);
+   *   false: it is returned but never stored (it would be recomputed rather than pin that memory)
    */
-  constructor({ maxEntries = 100, maxSize = Infinity, sizeOf = () => 1 } = {}) {
+  constructor({ maxEntries = 100, maxSize = Infinity, sizeOf = () => 1, keepOversized = true } = {}) {
     this.maxEntries = maxEntries;
+    this.keepOversized = keepOversized;
     this.maxSize = maxSize;
     this.sizeOf = sizeOf;
     /** @type {Map<string, { value: any, size: number }>} insertion order = recency */
@@ -37,6 +40,7 @@ export class LruCache {
       this.entries.delete(key);
     }
     const size = this.sizeOf(value);
+    if (!this.keepOversized && size > this.maxSize) return value;
     this.entries.set(key, { value, size });
     this.size += size;
     while (this.entries.size > this.maxEntries || (this.size > this.maxSize && this.entries.size > 1)) {

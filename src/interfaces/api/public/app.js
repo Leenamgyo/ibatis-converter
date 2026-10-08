@@ -96,7 +96,7 @@ async function loadStatement(qualifiedId) {
   }
   const projectId = state.projectId;
   const id = encodeURIComponent(qualifiedId);
-  const [analysis, xml] = await Promise.all([api(`/api/v1/statements/${id}`), api(`/api/v1/statements/${id}/xml`)]);
+  const [analysis, xml] = await Promise.all([api(`/api/v1/statements/${id}?view=ui`), api(`/api/v1/statements/${id}/xml`)]);
   const doc = { analysis, ...xml };
   if (projectId !== state.projectId) return doc; // another project was opened meanwhile
   state.docs.set(qualifiedId, doc);

@@ -89,11 +89,11 @@ export function migrateProject(options, log = () => {}) {
 
   // A session indexes the project, then each file is converted and written in turn: only the
   // files one step needs are in memory (bounded caches), whatever the project's size.
-  // Includer context for fragments is not sampled here (schemaSiteFiles: Infinity), so the
+  // Includer context for fragments is not sampled here (schemaSites: Infinity), so the
   // output is the same as migrating every mapper at once.
   // refids into fragments outside the folder (a sibling module) are found too; those files are
   // used to resolve them and never written to out/ (ReferenceDiscovery)
-  const { session, references } = openProjectFolder(root, { dialect: options.dialect, schemaSiteFiles: Infinity });
+  const { session, references } = openProjectFolder(root, { dialect: options.dialect, schemaSites: Infinity });
   if (references.files.length) log(`프로젝트 밖에서 refid 대상 매퍼 ${references.files.length}개를 찾아 참조로 사용 (${references.repoRoot})`);
   try {
     log(`매퍼 ${session.files.length}개 발견 (XML ${session.files.length + session.skipped.length}개 중, 나머지는 건너뜀)`);

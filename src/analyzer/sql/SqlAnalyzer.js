@@ -85,6 +85,47 @@ function tagOuterColumns(node, outerColumns, seen = new Set()) {
   for (const value of Object.values(node)) tagOuterColumns(value, outerColumns, seen);
 }
 
+/**
+ * node-sql-parser nests `a AND b AND c …` left-deep, one level per operand. A WHERE built from
+ * many included fragments (20 refids, each including more) has thousands of operands, and
+ * every recursive walk over the AST (table / lineage analyzers) overflows the stack on it.
+ * Rebuilds each unparenthesised same-operator AND / OR chain as a balanced tree — the same
+ * operands in the same order (AND / OR are associative), depth log n. Iterative itself.
+ */
+export function balanceLogicalChains(root) {
+  const isChain = (node, op) => node?.type === 'binary_expr' && node.operator === op && !node.parentheses;
+  const balanced = (operands, lo, hi, template) => {
+    if (hi - lo === 1) return operands[lo];
+    const mid = (lo + hi) >>> 1;
+    return { ...template, parentheses: undefined, left: balanced(operands, lo, mid, template), right: balanced(operands, mid, hi, template) };
+  };
+  const seen = new Set();
+  const stack = [root];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object' || seen.has(node)) continue;
+    seen.add(node);
+    for (const key of Object.keys(node)) {
+      let value = node[key];
+      if (value?.type === 'binary_expr' && (value.operator === 'AND' || value.operator === 'OR') && (isChain(value.left, value.operator) || isChain(value.right, value.operator))) {
+        const operands = [];
+        const chain = [value.right, value.left];
+        while (chain.length) {
+          const e = chain.pop();
+          if (isChain(e, value.operator)) chain.push(e.right, e.left);
+          else operands.push(e);
+        }
+        const { left, right, ...template } = value;
+        value = { ...balanced(operands, 0, operands.length, template), parentheses: value.parentheses };
+        if (value.parentheses === undefined) delete value.parentheses;
+        node[key] = value;
+      }
+      if (value && typeof value === 'object') stack.push(value);
+    }
+  }
+  return root;
+}
+
 export class SqlAnalyzer {
   /**
    * @param {string} sql
@@ -98,6 +139,7 @@ export class SqlAnalyzer {
       const { sql: parseable, outerColumns } = stripOracleOuterJoins(sql);
       const ast = parser.astify(parseable, { database });
       const list = Array.isArray(ast) ? ast : [ast];
+      balanceLogicalChains(list);
       if (outerColumns.size) tagOuterColumns(list, outerColumns);
       return { ast: list, error: null };
     } catch (e) {

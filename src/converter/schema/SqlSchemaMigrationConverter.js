@@ -97,9 +97,15 @@ export class SqlSchemaMigrationConverter {
    *   resolves here exactly as in the analysis even when only some of the project's mappers
    *   are given. Without it, the same rules are applied to the given mappers.
    *   onInclude({ refid, writtenIn, root, qualifiedId }): called for every include resolved (tests)
+   *   only: { statements: Set, fragments: Set } of qualified ids — convert just these (a big
+   *   project's includer files hold many statements a fragment's context doesn't need); the
+   *   others are copied unchanged and raise no events. Default: everything.
+   *   siteFilter(fragmentQualifiedId, statementQualifiedId) -> boolean: which statements'
+   *   include sites count as a fragment's context (a sampled, fixed set — so a fragment
+   *   converts the same whichever other statements happen to be converted alongside)
    * @returns {{ mapper: object, events: SchemaMigrationEvent[] }[]}
    */
-  convertMappers(mapperNodes, { fragmentContexts = this.fragmentContexts, resolveInclude = null, onInclude = null } = {}) {
+  convertMappers(mapperNodes, { fragmentContexts = this.fragmentContexts, resolveInclude = null, onInclude = null, only = null, siteFilter = null } = {}) {
     const fragments = new Map();
     const fragmentNamespace = new Map();
     for (const mapper of mapperNodes) {
@@ -134,22 +140,28 @@ export class SqlSchemaMigrationConverter {
       namespaceOf: (qualifiedId) => fragmentNamespace.get(qualifiedId),
       /** fragment qualified id -> scopes seen at its include sites */
       includeSites: new Map(),
+      siteFilter,
     };
 
     // Statements first: converting them is what records each fragment's include-site scopes.
-    const statementResults = mapperNodes.map((mapper) => mapper.statements.map((statement) =>
-      this.#convertTree(statement, mapper.namespace, project, null, [])));
+    const statementResults = mapperNodes.map((mapper) => mapper.statements.map((statement) => {
+      const qualifiedId = qualify(mapper.namespace, statement.id);
+      if (only && !only.statements.has(qualifiedId)) return null;
+      return this.#convertTree(statement, mapper.namespace, project, null, [], { owner: qualifiedId });
+    }));
 
     return mapperNodes.map((mapper, m) => {
       const overrides = new Map();
       const events = [];
       mapper.statements.forEach((statement, s) => {
         const result = statementResults[m][s];
+        if (!result) return;
         mergeOverrides(overrides, result.overrides);
         events.push(...tag(result.events, statement.id));
       });
       for (const fragment of mapper.sqlFragments) {
         const qualifiedId = qualify(mapper.namespace, fragment.id);
+        if (only && !only.fragments.has(qualifiedId)) continue;
         const explicit = fragmentContexts[qualifiedId] ?? fragmentContexts[fragment.id] ?? null;
         const result = this.#convertFragment(fragment, mapper.namespace, qualifiedId, explicit, project);
         mergeOverrides(overrides, result.overrides);
@@ -216,7 +228,7 @@ export class SqlSchemaMigrationConverter {
    * which is its own SQL statement).
    * @returns {{ overrides: Map<object, object>, events: SchemaMigrationEvent[] }}
    */
-  #convertTree(root, namespace, project, outerScope, includeStack, { record = true, start = null } = {}) {
+  #convertTree(root, namespace, project, outerScope, includeStack, { record = true, start = null, owner = null } = {}) {
     const overrides = new Map();
     const events = [];
     const runs = [{ nodes: root.children ?? [] }];
@@ -242,14 +254,22 @@ export class SqlSchemaMigrationConverter {
       });
       events.push(...runEvents);
       if (record) {
+        // marker -> its position, once (an indexOf per marker is quadratic: 30k includes x 1M tokens)
+        const positions = new Map();
+        resolution.tokens.forEach((token, index) => {
+          if (token.kind === TokenKind.MARKER) positions.set(token, index);
+        });
         for (const { marker, qualifiedId } of markers) {
           if (!qualifiedId) continue; // a refid that resolves nowhere has no include site to record
-          const scope = resolution.tokenScopes[resolution.tokens.indexOf(marker)];
+          if (project.siteFilter && !project.siteFilter(qualifiedId, owner)) continue;
+          const scope = resolution.tokenScopes[positions.get(marker)];
           // a fragment included in a FROM clause continues it: `FROM <include/>` is a table list
           const at = resolution.markerStates.get(marker);
           const start = at?.clause === 'FROM' ? { clause: 'FROM', expectTable: at.expectTable } : null;
           if (!project.includeSites.has(qualifiedId)) project.includeSites.set(qualifiedId, []);
-          project.includeSites.get(qualifiedId).push({ scope, start });
+          const sites = project.includeSites.get(qualifiedId);
+          // the same fragment included 1000 times in one WHERE is one site
+          if (!sites.some((site) => site.scope === scope && JSON.stringify(site.start) === JSON.stringify(start))) sites.push({ scope, start });
         }
       }
     });
@@ -263,12 +283,24 @@ export class SqlSchemaMigrationConverter {
    * `<set>`, and an included fragment's SQL (read-only). `test=`,
    * `collection=`, `item=` etc. are never tokenized.
    */
+  /**
+   * Tokens of a text, shared: a fragment included at 1000 places is tokenized once (tokens are
+   * never mutated — every pass keys its results by position). Lives as long as this converter.
+   */
+  #tokenCache = new Map();
+
+  #tokenize(text) {
+    let tokens = this.#tokenCache.get(text);
+    if (!tokens) this.#tokenCache.set(text, (tokens = tokenize(text)));
+    return tokens;
+  }
+
   #segmentsOf(nodes, namespace, project, writable, includeStack, markers, writtenIn = namespace) {
     const segments = [];
     const text = (node, field) => {
       const original = node[field];
       if (original === null || original === undefined || original === '') return;
-      segments.push({ tokens: tokenize(original), writable, node, field, original });
+      segments.push({ tokens: this.#tokenize(original), writable, node, field, original });
     };
     const keyword = (word) => segments.push({ tokens: [syntheticToken(TokenKind.WORD, word)], writable: false });
     // an iBATIS `prepend` ("WHERE", "AND", ",") is SQL the runtime inserts: part of the stream, never rewritten

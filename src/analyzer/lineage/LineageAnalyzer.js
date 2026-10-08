@@ -32,8 +32,20 @@ export function renderExpr(node) {
       return `${name}(${renderExpr(node.args)})`;
     }
     case 'binary_expr': {
-      const operator = node.operator === 'AND' || node.operator === 'OR' ? ` ${node.operator} ` : ` ${node.operator} `;
-      const text = `${renderExpr(node.left)}${operator}${renderExpr(node.right)}`;
+      if (node.operator === 'AND' || node.operator === 'OR') {
+        // a WHERE built from many included fragments is an AND chain thousands deep: walk the
+        // unparenthesised same-operator chain with a stack, not recursion
+        const operands = [];
+        const stack = [node.right, node.left];
+        while (stack.length) {
+          const e = stack.pop();
+          if (e?.type === 'binary_expr' && e.operator === node.operator && !e.parentheses) stack.push(e.right, e.left);
+          else operands.push(renderExpr(e));
+        }
+        const text = operands.join(` ${node.operator} `);
+        return node.parentheses ? `(${text})` : text;
+      }
+      const text = `${renderExpr(node.left)} ${node.operator} ${renderExpr(node.right)}`;
       return node.parentheses ? `(${text})` : text;
     }
     case 'unary_expr':

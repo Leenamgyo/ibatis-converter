@@ -444,6 +444,9 @@ function edge(from, to, kind = 'flow') {
 }
 
 /** Splits a predicate into its top-level AND/OR terms, so each condition can be its own box. */
+/** WHERE terms drawn as their own objects, per SELECT (the rest are counted) */
+const MAX_WHERE_OBJECTS = 200;
+
 function splitConditions(where) {
   const text = String(where ?? '').replace(/\s+/g, ' ').trim();
   if (!text) return [];
@@ -668,7 +671,10 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   const conditionNodes = [];
   const conditionIds = [];
   if (select.where) {
-    splitConditions(select.where).forEach((condition, i) => {
+    const conditions = splitConditions(select.where);
+    // a WHERE spliced together from many fragments can have thousands of terms: one object
+    // each would be thousands of boxes and edges — draw the first ones and say how many remain
+    conditions.slice(0, MAX_WHERE_OBJECTS).forEach((condition, i) => {
       const condId = `where:${select.id}:${i}`;
       const normalized = normalizeSql(condition.text);
       const guard = guards.find((g) => !g.used && g.sql && (g.sql.includes(normalized) || normalized.includes(g.sql)));
@@ -689,6 +695,13 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
       conditionNodes.push(stack);
       conditionIds.push({ id: condId, text: condition.text });
     });
+    if (conditions.length > MAX_WHERE_OBJECTS) {
+      conditionNodes.push(el('div', { class: 'cond-stack' },
+        gnode(`where:${select.id}:more`, 'cond',
+          el('div', { class: 'title' }, el('span', { class: 'cond-kw' }, '⋯')),
+          el('div', { class: 'sql' }, `조건 ${(conditions.length - MAX_WHERE_OBJECTS).toLocaleString()}개 더 (모두 ${conditions.length.toLocaleString()}개) — 전체는 변환 탭의 쿼리에서 보세요`),
+        )));
+    }
   }
   // A tag that guards something other than a WHERE term - an <iterate>
   // feeding an IN list, say - is still a dynamic object of its own.

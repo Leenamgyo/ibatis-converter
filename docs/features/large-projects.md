@@ -34,15 +34,49 @@ The stubs are then collected.
 | Need | What is loaded |
 |---|---|
 | a statement's analysis / conversion / XML | its file + its fragments' files |
-| a file's 변환 view (`schema-migration?file=`) | the file, every fragment it includes, and up to `schemaSiteFiles` (30) files that include those fragments (their FROM context); past the cap a `FRAGMENT_CONTEXT_SAMPLED` WARNING says so |
-| tree badges / project totals (`schema-summary`) | file by file; only counts are kept |
+| a file's 변환 view (`schema-migration?file=`) | the file, every fragment it includes, and each fragment's **context sites**: the first `schemaSites` (30) statements that include it, directly or not (their FROM context). Only those statements are converted, not the rest of their files; past the cap a `FRAGMENT_CONTEXT_SAMPLED` WARNING says so |
+| tree badges / project totals (`schema-summary`) | file by file: each file converts its own statements and its own fragments (with their context sites) once, and a statement's count adds the events of the fragments it includes afterwards. That is linear in files; re-migrating every file's whole scope was quadratic. Only counts are kept |
 | reports, table usage (`report()`) | file by file; analyses are reduced to `{id, tables, joins}` |
 | CLI `migrate` | file by file, each written as it is done (includer context uncapped, so output = whole-project run) |
 
 The caches are `LruCache`s:
 - **file text:** 32 MB / 32 entries,
 - **parsed ASTs:** 16 files,
-- **analyses:** 256.
+- **analyses:** 256 entries / about 256 MB (`maxAnalysisBytes`, estimated from the flattened SQL). An analysis bigger than that on its own is returned but not kept.
+
+## Statements whose refids expand to 100k lines
+
+20 `<include>`s per query, each fragment including more, splices one
+fragment in at hundreds of places. A 2,000-line query can become hundreds
+of thousands of lines. What keeps that bounded
+(`test/application/largeIncludes.test.js`):
+
+- **Parse.** node-sql-parser nests `a AND b AND …` one level per term.
+  `SqlAnalyzer.parse` rebalances every unparenthesised AND / OR chain
+  (`balanceLogicalChains`, depth log n), so the recursive table and
+  lineage walks don't overflow the stack.
+- **Schema migration.**
+  - Each include marker's position comes from one map, not one `indexOf`
+    per marker, which was quadratic: 30k includes × 1M tokens.
+  - Each include site is recorded once per scope.
+  - A text is tokenized once per conversion.
+- **Context sites.** A fragment's context is a fixed set of sites
+  (above), so it converts the same in the statement view, the file view
+  and the summary.
+- **`GET /statements/:id?view=ui`.** This is what the lineage view
+  fetches. It is the analysis without `parameters`, the `where` tree, `sql`
+  and `dynamicConditions`, and with `columns` listed once per table
+  (`counts` keeps the totals). For such a statement the full analysis is
+  about 100 MB of JSON.
+- **Browser.**
+  - The lineage graph draws at most 200 WHERE terms per SELECT and counts
+    the rest.
+  - The 변환 view builds the token marks only for the rows it draws, 3,000
+    at a time, behind **나머지 N줄 더 보기**.
+  - Nested include blocks open within a 4,000-line budget. A fragment
+    already shown starts collapsed (위에서 펼침) and is drawn when opened.
+  - With refids inlined, fragments of other files come without their
+    texts (only `renamed`), and a result that large is the only one cached.
 
 `close()` drops the caches, the index and, for an upload, its temp directory.
 

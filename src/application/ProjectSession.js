@@ -211,19 +211,27 @@ function alreadyMyBatis(node) {
   };
 }
 
+/** a StatementAnalysis's rough heap size: its parameters / columns / WHERE tree grow with its flattened SQL */
+function analysisSize(analysis) {
+  return 4096 + (analysis?.sql?.length ?? 0) * 32;
+}
+
 export class ProjectSession {
   /**
    * @param {DirectorySource} source
-   * @param {{ dialect?: string, maxFiles?: number, maxTextBytes?: number, maxAnalyses?: number, schemaSiteFiles?: number }} [options]
+   * @param {{ dialect?: string, maxFiles?: number, maxTextBytes?: number, maxAnalyses?: number, schemaSites?: number }} [options]
+   *   schemaSites: how many of the statements that include a fragment give it its FROM context
+   *   in a schema migration (the older name `schemaSiteFiles` is accepted)
    */
-  constructor(source, { dialect = 'mysql', maxFiles = 16, maxTextBytes = 32 * 1024 * 1024, maxAnalyses = 256, schemaSiteFiles = 30, maxFileBytes = 20 * 1024 * 1024 } = {}) {
+  constructor(source, { dialect = 'mysql', maxFiles = 16, maxTextBytes = 32 * 1024 * 1024, maxAnalyses = 256, maxAnalysisBytes = 256 * 1024 * 1024, schemaSiteFiles = 30, schemaSites = schemaSiteFiles, maxFileBytes = 20 * 1024 * 1024 } = {}) {
     this.maxFileBytes = maxFileBytes;
     this.source = source;
     this.dialect = dialect;
-    this.schemaSiteFiles = schemaSiteFiles;
+    this.schemaSites = schemaSites;
     this.texts = new LruCache({ maxEntries: maxFiles * 2, maxSize: maxTextBytes, sizeOf: (t) => t.length * 2 });
     this.mappers = new LruCache({ maxEntries: maxFiles });
-    this.analyses = new LruCache({ maxEntries: maxAnalyses });
+    // bounded by size too: one statement whose includes expand to 100k lines analyses to ~50 MB
+    this.analyses = new LruCache({ maxEntries: maxAnalyses, maxSize: maxAnalysisBytes, sizeOf: analysisSize, keepOversized: false });
     this.statementAnalyzer = new StatementAnalyzer();
     this.converter = new MyBatisAstConverter();
     this.safety = new MigrationSafetyAnalyzer();
@@ -588,10 +596,10 @@ export class ProjectSession {
 
   /**
    * Old -> new schema migration of one statement and the fragments it
-   * includes. Only the files involved are loaded: the statement's, its
-   * fragments', and up to `schemaSiteFiles` of the files that include those
-   * fragments, which the migration needs to infer a FROM-less fragment's
-   * tables.
+   * includes. Only what is involved is converted: the statement, its
+   * fragments, and each fragment's include sites (up to `schemaSites` of the
+   * statements that include it), which the migration needs to infer a
+   * FROM-less fragment's tables. The files they are in are loaded.
    */
   schemaMigration(qualifiedId, mapping, options = {}, { formatSql = false, inlineRefid = false } = {}) {
     const mybatisXml = formatSql ? new XmlGenerator({ formatSql }) : this.xml;
@@ -599,7 +607,7 @@ export class ProjectSession {
     const at = this.meta.locate(qualifiedId);
     if (!at) return null;
     const fragmentIds = this.includedFragments(qualifiedId);
-    const { results, sampled } = this.#migrateFiles(this.#schemaFiles([at.sourceFile], fragmentIds), mapping, options);
+    const { results, sampled } = this.#migrateFiles(this.#schemaScope([qualifiedId], fragmentIds), mapping, options);
     const pick = (qid, kind) => {
       const loc = this.meta.locate(qid);
       const r = results.get(loc.sourceFile);
@@ -619,7 +627,7 @@ export class ProjectSession {
       if (texts.mybatisAfter === texts.mybatisBefore) delete texts.mybatisAfter;
       const events = r.mybatis.events.filter((e) => e.statementId === loc.localId).map(({ tokenIndex, ...e }) => e);
       if (kind === 'fragment' && sampled.has(qid)) {
-        events.push({ grade: 'WARNING', code: 'FRAGMENT_CONTEXT_SAMPLED', message: `context inferred from ${this.schemaSiteFiles} of the ${sampled.get(qid)} files that include this fragment`, statementId: loc.localId });
+        events.push({ grade: 'WARNING', code: 'FRAGMENT_CONTEXT_SAMPLED', message: ProjectSession.sampledMessage(this.schemaSites, sampled.get(qid)), statementId: loc.localId });
       }
       const conversion = kind === 'statement' ? r.conversion.statements.get(qid) : r.conversion.fragments.get(qid);
       return { sourceFile: loc.sourceFile, ...texts, events, conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null };
@@ -630,9 +638,9 @@ export class ProjectSession {
   }
 
   /**
-   * Schema migration scoped to one file: the file, every fragment its
-   * statements include (transitively, from any file) and, for those
-   * fragments' context, up to `schemaSiteFiles` of their includers' files.
+   * Schema migration scoped to one file: the file's statements and fragments,
+   * every fragment its statements include (transitively, from any file) and
+   * those fragments' include sites.
    * @returns {{ results: Map, fragmentIds: string[], sampled: Map<string, number> }}
    */
   migrateForFile(sourceFile, mapping, options = {}) {
@@ -643,31 +651,56 @@ export class ProjectSession {
       ...entry.statements.flatMap((st) => this.includedFragments(st.qualifiedId)),
       ...entry.fragments.flatMap((f) => this.includedFragments(f.qualifiedId)),
     ])];
-    const scope = this.#schemaFiles([sourceFile], fragmentIds);
+    const scope = this.#schemaScope(entry.statements.map((st) => st.qualifiedId), fragmentIds, [sourceFile]);
     return { ...this.#migrateFiles(scope, mapping, options), fragmentIds };
   }
 
-  /** the files a schema migration of `seedFiles` + `fragmentIds` needs, includer sites capped */
-  #schemaFiles(seedFiles, fragmentIds) {
-    const files = new Set(seedFiles);
+  /** "context inferred from N of the M statements that include this fragment" */
+  static sampledMessage(sites, of) {
+    return `context inferred from ${sites} of the ${of} statements that include this fragment`;
+  }
+
+  /**
+   * The statements whose include sites are a fragment's context: the first `schemaSites` of
+   * the statements that include it (directly or through other fragments). Fixed per fragment,
+   * so the fragment converts the same in the statement view, the file view and the summary.
+   */
+  #contextSites(fragmentQualifiedId) {
+    const includers = this.includerStatements(fragmentQualifiedId);
+    return { sites: includers.slice(0, this.schemaSites), of: includers.length };
+  }
+
+  /**
+   * What a schema migration of `statements` + `fragmentIds` converts and loads: those, each
+   * fragment's context sites, and the files all of them (and what they include) are in.
+   */
+  #schemaScope(statements, fragmentIds, seedFiles = []) {
+    const convert = new Set(statements);
+    const sites = new Map();
     const sampled = new Map();
     for (const fid of fragmentIds) {
-      const loc = this.meta.locate(fid);
-      if (loc) files.add(loc.sourceFile);
-      const includers = this.includerFiles(fid);
-      if (includers.length > this.schemaSiteFiles) sampled.set(fid, includers.length);
-      for (const f of includers.slice(0, this.schemaSiteFiles)) files.add(f);
-      // the includers' own fragments must resolve too
-      for (const f of includers.slice(0, this.schemaSiteFiles)) {
-        for (const st of this.meta.file(f)?.statements ?? []) {
-          for (const dep of this.includedFragments(st.qualifiedId)) {
-            const dl = this.meta.locate(dep);
-            if (dl) files.add(dl.sourceFile);
-          }
-        }
-      }
+      const { sites: chosen, of } = this.#contextSites(fid);
+      if (of > chosen.length) sampled.set(fid, of);
+      sites.set(fid, new Set(chosen));
+      for (const st of chosen) convert.add(st);
     }
-    return { files: [...files], sampled };
+    const files = new Set(seedFiles);
+    const add = (qid) => {
+      const f = this.meta.fileOf(qid);
+      if (f) files.add(f);
+    };
+    for (const fid of fragmentIds) add(fid);
+    for (const st of convert) {
+      add(st);
+      for (const dep of this.includedFragments(st)) add(dep);
+    }
+    return {
+      files: [...files],
+      sampled,
+      only: { statements: convert, fragments: new Set(fragmentIds) },
+      // a fragment's context comes from its chosen sites only (others may be converted for their own sake)
+      siteFilter: (fid, statement) => !sites.has(fid) || sites.get(fid).has(statement),
+    };
   }
 
   /**
@@ -680,15 +713,15 @@ export class ProjectSession {
     return this.#migrateFiles({ files, sampled: new Map() }, mapping, options).results;
   }
 
-  #migrateFiles({ files, sampled }, mapping, options) {
+  #migrateFiles({ files, sampled, only = null, siteFilter = null }, mapping, options) {
     const converter = new SqlSchemaMigrationConverter(mapping, options);
     const conversions = files.map((f) => this.convertFile(f));
     // the "keep the syntax" side: an iBATIS file's own AST, or a MyBatis file's own AST
     const originals = files.map((f) => this.mapper(f).mybatis ?? this.mapper(f).sqlMap);
     // includes resolved by the project-wide resolver, not by whichever mappers are loaded
     const resolveInclude = (refid, writtenIn, root, fromFile) => this.meta.includeTarget(refid, writtenIn, root, fromFile ?? null).symbol?.qualifiedId ?? null;
-    const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode), { resolveInclude });
-    const ibatis = converter.convertMappers(originals, { resolveInclude });
+    const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode), { resolveInclude, only, siteFilter });
+    const ibatis = converter.convertMappers(originals, { resolveInclude, only, siteFilter });
     const results = new Map();
     files.forEach((f, i) => results.set(f, {
       mybatis: { ...mybatis[i], original: conversions[i].mapperNode },
@@ -718,26 +751,35 @@ export class ProjectSession {
       }
       return t;
     };
+    // Each file converts its own statements and its own fragments (with their fixed context
+    // sites) once; a statement's count adds the events of the fragments it includes afterwards.
+    // Every fragment is converted exactly as in the 변환 view, and only in its own file's step.
+    const statementEvents = new Map();
+    const statementConversion = new Map();
+    const fragmentEvents = new Map();
+    const fragmentConversion = new Map();
     for (const file of this.files) {
       if (!file.parsed) continue;
-      // the file's own fragments come with their includers' files, so their context is the same as in the 변환 view
-      const { results, fragmentIds } = this.migrateForFile(file.sourceFile, mapping, options);
-      const fragmentEvents = new Map();
-      const fragmentConversion = new Map();
-      for (const fid of fragmentIds) {
-        const loc = this.meta.locate(fid);
-        if (!loc) continue;
-        const r = results.get(loc.sourceFile);
-        fragmentEvents.set(fid, r.mybatis.events.filter((e) => e.statementId === loc.localId));
-        fragmentConversion.set(fid, r.conversion.fragments.get(fid)?.events ?? []);
-      }
-      const own = results.get(file.sourceFile);
+      const own = this.#migrateFiles(this.#schemaScope(file.statements.map((st) => st.qualifiedId), file.fragments.map((f) => f.qualifiedId), [file.sourceFile]), mapping, options).results.get(file.sourceFile);
       // the project total counts each event once, in the file it belongs to
       for (const e of own.mybatis.events) totalEvents.push({ grade: e.grade, code: e.code });
+      const slim = (e) => ({ grade: e.grade, code: e.code });
       for (const st of file.statements) {
-        const events = [...own.mybatis.events.filter((e) => e.statementId === st.id), ...this.includedFragments(st.qualifiedId).flatMap((f) => fragmentEvents.get(f) ?? [])];
-        const conversion = [...(own.conversion.statements.get(st.qualifiedId)?.events ?? []), ...this.includedFragments(st.qualifiedId).flatMap((f) => fragmentConversion.get(f) ?? [])];
-        counts[st.qualifiedId] = { schema: tally(events), conversion: tally(conversion) };
+        statementEvents.set(st.qualifiedId, own.mybatis.events.filter((e) => e.statementId === st.id).map(slim));
+        statementConversion.set(st.qualifiedId, (own.conversion.statements.get(st.qualifiedId)?.events ?? []).map(slim));
+      }
+      for (const f of file.fragments) {
+        fragmentEvents.set(f.qualifiedId, own.mybatis.events.filter((e) => e.statementId === f.id).map(slim));
+        fragmentConversion.set(f.qualifiedId, (own.conversion.fragments.get(f.qualifiedId)?.events ?? []).map(slim));
+      }
+    }
+    for (const file of this.files) {
+      for (const st of file.parsed ? file.statements : []) {
+        const fragments = this.includedFragments(st.qualifiedId);
+        counts[st.qualifiedId] = {
+          schema: tally([...statementEvents.get(st.qualifiedId), ...fragments.flatMap((f) => fragmentEvents.get(f) ?? [])]),
+          conversion: tally([...statementConversion.get(st.qualifiedId), ...fragments.flatMap((f) => fragmentConversion.get(f) ?? [])]),
+        };
       }
     }
     return { statements: counts, total: tally(totalEvents) };
