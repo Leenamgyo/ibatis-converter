@@ -34,6 +34,7 @@ import { MigrationSafetyAnalyzer } from '../report/migration/MigrationSafetyAnal
 import { findXmlFiles } from './ProjectLoader.js';
 import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS, copyScore, scanMapperIds } from './mapperDetection.js';
 import { LruCache } from './LruCache.js';
+import { ProjectMetadata } from './ProjectMetadata.js';
 import { buildColumnRemovalGuide } from './ColumnRemovalGuide.js';
 
 /**
@@ -45,17 +46,18 @@ import { buildColumnRemovalGuide } from './ColumnRemovalGuide.js';
  *    parsed once. What is kept is the file list, every statement / fragment
  *    / resultMap id and, per node, just its `<include refid>` list as a
  *    tiny stub. The text and the AST are dropped.
- * 2. **Resolves the project-wide reference graph on the stubs.** That is
- *    include chains, missing / circular / ambiguous / nested-namespace
- *    diagnostics, and which namespaces include each fragment. It uses the
- *    same ReferenceResolver as the pipeline (identical rules), without
- *    reading a file again.
+ * 2. **Hands everything it knows to ProjectMetadata** — the registry
+ *    (files, symbols, namespaces), the one lookup rule (ReferenceIndex) and
+ *    the include graph resolved over the stubs. Every question about where
+ *    something is or what a refid points at is answered there; this class
+ *    keeps none of it.
  * 3. **Loads on demand.** A statement's analysis, conversion, XML or
  *    schema migration reads only the files it needs (its own, its
  *    fragments', and for schema inference a capped number of includers').
  *    Those files go through bounded LRU caches: file text, parsed AST,
- *    analyses. A real symbol table resolves includes by loading fragment
- *    files lazily.
+ *    analyses. The real ASTs are resolved by a ReferenceResolver over the
+ *    metadata's own symbol table and index, loading nodes from files
+ *    (`#realResolver`) — the graph's walk with a different node loader.
  * 4. **Streams whole-project work** (reports, schema summary, CLI)
  *    file by file, keeping aggregates only.
  * 5. **`close()` drops every cache** and, for an upload, deletes its
@@ -230,6 +232,16 @@ export class ProjectSession {
     this.closed = false;
   }
 
+  /** the project's files (ProjectMetadata) */
+  get files() {
+    return this.meta?.files ?? [];
+  }
+
+  /** parse + reference diagnostics of the whole project */
+  get diagnostics() {
+    return this.meta?.diagnostics ?? new DiagnosticBag();
+  }
+
   /** Builds the index. Returns this. */
   open() {
     const diagnostics = new DiagnosticBag();
@@ -333,53 +345,9 @@ export class ProjectSession {
       if (c.stub) stubMappers.push({ sourceFile: c.entry.sourceFile, sqlMap: c.stub });
     }
 
-    // project-wide reference graph on the stubs: same resolver, same rules, no file reads
-    const { symbolTable } = buildSymbolTable(stubMappers, diagnostics);
-    // MyBatis mappers: a bare refid into another file is found, and flagged (MYBATIS_BARE_REFID)
-    this.mybatisNamespaces = new Set(files.filter((f) => f.syntax === 'mybatis' && f.namespace !== null).map((f) => f.namespace));
-    const graph = new ReferenceResolver(symbolTable, diagnostics, { mybatisNamespaces: this.mybatisNamespaces });
-    for (const { sqlMap } of stubMappers) {
-      for (const st of sqlMap.statements) {
-        const qid = qualify(sqlMap.namespace, st.id);
-        graph.resolve(st, sqlMap.namespace, qid);
-        graph.linkStatementDependencies(st, sqlMap.namespace, qid);
-      }
-      for (const rm of sqlMap.resultMaps) graph.resolveResultMapExtends(rm, sqlMap.namespace);
-    }
-    this.graph = graph;
-    // include edges, deduplicated, both directions (the resolver records a fragment's edges once per inclusion)
-    this.includes = new Map();
-    this.includedBy = new Map();
-    const link = (map, a, b) => (map.get(a) ?? map.set(a, new Set()).get(a)).add(b);
-    for (const [from, edges] of graph.dependencyGraph._edges) {
-      for (const { to, kind } of edges) {
-        if (kind !== 'INCLUDE') continue;
-        link(this.includes, from, to);
-        link(this.includedBy, to, from);
-      }
-    }
-    this.diagnostics = diagnostics;
-    this.files = files;
+    // everything known about the mappers without their SQL: registry, the one lookup rule, the include graph
+    this.meta = new ProjectMetadata({ files, stubMappers, diagnostics });
     this.skipped = skipped;
-    this.fileByQualifiedId = new Map();
-    this.namespaceOfFile = new Map();
-    this.fileEntries = new Map(files.map((f) => [f.sourceFile, f]));
-    this.statementIds = new Set(files.flatMap((f) => f.statements.map((st) => st.qualifiedId)));
-    for (const f of files) {
-      this.namespaceOfFile.set(f.sourceFile, f.namespace);
-      for (const s of f.statements) this.fileByQualifiedId.set(s.qualifiedId, f.sourceFile);
-      for (const s of f.fragments) this.fileByQualifiedId.set(s.qualifiedId, f.sourceFile);
-    }
-    // From here on the graph resolver only reads ids and namespaces (qualifiedIdOf), so the same
-    // table becomes the real one: each symbol's `node` loads the real AST on first touch, and the
-    // stubs, no longer referenced, are collected.
-    for (const list of symbolTable._byQualifiedId.values()) {
-      for (const symbol of list) {
-        const { sourceFile, type, localId } = symbol;
-        Object.defineProperty(symbol, 'node', { configurable: true, get: () => this.#realNode(sourceFile, type, localId) });
-      }
-    }
-    this.realSymbols = symbolTable;
     return this;
   }
 
@@ -418,7 +386,7 @@ export class ProjectSession {
     return this.mappers.getOrLoad(sourceFile, () => {
       this.loads++;
       const text = this.text(sourceFile);
-      const { sqlMap, mybatis } = parseMapper(text, sourceFile, this.fileEntries.get(sourceFile)?.syntax);
+      const { sqlMap, mybatis } = parseMapper(text, sourceFile, this.meta.file(sourceFile)?.syntax);
       return sqlMap ? this.#indexMapper(sqlMap, mybatis) : this.#unparsedIndex(text, sourceFile);
     });
   }
@@ -432,16 +400,8 @@ export class ProjectSession {
     return null;
   }
 
-  #locate(qualifiedId) {
-    const sourceFile = this.fileByQualifiedId.get(qualifiedId);
-    if (!sourceFile) return null;
-    const namespace = this.namespaceOfFile.get(sourceFile);
-    const localId = namespace ? qualifiedId.slice(namespace.length + 1) : qualifiedId;
-    return { sourceFile, namespace, localId };
-  }
-
   hasStatement(qualifiedId) {
-    return this.statementIds.has(qualifiedId);
+    return this.meta.hasStatement(qualifiedId);
   }
 
   #assertOpen() {
@@ -450,14 +410,17 @@ export class ProjectSession {
 
   /** a resolver over the real (lazily loading) symbols — fresh per use, nothing accumulates */
   #realResolver() {
-    return new ReferenceResolver(this.realSymbols, new DiagnosticBag(), { mybatisNamespaces: this.mybatisNamespaces });
+    return new ReferenceResolver(this.meta.symbolTable, new DiagnosticBag(), {
+      index: this.meta.index,
+      loadNode: (symbol) => this.#realNode(symbol.sourceFile, symbol.type, symbol.localId),
+    });
   }
 
   // ---------------------------------------------------------------- per statement
 
   /** @returns {object|null} StatementAnalysis (cached, LRU) */
   analyze(qualifiedId) {
-    const at = this.#locate(qualifiedId);
+    const at = this.meta.locate(qualifiedId);
     if (!at) return null;
     return this.analyses.getOrLoad(qualifiedId, () => {
       const statement = this.mapper(at.sourceFile).statements.get(at.localId);
@@ -469,7 +432,7 @@ export class ProjectSession {
 
   /** resolved / original trees of one statement (for flattening, tests) */
   resolve(qualifiedId) {
-    const at = this.#locate(qualifiedId);
+    const at = this.meta.locate(qualifiedId);
     const statement = at && this.mapper(at.sourceFile).statements.get(at.localId);
     return statement ? this.#realResolver().resolve(statement, at.namespace, qualifiedId) : null;
   }
@@ -482,35 +445,17 @@ export class ProjectSession {
    * runtime follows it (against the root statement's namespace).
    */
   includeTree(qualifiedId) {
-    const at = this.#locate(qualifiedId);
-    if (!at) return [];
-    const m = this.mapper(at.sourceFile);
-    const node = m.statements.get(at.localId) ?? m.fragments.get(at.localId);
-    if (!node) return [];
-    const { resolvedTree } = this.#realResolver().resolve(node, at.namespace, qualifiedId);
-    // `rule`: which lookup step found it (ReferenceResolver#includeTarget), so the UI can say why
-    const ruleOf = (refid, writtenIn) => this.graph.includeTarget(refid, writtenIn, at.namespace).rule;
-    const walk = (children, writtenIn, out = []) => {
-      for (const child of children ?? []) {
-        if (child.type === 'ResolvedInclude') {
-          const own = this.#locate(child.qualifiedId)?.namespace ?? writtenIn;
-          const unparsed = this.fileEntries.get(this.fileByQualifiedId.get(child.qualifiedId))?.parsed === false;
-          out.push({ refid: child.refid, qualifiedId: child.qualifiedId, rule: ruleOf(child.refid, writtenIn), ...(unparsed ? { unparsed: true, file: this.fileByQualifiedId.get(child.qualifiedId) } : {}), children: walk(child.children, own) });
-        } else if (child.type === 'UnresolvedInclude') out.push({ refid: child.refid, unresolved: child.reason, rule: child.reason === 'MISSING' ? 'MISSING' : 'CIRCULAR' });
-        else walk(child.children, writtenIn, out);
-      }
-      return out;
-    };
-    return walk(resolvedTree.children, at.namespace);
+    return this.meta.includeTree(qualifiedId);
   }
 
+
   #context(namespace, extra = {}) {
-    return { namespace, resolveReference: (ref, ns, type, options) => this.graph.qualifiedIdOf(ref, ns, type, options), ...extra };
+    return { namespace, resolveReference: (ref, ns, type, options) => this.meta.qualifiedIdOf(ref, ns, type, options), ...extra };
   }
 
   /** MyBatis conversion of one statement: { node, events, safetySummary, xml } */
   convertStatement(qualifiedId) {
-    const at = this.#locate(qualifiedId);
+    const at = this.meta.locate(qualifiedId);
     const m = at && this.mapper(at.sourceFile);
     const statement = m?.statements.get(at.localId);
     if (!statement) return null;
@@ -556,34 +501,14 @@ export class ProjectSession {
     return { mapperNode, statements, fragments, xml: this.xml.generate(mapperNode) };
   }
 
-  /** qualified ids of the fragments a statement / fragment includes, transitively (from the graph) */
+  /** qualified ids of the fragments a statement / fragment includes, transitively (ProjectMetadata) */
   includedFragments(qualifiedId) {
-    const seen = new Set();
-    const walk = (id) => {
-      for (const to of this.includes.get(id) ?? []) {
-        if (seen.has(to)) continue;
-        seen.add(to);
-        walk(to);
-      }
-    };
-    walk(qualifiedId);
-    return [...seen];
+    return this.meta.includedFragments(qualifiedId);
   }
 
   /** files whose statements include `fragmentQualifiedId` (directly or through other fragments) */
   includerFiles(fragmentQualifiedId) {
-    const files = new Set();
-    const walk = (id, seen) => {
-      for (const from of this.includedBy.get(id) ?? []) {
-        if (seen.has(from)) continue;
-        seen.add(from);
-        const file = this.fileByQualifiedId.get(from);
-        if (file) files.add(file);
-        walk(from, seen);
-      }
-    };
-    walk(fragmentQualifiedId, new Set());
-    return [...files];
+    return this.meta.includerFiles(fragmentQualifiedId);
   }
 
   /**
@@ -591,15 +516,15 @@ export class ProjectSession {
    * (for the lineage view): sliced from the files, never the whole project.
    */
   statementXml(qualifiedId) {
-    const at = this.#locate(qualifiedId);
+    const at = this.meta.locate(qualifiedId);
     if (!at) return null;
-    const entry = this.fileEntries.get(at.sourceFile);
+    const entry = this.meta.file(at.sourceFile);
     const meta = entry.statements.find((s) => s.id === at.localId);
     const fragments = {};
     for (const fid of this.includedFragments(qualifiedId)) {
-      const fat = this.#locate(fid);
+      const fat = this.meta.locate(fid);
       if (!fat) continue;
-      const fmeta = this.fileEntries.get(fat.sourceFile).fragments.find((f) => f.id === fat.localId);
+      const fmeta = this.meta.file(fat.sourceFile).fragments.find((f) => f.id === fat.localId);
       fragments[fid] = { namespace: fat.namespace, sourceFile: fat.sourceFile, xml: this.#nodeXml(fat.sourceFile, 'fragment', fat.localId) ?? this.#slice(fat.sourceFile, fmeta.line, 'sql') };
     }
     return {
@@ -623,7 +548,7 @@ export class ProjectSession {
    * the caller falls back to the raw slice.
    */
   #nodeXml(sourceFile, kind, localId) {
-    const entry = this.fileEntries.get(sourceFile);
+    const entry = this.meta.file(sourceFile);
     if (!entry?.parsed) return null;
     const m = this.mapper(sourceFile);
     if (m.mybatis) {
@@ -636,23 +561,12 @@ export class ProjectSession {
 
   /** `<resultMap>` XML following `extends`, leaf first (resolved by the resolver's rules) */
   #resultMapChain(name, namespace) {
-    const chain = [];
-    const seen = new Set();
-    let current = name;
-    let ns = namespace;
-    while (current) {
-      const symbol = this.graph._resolveRefid(current, ns, SymbolType.RESULT_MAP);
-      this.graph._ambiguous = null;
-      if (!symbol || seen.has(symbol.qualifiedId)) break;
-      seen.add(symbol.qualifiedId);
-      const meta = this.fileEntries.get(symbol.sourceFile)?.resultMaps.find((r) => r.id === symbol.localId);
-      if (!meta) break;
-      chain.push({ qualifiedId: symbol.qualifiedId, sourceFile: symbol.sourceFile, xml: this.#slice(symbol.sourceFile, meta.line, 'resultMap') });
-      current = meta.extends;
-      ns = symbol.mapper;
-    }
-    return chain;
+    return this.meta.resultMapChain(name, namespace).flatMap(({ qualifiedId, sourceFile, symbol }) => {
+      const meta = this.meta.file(sourceFile)?.resultMaps.find((r) => r.id === symbol.localId);
+      return meta ? [{ qualifiedId, sourceFile, xml: this.#slice(sourceFile, meta.line, 'resultMap') }] : [];
+    });
   }
+
 
   /** the element whose start tag is on `line`, up to its end tag (statements and <sql> never nest in themselves) */
   #slice(sourceFile, line, tag) {
@@ -680,12 +594,12 @@ export class ProjectSession {
   schemaMigration(qualifiedId, mapping, options = {}, { formatSql = false, inlineRefid = false } = {}) {
     const mybatisXml = formatSql ? new XmlGenerator({ formatSql }) : this.xml;
     const sourceXml = (r) => (r.syntax === 'mybatis' ? mybatisXml : formatSql ? new IbatisXmlGenerator({ formatSql }) : this.ibatisXml);
-    const at = this.#locate(qualifiedId);
+    const at = this.meta.locate(qualifiedId);
     if (!at) return null;
     const fragmentIds = this.includedFragments(qualifiedId);
     const { results, sampled } = this.#migrateFiles(this.#schemaFiles([at.sourceFile], fragmentIds), mapping, options);
     const pick = (qid, kind) => {
-      const loc = this.#locate(qid);
+      const loc = this.meta.locate(qid);
       const r = results.get(loc.sourceFile);
       const i = kind === 'statement'
         ? r.ibatis.mapper.statements.findIndex((s) => s.id === loc.localId)
@@ -709,7 +623,7 @@ export class ProjectSession {
       return { sourceFile: loc.sourceFile, ...texts, events, conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null };
     };
     const fragments = {};
-    for (const fid of fragmentIds) if (this.#locate(fid)) fragments[fid] = { id: this.#locate(fid).localId, ...pick(fid, 'fragment') };
+    for (const fid of fragmentIds) if (this.meta.locate(fid)) fragments[fid] = { id: this.meta.locate(fid).localId, ...pick(fid, 'fragment') };
     return { statement: { ...pick(qualifiedId, 'statement'), includes: fragmentIds }, fragments };
   }
 
@@ -720,7 +634,7 @@ export class ProjectSession {
    * @returns {{ results: Map, fragmentIds: string[], sampled: Map<string, number> }}
    */
   migrateForFile(sourceFile, mapping, options = {}) {
-    const entry = this.fileEntries.get(sourceFile);
+    const entry = this.meta.file(sourceFile);
     if (!entry?.parsed) return null;
     const fragmentIds = [...new Set([
       ...entry.fragments.map((f) => f.qualifiedId),
@@ -736,16 +650,16 @@ export class ProjectSession {
     const files = new Set(seedFiles);
     const sampled = new Map();
     for (const fid of fragmentIds) {
-      const loc = this.#locate(fid);
+      const loc = this.meta.locate(fid);
       if (loc) files.add(loc.sourceFile);
       const includers = this.includerFiles(fid);
       if (includers.length > this.schemaSiteFiles) sampled.set(fid, includers.length);
       for (const f of includers.slice(0, this.schemaSiteFiles)) files.add(f);
       // the includers' own fragments must resolve too
       for (const f of includers.slice(0, this.schemaSiteFiles)) {
-        for (const st of this.fileEntries.get(f)?.statements ?? []) {
+        for (const st of this.meta.file(f)?.statements ?? []) {
           for (const dep of this.includedFragments(st.qualifiedId)) {
-            const dl = this.#locate(dep);
+            const dl = this.meta.locate(dep);
             if (dl) files.add(dl.sourceFile);
           }
         }
@@ -770,7 +684,7 @@ export class ProjectSession {
     // the "keep the syntax" side: an iBATIS file's own AST, or a MyBatis file's own AST
     const originals = files.map((f) => this.mapper(f).mybatis ?? this.mapper(f).sqlMap);
     // includes resolved by the project-wide resolver, not by whichever mappers are loaded
-    const resolveInclude = (refid, writtenIn, root) => this.graph.includeTarget(refid, writtenIn, root).symbol?.qualifiedId ?? null;
+    const resolveInclude = (refid, writtenIn, root) => this.meta.includeTarget(refid, writtenIn, root).symbol?.qualifiedId ?? null;
     const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode), { resolveInclude });
     const ibatis = converter.convertMappers(originals, { resolveInclude });
     const results = new Map();
@@ -778,7 +692,7 @@ export class ProjectSession {
       mybatis: { ...mybatis[i], original: conversions[i].mapperNode },
       ibatis: { ...ibatis[i], original: originals[i] },
       conversion: conversions[i],
-      syntax: this.fileEntries.get(f)?.syntax ?? 'ibatis',
+      syntax: this.meta.file(f)?.syntax ?? 'ibatis',
     }));
     return { results, sampled };
   }
@@ -809,7 +723,7 @@ export class ProjectSession {
       const fragmentEvents = new Map();
       const fragmentConversion = new Map();
       for (const fid of fragmentIds) {
-        const loc = this.#locate(fid);
+        const loc = this.meta.locate(fid);
         if (!loc) continue;
         const r = results.get(loc.sourceFile);
         fragmentEvents.set(fid, r.mybatis.events.filter((e) => e.statementId === loc.localId));
@@ -851,13 +765,13 @@ export class ProjectSession {
     this.reportCache = {
       mappers: mapperReports,
       tables: new ProjectReport().build(mapperReports),
-      tableDependencyGraph: new DependencyAnalyzer(this.graph.dependencyGraph).buildTableDependencyGraph(slim),
+      tableDependencyGraph: new DependencyAnalyzer(this.meta.dependencyGraph).buildTableDependencyGraph(slim),
     };
     return this.reportCache;
   }
 
   #analyzeUncached(qualifiedId) {
-    const at = this.#locate(qualifiedId);
+    const at = this.meta.locate(qualifiedId);
     const statement = this.mapper(at.sourceFile).statements.get(at.localId);
     const resolved = this.#realResolver().resolve(statement, at.namespace, qualifiedId);
     return this.statementAnalyzer.analyze(resolved.originalTree, resolved.resolvedTree, qualifiedId, this.dialect);
@@ -875,10 +789,10 @@ export class ProjectSession {
     const withChildren = (node, children) => Object.assign(Object.create(Object.getPrototypeOf(node)), node, { children });
     const expand = (nodes, writtenIn, stack) => (nodes ?? []).flatMap((node) => {
       if (node.type === 'Include') {
-        const qualifiedId = this.graph.includeTarget(node.refid, writtenIn, namespace).symbol?.qualifiedId;
+        const qualifiedId = this.meta.includeTarget(node.refid, writtenIn, namespace).symbol?.qualifiedId;
         const fragment = qualifiedId && fragments.get(qualifiedId);
         if (!fragment || stack.includes(qualifiedId)) return [node];
-        return expand(fragment.children, this.#locate(qualifiedId)?.namespace ?? writtenIn, [...stack, qualifiedId]);
+        return expand(fragment.children, this.meta.locate(qualifiedId)?.namespace ?? writtenIn, [...stack, qualifiedId]);
       }
       return node.children ? [withChildren(node, expand(node.children, writtenIn, stack))] : [node];
     });
@@ -900,92 +814,44 @@ export class ProjectSession {
    * (one namespace may span many files in many folders), and what each declares.
    */
   namespaces() {
-    const byNamespace = new Map();
-    for (const f of this.files) {
-      const ns = f.namespace ?? '';
-      if (!byNamespace.has(ns)) byNamespace.set(ns, []);
-      byNamespace.get(ns).push({
-        sourceFile: f.sourceFile,
-        parsed: f.parsed,
-        external: f.external,
-        statements: f.statements.length + (f.unparsedStatements?.length ?? 0),
-        fragments: f.fragments.map((x) => x.id),
-      });
-    }
-    return [...byNamespace].map(([namespace, files]) => ({ namespace, files })).sort((a, b) => b.files.length - a.files.length || a.namespace.localeCompare(b.namespace));
+    return this.meta.namespaces();
   }
+
 
   // ---------------------------------------------------------------- column removal guide
 
   /** the index entry of a statement ({ id, type, line, parameterClass, resultClass, resultMap }) */
   statementMeta(qualifiedId) {
-    const file = this.fileByQualifiedId.get(qualifiedId);
-    return this.fileEntries.get(file)?.statements.find((s) => s.qualifiedId === qualifiedId) ?? null;
+    return this.meta.statementMeta(qualifiedId);
   }
+
 
   /** statements that include `fragmentQualifiedId`, directly or through other fragments */
   includerStatements(fragmentQualifiedId) {
-    const out = new Set();
-    const walk = (id, seen) => {
-      for (const from of this.includedBy.get(id) ?? []) {
-        if (seen.has(from)) continue;
-        seen.add(from);
-        if (this.statementIds.has(from)) out.add(from);
-        else walk(from, seen);
-      }
-    };
-    walk(fragmentQualifiedId, new Set());
-    return [...out];
+    return this.meta.includerStatements(fragmentQualifiedId);
   }
+
 
   /** every `<include refid>` that points at `fragmentQualifiedId`: { statement, file, line, refid, text } */
   includeSites(fragmentQualifiedId) {
-    const sites = [];
-    for (const owner of this.includedBy.get(fragmentQualifiedId) ?? []) {
-      const loc = this.#locate(owner);
-      if (!loc) continue;
-      const m = this.mapper(loc.sourceFile);
-      const node = m.statements.get(loc.localId) ?? m.fragments.get(loc.localId);
-      const lines = this.text(loc.sourceFile).split('\n');
-      for (const inc of collectIncludes(node ?? { children: [] })) {
-        const target = this.graph.qualifiedIdOf(inc.refid, loc.namespace, 'SQL_FRAGMENT');
-        if (target?.qualifiedId !== fragmentQualifiedId) continue;
-        sites.push({ statement: owner, file: loc.sourceFile, line: inc.sourceLine, refid: inc.refid, text: (lines[inc.sourceLine - 1] ?? '').trim() });
-      }
-    }
-    return sites;
+    return this.meta.includeSites(fragmentQualifiedId).map((site) => ({ ...site, text: (this.text(site.file).split('\n')[site.line - 1] ?? '').trim() }));
   }
+
 
   /** a resultMap and the ones it extends, as AST nodes (loaded on demand) */
   resultMapNodes(name, namespace) {
-    const out = [];
-    const seen = new Set();
-    let current = name;
-    let ns = namespace;
-    while (current) {
-      const symbol = this.graph._resolveRefid(current, ns, SymbolType.RESULT_MAP);
-      this.graph._ambiguous = null;
-      if (!symbol || seen.has(symbol.qualifiedId)) break;
-      seen.add(symbol.qualifiedId);
-      const node = this.realSymbols.get(symbol.qualifiedId)?.node;
-      if (!node) break;
-      out.push({ qualifiedId: symbol.qualifiedId, sourceFile: symbol.sourceFile, node });
-      current = node.extends;
-      ns = symbol.mapper;
-    }
-    return out;
+    return this.meta.resultMapChain(name, namespace).flatMap(({ qualifiedId, sourceFile, symbol }) => {
+      const node = this.#realNode(sourceFile, symbol.type, symbol.localId);
+      return node ? [{ qualifiedId, sourceFile, node }] : [];
+    });
   }
+
 
   /** statements whose resultMap="…" resolves to `resultMapQualifiedId` */
   statementsUsingResultMap(resultMapQualifiedId) {
-    const out = [];
-    for (const f of this.files) {
-      for (const s of f.statements) {
-        if (s.resultMap && this.graph.qualifiedIdOf(s.resultMap, f.namespace, 'RESULT_MAP')?.qualifiedId === resultMapQualifiedId) out.push(s.qualifiedId);
-      }
-    }
-    return out;
+    return this.meta.statementsUsingResultMap(resultMapQualifiedId);
   }
+
 
   /** see ColumnRemovalGuide: what to remove, and where, to drop one output column */
   columnRemovalGuide(qualifiedId, column) {
@@ -1038,16 +904,7 @@ export class ProjectSession {
     // a fragment hit reaches every statement including it (the refid chain), whatever file it is in
     for (const [, hit] of [...hits]) {
       for (const fid of hit.fragments.keys()) {
-        const seen = new Set();
-        const walk = (id) => {
-          for (const from of this.includedBy.get(id) ?? []) {
-            if (seen.has(from)) continue;
-            seen.add(from);
-            if (this.statementIds.has(from)) add(this.fileByQualifiedId.get(from), 'statements', from, `refid:${fid}`);
-            else walk(from);
-          }
-        };
-        walk(fid);
+        for (const from of this.meta.includerStatements(fid)) add(this.meta.fileOf(from), 'statements', from, `refid:${fid}`);
       }
     }
     const files = [...hits].filter(([, h]) => h.file || h.statements.size || h.fragments.size).map(([sourceFile, h]) => ({
@@ -1081,7 +938,7 @@ export class ProjectSession {
       skipped: this.skipped,
       errors: this.diagnostics.errors,
       warnings: this.diagnostics.warnings,
-      circularReferences: this.graph.circularReferences.map((c) => c.path),
+      circularReferences: this.meta.circularReferences.map((c) => c.path),
       includeUsage: this.#includeUsage(),
       totals: {
         files: this.files.length,
@@ -1094,12 +951,9 @@ export class ProjectSession {
 
   /** fragment -> how many statements include it (directly or not), from the graph */
   #includeUsage() {
-    const usage = {};
-    for (const f of this.files) {
-      for (const s of f.statements) for (const fid of this.includedFragments(s.qualifiedId)) usage[fid] = (usage[fid] ?? 0) + 1;
-    }
-    return usage;
+    return this.meta.includeUsage();
   }
+
 
   stats() {
     return {
@@ -1119,8 +973,8 @@ export class ProjectSession {
     this.analyses.clear();
     this.reportCache = null;
     // the index goes too: a closed session holds nothing but its flag
-    this.graph = this.realSymbols = this.includes = this.includedBy = null;
-    this.files = this.skipped = this.diagnostics = this.fileByQualifiedId = this.namespaceOfFile = this.fileEntries = this.statementIds = null;
+    this.meta = null;
+    this.skipped = null;
     this.source.close();
   }
 }

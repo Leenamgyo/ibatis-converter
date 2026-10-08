@@ -4,6 +4,10 @@ import { ColumnConverter } from './ColumnConverter.js';
 import { TableConverter } from './TableConverter.js';
 import { MigrationMapping } from './MigrationMapping.js';
 import { SchemaMigrationEvent, SchemaMigrationGrade, SchemaMigrationCode } from './SchemaMigrationEvent.js';
+import { ReferenceIndex } from '../../resolver/reference/ReferenceIndex.js';
+import { SymbolTable } from '../../resolver/symbol/SymbolTable.js';
+import { Symbol } from '../../resolver/symbol/Symbol.js';
+import { SymbolType } from '../../ast/ibatis/enums.js';
 
 /**
  * Old-schema -> new-schema SQL migration (table and column renames),
@@ -104,28 +108,19 @@ export class SqlSchemaMigrationConverter {
         fragmentNamespace.set(qualify(mapper.namespace, fragment.id), mapper.namespace);
       }
     }
-    // a bare refid may name a fragment in another mapper (iBATIS useStatementNamespaces=false)
-    const byLocalId = new Map();
-    for (const mapper of mapperNodes) {
-      for (const fragment of mapper.sqlFragments) {
-        if (!byLocalId.has(fragment.id)) byLocalId.set(fragment.id, []);
-        byLocalId.get(fragment.id).push(qualify(mapper.namespace, fragment.id));
-      }
-    }
-    const lookupLocal = (refid, namespace) => {
-      if (fragments.has(refid)) return refid;
-      if (namespace && fragments.has(qualify(namespace, refid))) return qualify(namespace, refid);
-      const global = refid.includes('.') ? [] : byLocalId.get(refid) ?? [];
-      return global.length === 1 ? global[0] : null;
-    };
-    // the resolver's rule (ReferenceResolver#includeTarget) over the given mappers: a nested bare
-    // refid is looked up in the statement's namespace first, the fragment author's otherwise
+    // Without the project's lookup (standalone use), the SAME rule — ReferenceIndex, the one
+    // lookup of the codebase — over the fragments of the given mappers. Never a second copy of it.
+    let localIndex = null;
     const localTarget = (refid, writtenIn, root = writtenIn) => {
-      const written = lookupLocal(refid, writtenIn);
-      if (root === writtenIn || refid.includes('.')) return written;
-      const runtime = lookupLocal(refid, root);
-      if (runtime && written && runtime !== written) return runtime;
-      return written ?? runtime;
+      if (!localIndex) {
+        const table = new SymbolTable();
+        for (const [qualifiedId, fragment] of fragments) {
+          const namespace = fragmentNamespace.get(qualifiedId);
+          table.register(new Symbol({ qualifiedId, localId: fragment.id, type: SymbolType.SQL_FRAGMENT, mapper: namespace, sourceFile: null, sourceLine: null, node: fragment }));
+        }
+        localIndex = new ReferenceIndex(table);
+      }
+      return localIndex.includeTarget(refid, writtenIn, root).symbol?.qualifiedId ?? null;
     };
     const target = resolveInclude ?? localTarget;
     const project = {

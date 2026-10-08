@@ -129,6 +129,11 @@ silent.
   `converter`; `analyzer` never imports `generator`; only
   `application/AnalyzerPipeline.js` and `application/ProjectSession.js`
   are allowed to wire stages together.
+- **One reference lookup.** What a refid / resultMap name points at is
+  decided only by `resolver/reference/ReferenceIndex`; where things are and
+  who includes what, only by `application/ProjectMetadata` (see
+  docs/ARCHITECTURE.md "Project metadata"). Never add another lookup —
+  every past refid bug was a second copy of it.
 - **Never load a whole project.** The API, UI and CLI go through
   `ProjectSession`: an index on open, then per statement / per file through
   bounded caches (see `docs/features/large-projects.md`). Don't add an

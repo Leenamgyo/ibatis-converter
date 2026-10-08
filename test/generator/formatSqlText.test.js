@@ -95,7 +95,7 @@ test('with 쿼리 정렬 on, before / after a rename still line up line for line
   try {
     const mapping = JSON.parse(fs.readFileSync(path.join(SAMPLES, 'schema-mapping.json'), 'utf8'));
     let changed = 0;
-    for (const id of session.statementIds) {
+    for (const id of session.meta.statementIds) {
       const plain = session.schemaMigration(id, mapping.mapping ?? mapping).statement;
       const formatted = session.schemaMigration(id, mapping.mapping ?? mapping, {}, { formatSql: true }).statement;
       for (const [before, after] of [['ibatisBefore', 'ibatisAfter'], ['mybatisBefore', 'mybatisAfter']]) {

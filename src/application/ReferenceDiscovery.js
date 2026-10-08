@@ -110,8 +110,8 @@ export function repositoryRoot(dir) {
 export function openProjectFolder(dir, options = {}, { lookOutside = true } = {}) {
   let session = new ProjectSession(new DirectorySource(dir), options).open();
   const references = { repoRoot: null, files: [], scanned: 0 };
-  for (let round = 0; lookOutside && round < 3 && session.graph.missingIncludes.length; round++) {
-    const found = findReferenceMappers(dir, session.graph.missingIncludes);
+  for (let round = 0; lookOutside && round < 3 && session.meta.missingIncludes.length; round++) {
+    const found = findReferenceMappers(dir, session.meta.missingIncludes);
     references.repoRoot = found.repoRoot;
     references.scanned += found.scanned;
     const fresh = found.files.filter((f) => !references.files.includes(f));

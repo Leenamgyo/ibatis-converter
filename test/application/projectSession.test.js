@@ -35,7 +35,7 @@ function assertSameAsPipeline(root) {
     assert.deepEqual(messages(summary.errors), messages(result.diagnostics.errors));
     assert.deepEqual(messages(summary.warnings), messages(result.diagnostics.warnings));
     assert.deepEqual(summary.circularReferences, result.circularReferences.map((c) => c.path));
-    assert.deepEqual(session.graph.dependencyGraph.toJSON(), result.dependencyGraph.toJSON());
+    assert.deepEqual(session.meta.dependencyGraph.toJSON(), result.dependencyGraph.toJSON());
     const report = session.report();
     // the pipeline reads iBATIS only; the session also reads MyBatis mappers (compared on their own elsewhere)
     const mybatisFiles = new Set(session.files.filter((f) => f.syntax === 'mybatis').map((f) => f.sourceFile));
@@ -112,9 +112,9 @@ test('per-statement schema migration agrees with migrating the whole project', (
   try {
     const all = session.migrateFiles(session.files.map((f) => f.sourceFile), mapping);
     const counts = session.schemaSummary(mapping).statements;
-    for (const id of session.statementIds) {
+    for (const id of session.meta.statementIds) {
       const one = session.schemaMigration(id, mapping);
-      const loc = session.fileByQualifiedId.get(id);
+      const loc = session.meta.fileOf(id);
       const whole = all.get(loc);
       const localId = id.slice(id.lastIndexOf('.') + 1);
       const expected = whole.mybatis.events.filter((e) => e.statementId === localId).map(({ tokenIndex, ...e }) => e);
@@ -278,13 +278,13 @@ test('refid accuracy: the schema converter resolves every include exactly as the
       const dir = path.join(tmp, `p${seed}`);
       generateProject(seed, dir);
       const session = new ProjectSession(new DirectorySource(dir)).open();
-      const truth = (r) => session.graph.includeTarget(r.refid, r.writtenIn, r.root).symbol?.qualifiedId ?? null;
+      const truth = (r) => session.meta.includeTarget(r.refid, r.writtenIn, r.root).symbol?.qualifiedId ?? null;
       for (const file of session.files) {
         // only this file's neighbourhood is loaded — exactly the situation that used to drift
         const { results } = session.migrateForFile(file.sourceFile, {});
         const originals = [...results.values()].map((r) => r.ibatis.original);
         new SqlSchemaMigrationConverter({}).convertMappers(originals, {
-          resolveInclude: (a, b, c) => session.graph.includeTarget(a, b, c).symbol?.qualifiedId ?? null,
+          resolveInclude: (a, b, c) => session.meta.includeTarget(a, b, c).symbol?.qualifiedId ?? null,
           onInclude: (r) => { resolved++; if (r.qualifiedId !== truth(r)) wrong++; },
         });
       }

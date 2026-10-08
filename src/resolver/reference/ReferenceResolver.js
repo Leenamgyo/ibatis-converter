@@ -2,6 +2,7 @@ import { UnresolvedIncludeNode, ResolvedIncludeNode } from '../../ast/ibatis/nod
 import { DependencyGraph } from './DependencyGraph.js';
 import { DiagnosticBag } from '../../parser/xml/ParserDiagnostics.js';
 import { SymbolType } from '../../ast/ibatis/enums.js';
+import { ReferenceIndex } from './ReferenceIndex.js';
 
 /** One detected `<include>` cycle, e.g. path = ['a', 'b', 'c', 'a']. */
 export class CircularReferenceInfo {
@@ -44,11 +45,18 @@ export class ReferenceResolver {
    *   found (projects do rely on it, and the tool must show where it points), with a
    *   MYBATIS_BARE_REFID warning: MyBatis's own lookup prefixes the current namespace.
    */
-  constructor(symbolTable, diagnostics = new DiagnosticBag(), { strictNamespaces = new Set(), mybatisNamespaces = new Set() } = {}) {
+  constructor(symbolTable, diagnostics = new DiagnosticBag(), { strictNamespaces = new Set(), mybatisNamespaces = new Set(), index = null, loadNode = null } = {}) {
     this.symbolTable = symbolTable;
     this.diagnostics = diagnostics;
-    this.strictNamespaces = strictNamespaces;
-    this.mybatisNamespaces = mybatisNamespaces;
+    /** every lookup goes through the one ReferenceIndex (shared, when given) */
+    this.index = index ?? new ReferenceIndex(symbolTable, { strictNamespaces, mybatisNamespaces });
+    this.mybatisNamespaces = this.index.mybatisNamespaces;
+    /**
+     * symbol -> the node to walk into. Default: the parsed node registered with it. The
+     * project metadata passes include-only stubs (the graph pass) or a loader of the real
+     * AST (analysis): the same walk, the same lookups, either way.
+     */
+    this.loadNode = loadNode ?? ((symbol) => symbol.node);
     this.dependencyGraph = new DependencyGraph();
     /** @type {CircularReferenceInfo[]} */
     this.circularReferences = [];
@@ -65,42 +73,9 @@ export class ReferenceResolver {
     this.diagnostics.warn(message, node.sourceFile, node.sourceLine, code);
   }
 
-  /**
-   * iBATIS reference lookup, in the order iBATIS itself applies:
-   *   1. `refid` as a fully qualified id (`ns.id`)
-   *   2. `currentNamespace.refid`
-   *   3. a bare `refid` defined in ANOTHER mapper. With useStatementNamespaces=false
-   *      (the iBATIS default) every id is global, so `<include refid="commonWhere"/>`
-   *      may name a fragment in any file. Matched by local id among symbols of the
-   *      expected `type`. Two candidates is ambiguous: reported, not guessed.
-   * Steps 1-2 match any type, so an existing qualified id always wins.
-   */
+  /** the symbol a reference names (ReferenceIndex#lookup), or undefined */
   _resolveRefid(refid, currentNamespace, type = null) {
-    if (this.symbolTable.has(refid)) return this.symbolTable.get(refid);
-    if (currentNamespace) {
-      const qualified = `${currentNamespace}.${refid}`;
-      if (this.symbolTable.has(qualified)) return this.symbolTable.get(qualified);
-    }
-    if (!type || refid.includes('.')) return undefined;
-    if (this.strictNamespaces.has(currentNamespace)) return undefined; // MyBatis: own namespace only
-    const candidates = this._globalIndex(type).get(refid) ?? [];
-    if (candidates.length === 1) return candidates[0];
-    if (candidates.length > 1) this._ambiguous = { refid, candidates };
-    return undefined;
-  }
-
-  /** local id -> symbols of `type`, for bare cross-mapper references */
-  _globalIndex(type) {
-    this._globalIndexes ??= new Map();
-    if (!this._globalIndexes.has(type)) {
-      const index = new Map();
-      for (const symbol of this.symbolTable.getAllByType(type)) {
-        if (!index.has(symbol.localId)) index.set(symbol.localId, []);
-        index.get(symbol.localId).push(symbol);
-      }
-      this._globalIndexes.set(type, index);
-    }
-    return this._globalIndexes.get(type);
+    return this.index.lookup(refid, currentNamespace, type).symbol;
   }
 
   /**
@@ -111,7 +86,6 @@ export class ReferenceResolver {
    */
   qualifiedIdOf(refid, currentNamespace, type, { fragmentQualifiedId = null } = {}) {
     const symbol = this._resolveRefid(refid, currentNamespace, SymbolType[type] ?? type);
-    this._ambiguous = null;
     if (!symbol) return null;
     const target = { qualifiedId: symbol.qualifiedId, namespace: symbol.mapper, mustQualify: false };
     // Inside a <sql> fragment that statements of OTHER mappers include, a bare refid is
@@ -123,7 +97,7 @@ export class ReferenceResolver {
       // shadowed: an includer has its OWN, different fragment of that id (the runtime would take it)
       const shadowing = includers.filter((ns) => this.symbolTable.has(`${ns}.${refid}`) && `${ns}.${refid}` !== symbol.qualifiedId);
       const unresolved = includers.filter((ns) => !this.symbolTable.has(`${ns}.${refid}`) && !this.symbolTable.has(refid)
-        && (this._globalIndex(SymbolType.SQL_FRAGMENT).get(refid)?.length ?? 0) !== 1);
+        && !this.index.lookup(refid, null, SymbolType.SQL_FRAGMENT).symbol);
       if (includers.length && !shadowing.length) target.mustQualify = true;
       if (shadowing.length) {
         target.namespace = currentNamespace; // keep as written: those includers get their own fragment, as before
@@ -132,23 +106,6 @@ export class ReferenceResolver {
       }
     }
     return target;
-  }
-
-  /** " — did you mean …?" when only letter case differs (iBATIS / MyBatis ids are case-sensitive) */
-  _nearMiss(refid, namespace) {
-    const wanted = [refid, namespace ? `${namespace}.${refid}` : null].filter(Boolean).map((s) => s.toLowerCase());
-    const hits = this.symbolTable.getAllByType(SymbolType.SQL_FRAGMENT).map((s) => s.qualifiedId)
-      .filter((q) => wanted.includes(q.toLowerCase()) || (!refid.includes('.') && q.toLowerCase().endsWith(`.${refid.toLowerCase()}`)));
-    return hits.length ? ` — did you mean ${hits.slice(0, 3).map((h) => `"${h}"`).join(', ')}? (ids are case-sensitive)` : '';
-  }
-
-  /** "no fragment" vs "two fragments of that name": the diagnostic says which */
-  _missingMessage(kind, refid) {
-    const ambiguous = this._ambiguous?.refid === refid ? this._ambiguous : null;
-    this._ambiguous = null;
-    return ambiguous
-      ? `${kind} "${refid}" is ambiguous: ${ambiguous.candidates.map((s) => s.qualifiedId).join(', ')} — qualify it with the namespace`
-      : null;
   }
 
   /**
@@ -197,49 +154,18 @@ export class ReferenceResolver {
     }
   }
 
-  /**
-   * THE `<include refid>` lookup — the one rule every component uses (the analysis
-   * here, the schema converter and the UI through ProjectSession), so a refid can't
-   * resolve one way in the graph and another way elsewhere. No side effects.
-   *
-   * @param refid as written
-   * @param writtenIn the namespace of the mapper the `<include>` is written in
-   * @param rootNamespace the namespace of the statement being resolved (iBATIS and
-   *   MyBatis resolve every include of a statement — nested ones too — against it)
-   * @returns {{ symbol: object|undefined, rule: string, written: object|undefined, runtime: object|undefined, missingMessage: string|null }}
-   *   rule: QUALIFIED | NAMESPACE | GLOBAL_UNIQUE (by a bare id unique project-wide) |
-   *   RUNTIME_SHADOWED (the statement's namespace has its own fragment of that id) |
-   *   AUTHOR_NAMESPACE (the statement's namespace has none: the fragment author's) | MISSING
-   */
+  /** where an `<include refid>` points — ReferenceIndex#includeTarget (kept here for callers) */
   includeTarget(refid, writtenIn, rootNamespace = writtenIn) {
-    const how = (ns, symbol) => {
-      if (!symbol) return 'MISSING';
-      if (symbol.qualifiedId === refid) return 'QUALIFIED';
-      if (ns && symbol.qualifiedId === `${ns}.${refid}`) return 'NAMESPACE';
-      return 'GLOBAL_UNIQUE';
-    };
-    const written = this._resolveRefid(refid, writtenIn, SymbolType.SQL_FRAGMENT);
-    const missingMessage = written ? null : this._missingMessage('<include refid>', refid);
-    if (rootNamespace === undefined || rootNamespace === writtenIn || refid.includes('.')) {
-      return { symbol: written, rule: how(writtenIn, written), written, runtime: undefined, missingMessage };
-    }
-    // a bare refid inside a fragment of mapper `writtenIn`, included from a statement of `rootNamespace`:
-    // the runtime looks it up in `rootNamespace`, the fragment's author meant `writtenIn`
-    const runtime = this._resolveRefid(refid, rootNamespace, SymbolType.SQL_FRAGMENT);
-    this._ambiguous = null;
-    if (runtime && written && runtime.qualifiedId !== written.qualifiedId) return { symbol: runtime, rule: 'RUNTIME_SHADOWED', written, runtime, missingMessage };
-    if (!runtime && written) return { symbol: written, rule: written.qualifiedId === `${writtenIn}.${refid}` ? 'AUTHOR_NAMESPACE' : how(writtenIn, written), written, runtime, missingMessage };
-    if (runtime && !written) return { symbol: runtime, rule: how(rootNamespace, runtime), written, runtime, missingMessage: null };
-    return { symbol: written, rule: how(writtenIn, written), written, runtime, missingMessage };
+    return this.index.includeTarget(refid, writtenIn, rootNamespace);
   }
 
   _resolveInclude(includeNode, namespace, stack) {
     const fromId = stack[stack.length - 1];
     const { refid } = includeNode;
     const root = this._rootNamespace;
-    const target = this.includeTarget(refid, namespace, root);
-    let { symbol } = target;
-    const { missingMessage } = target;
+    const target = this.index.includeTarget(refid, namespace, root);
+    const { symbol } = target;
+    const missingMessage = ReferenceIndex.ambiguousMessage('<include refid>', refid, target.ambiguous);
     if (target.rule === 'GLOBAL_UNIQUE' && this.mybatisNamespaces.has(namespace)) {
       this._warnOnce(`mb|${namespace}|${refid}`, `<include refid="${refid}"> in MyBatis mapper ${namespace} names ${symbol.qualifiedId} in another file by its bare id. Shown as that fragment; MyBatis 3 looks a bare refid up as "${namespace}.${refid}" — write refid="${symbol.qualifiedId}" if the runtime can't find it`, includeNode, 'MYBATIS_BARE_REFID');
     }
@@ -256,7 +182,7 @@ export class ReferenceResolver {
         this._warned.add(key);
         this.missingIncludes.push({ refid: includeNode.refid, namespace, root });
         this.diagnostics.error(
-          missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found${this._nearMiss(includeNode.refid, namespace)}`,
+          missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found${this.index.nearMiss(includeNode.refid, namespace)}`,
           includeNode.sourceFile,
           includeNode.sourceLine,
           'MISSING_REFERENCE',
@@ -294,7 +220,7 @@ export class ReferenceResolver {
       });
     }
 
-    const fragment = symbol.node;
+    const fragment = this.loadNode(symbol);
     const resolved = new ResolvedIncludeNode({
       refid: includeNode.refid,
       qualifiedId: symbol.qualifiedId,
@@ -320,10 +246,10 @@ export class ReferenceResolver {
     let currentNamespace = namespace;
 
     while (current.extends) {
-      const symbol = this._resolveRefid(current.extends, currentNamespace, SymbolType.RESULT_MAP);
+      const { symbol, candidates } = this.index.lookup(current.extends, currentNamespace, SymbolType.RESULT_MAP);
       if (!symbol) {
         this.diagnostics.error(
-          this._missingMessage('<resultMap extends>', current.extends) ?? `Unresolved <resultMap extends="${current.extends}">`,
+          ReferenceIndex.ambiguousMessage('<resultMap extends>', current.extends, candidates) ?? `Unresolved <resultMap extends="${current.extends}">`,
           current.sourceFile,
           current.sourceLine,
           'MISSING_REFERENCE',
@@ -343,10 +269,11 @@ export class ReferenceResolver {
         break;
       }
 
-      current.resolvedParent = symbol.node;
-      chain.push(symbol.node);
+      const parent = this.loadNode(symbol);
+      current.resolvedParent = parent;
+      chain.push(parent);
       visitedIds.add(symbol.qualifiedId);
-      current = symbol.node;
+      current = parent;
       currentNamespace = symbol.mapper;
     }
 

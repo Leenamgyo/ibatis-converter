@@ -244,7 +244,7 @@ export function createApp({
     sendJson(req, res, {
       projectId,
       mappers: report.mappers,
-      dependencies: session.graph.dependencyGraph.toJSON(),
+      dependencies: session.meta.dependencyGraph.toJSON(),
       circularReferences: summary.circularReferences,
       warnings: summary.warnings,
       errors: summary.errors,
@@ -312,7 +312,7 @@ export function createApp({
   app.get('/api/v1/statements/:id/dependencies', (req, res) => {
     const project = resolveProject(req, res);
     if (!project || !knownStatement(project, req.params.id, res)) return;
-    res.json(new DependencyAnalyzer(project.graph.dependencyGraph).buildStatementDependencyTree(req.params.id));
+    res.json(new DependencyAnalyzer(project.meta.dependencyGraph).buildStatementDependencyTree(req.params.id));
   });
 
   app.get('/api/v1/statements/:id/mybatis-preview', (req, res) => {

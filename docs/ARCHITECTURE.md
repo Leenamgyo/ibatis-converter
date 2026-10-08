@@ -322,6 +322,36 @@ throw and does **not** drop the whole statement — it returns
 parse) are still fully populated. `test/analyzer/statementAnalyzer.test.js`
 has a case asserting exactly this partial-success shape.
 
+## Project metadata: three layers, one lookup
+
+Everything about *where* things are and *what a reference points at* lives
+in three layers. Each question has exactly one place that answers it:
+
+```
+ReferenceIndex        resolver/reference   THE lookup rule: refid / resultMap / parameterMap
+  (over SymbolTable)                       name -> symbol (qualified, namespace, project-unique,
+                                           statement-namespace-first), ambiguity explicit. Pure.
+ReferenceResolver     resolver/reference   walks a tree and splices <include>s, asking the index;
+  (index, loadNode)                        reports diagnostics, records graph edges. It is given
+                                           a node loader: include-only STUBS (the graph) or the
+                                           REAL AST from files (analysis) — same walk either way.
+ProjectMetadata       application          built once at open: files, symbols, namespaces (one
+                                           namespace may span many files), the graph pass over the
+                                           stubs (edges, diagnostics, cycles, unresolved refids)
+                                           and every derived query: includeTree, includedFragments,
+                                           includerStatements, includeSites, resultMapChain,
+                                           namespaces. No SQL, no file reads after open.
+```
+
+Users of a refid answer ask the metadata or the index, never their own copy:
+- the analysis, through `ProjectSession#realResolver` (same index);
+- the MyBatis converter, through `qualifiedIdOf`;
+- the schema converter, through `resolveInclude`, or a ReferenceIndex over
+  its own mappers when it is used standalone;
+- the UI, through the server's include tree.
+
+`ProjectSession` keeps only file loading, caches and analysis.
+
 ## Open projects are sessions, not stored results
 
 The API, the UI and the CLI work through `application/ProjectSession.js`.

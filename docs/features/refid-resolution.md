@@ -2,24 +2,28 @@
 
 ## The metadata
 
-Opening a project builds the index (`ProjectSession#open`). The refid
-metadata it builds is:
+Built once when a project opens (`application/ProjectMetadata.js`), in
+three layers. See docs/ARCHITECTURE.md "Project metadata".
 
-- **Symbol table** (`resolver/symbol`): every statement, `<sql>`,
-  resultMap and parameterMap of the WHOLE project, keyed
-  `namespace.id`. A bare-id index sits beside it.
-- **Include graph** (`DependencyGraph`, plus `includes` / `includedBy`
-  sets in the session): every `<include>` edge, found by resolving each
-  statement once against the symbol table, nested fragments included.
-  Searching it is a graph walk: what a statement includes, transitively
-  (`includedFragments`); which statements a fragment reaches
-  (`includerStatements`); where it is included (`includeSites`).
-- **Include tree** per statement (`includeTree`, sent with the statement
-  and with the 변환 view's result): which fragment each `<include>`
-  resolved to, in document order, at every depth, and by which **rule**.
+- **Registry.** Every file (namespace, kind, parsed, external) and every
+  statement, `<sql>`, resultMap and parameterMap of the WHOLE project, keyed
+  `namespace.id` (`SymbolTable`). One namespace may span many files and
+  folders. `GET /api/v1/namespaces` shows it.
+- **Lookup.** `resolver/reference/ReferenceIndex`, the one rule below. Ambiguity
+  is an explicit result, not a side effect.
+- **Graph.** Every statement resolved once over include-only stubs, by the
+  same `ReferenceResolver` the analysis uses: include / extends / resultMap /
+  parameterMap edges, reference diagnostics, cycles, unresolved refids.
+  Derived queries read it: `includeTree` (per statement, at every depth,
+  with the rule; no file read), `includedFragments`, `includerStatements`,
+  `includeSites`, `resultMapChain`.
 
-All of it is built from the whole project, never from the files that
-happen to be loaded.
+The analysis resolves the real ASTs with a ReferenceResolver over the SAME
+symbol table and index, only loading nodes from files instead of stubs, so
+the graph and the analysis can't disagree. Before this split, the metadata
+was a stub resolver turned into the real one by patching getters onto its
+symbols, and the lookup had copies in the converter and the browser. Each
+fix landed in a different copy.
 
 ## The one rule — `ReferenceResolver#includeTarget(refid, writtenIn, rootNamespace)`
 
