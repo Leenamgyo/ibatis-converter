@@ -7,7 +7,10 @@ import { createHash } from 'node:crypto';
  * boxes and lanes by, plus the zoom / pan. One JSON file per statement in
  * `dir`, named by a hash of the statement id, so no id ever decides a path.
  *
- *   { key, sourceFile, offsets: { [layoutKey]: [dx, dy] }, view: { scale, tx, ty } | null, updatedAt }
+ *   { key, sourceFile, offsets: { [layoutKey]: [dx, dy] }, view: { scale, tx, ty } | null, engine, updatedAt }
+ *
+ * engine: which version of the graph layout the offsets are relative to (1 when saved before
+ * it existed); the UI applies only its own.
  *
  * Only offsets are stored, never absolute positions: the browser still
  * lays the graph out, so a layout saved before a mapper changed degrades to
@@ -25,14 +28,14 @@ export class LayoutStore {
   get(key) {
     try {
       const layout = JSON.parse(fs.readFileSync(this.#file(key), 'utf8'));
-      return layout.key === key ? layout : null;
+      return layout.key === key ? { engine: 1, ...layout } : null;
     } catch {
       return null;
     }
   }
 
-  save(key, { sourceFile = null, offsets, view = null }) {
-    const layout = { key, sourceFile, offsets, view, updatedAt: new Date().toISOString() };
+  save(key, { sourceFile = null, offsets, view = null, engine = 1 }) {
+    const layout = { key, sourceFile, offsets, view, engine, updatedAt: new Date().toISOString() };
     fs.mkdirSync(this.dir, { recursive: true });
     // write-then-rename, so a crash mid-write never leaves half a layout
     const file = this.#file(key);
@@ -66,5 +69,6 @@ export function layoutError(body) {
     return 'view: { scale, tx, ty } numbers';
   }
   if (sourceFile !== null && typeof sourceFile !== 'string') return 'sourceFile: a string';
+  if (body.engine !== undefined && !(Number.isInteger(body.engine) && body.engine > 0 && body.engine < 1000)) return 'engine: a positive integer';
   return null;
 }

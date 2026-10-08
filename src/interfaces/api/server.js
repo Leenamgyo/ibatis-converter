@@ -404,14 +404,15 @@ export function createApp({
       res.status(400).json({ error });
       return;
     }
-    const { offsets, view = null, sourceFile = null } = req.body;
+    // engine: which version of the graph layout the offsets are relative to (the UI ignores another one's)
+    const { offsets, view = null, sourceFile = null, engine = 1 } = req.body;
     // nothing moved and no view: there is nothing to keep
     if (!Object.keys(offsets).length && !view) {
       layouts.delete(key);
       res.status(204).end();
       return;
     }
-    res.json(layouts.save(key, { sourceFile, offsets, view }));
+    res.json(layouts.save(key, { sourceFile, offsets, view, engine }));
   });
 
   app.delete('/api/v1/layouts/:key', (req, res) => {

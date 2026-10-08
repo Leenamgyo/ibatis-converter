@@ -48,8 +48,8 @@ main#app[hidden] { display: none; }
 
 /* -------- layout while the schema view is open -------- */
 .dash-right[hidden] { display: none; }
-.dash-body.no-right { grid-template-columns: 264px minmax(0, 1fr); }
-@media (max-width: 1200px) { .dash-body.no-right { grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: 1fr; } }
+.dash-body.no-right, .dash-body.no-right:not(.right-closed) { grid-template-columns: var(--left-w) minmax(0, 1fr) 0; }
+.dash-body.no-right.left-closed, .dash-body.no-right.left-closed:not(.right-closed) { grid-template-columns: 0 minmax(0, 1fr) 0; }
 @media (max-width: 860px) { .dash-body.no-right { display: flex; } }
 #schemaPane { overflow-y: auto; padding: 0.85rem 1rem 2rem; background: var(--bg); gap: 0.9rem; }
 /* the pane is a flex column: without this, sections shrink to nothing instead of scrolling */

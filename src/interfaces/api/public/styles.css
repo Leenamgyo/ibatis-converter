@@ -74,23 +74,30 @@ header.top {
 .tab:hover { background: var(--bg-sunken); }
 .tab.active { background: var(--accent-soft); color: var(--accent); }
 
-.top-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+.top-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; flex-wrap: wrap; min-width: 0; }
 .btn {
   border: 1px solid var(--border-strong); background: var(--bg-raised); color: var(--text);
-  padding: 0.4rem 0.75rem; border-radius: var(--radius); cursor: pointer; font-size: 0.8rem; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.75rem; border-radius: 7px; cursor: pointer; font-size: 0.8rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap;
 }
 .btn:hover { border-color: var(--text-faint); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:disabled { opacity: 0.45; cursor: not-allowed; }
 .file-count { font-size: 0.78rem; color: var(--text-faint); }
-.path-open { display: inline-flex; }
+.path-open { display: inline-flex; min-width: 0; }
 .path-open input {
-  width: 13rem; padding: 0.4rem 0.55rem; font: 0.78rem var(--mono, ui-monospace, monospace);
+  width: 13rem; min-width: 6rem; flex: 1 1 13rem; padding: 0.4rem 0.55rem; font: 0.78rem var(--mono, ui-monospace, monospace);
   border: 1px solid var(--border-strong); border-right: none; border-radius: var(--radius) 0 0 var(--radius);
   background: var(--bg); color: var(--text);
 }
-.path-open .btn { border-radius: 0 var(--radius) var(--radius) 0; }
+.path-open .btn { border-radius: 0 7px 7px 0; }
+.path-open input { border-radius: 7px 0 0 7px; }
+@media (max-width: 860px) {
+  header.top { gap: 0.6rem; padding: 0.5rem 0.7rem; }
+  .top-actions { margin-left: 0; width: 100%; }
+  .path-open { flex: 1 1 100%; }
+  .file-count { width: 100%; }
+}
 
 main#app { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .empty-state { margin: auto; padding: 3rem; text-align: center; color: var(--text-faint); font-size: 0.9rem; }

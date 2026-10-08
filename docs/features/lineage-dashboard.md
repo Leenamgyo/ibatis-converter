@@ -87,10 +87,28 @@ change would blast-radius into.
 
 Collapsing SELECT scopes (the per-lane `−` and `전체 펼치기` / `서브쿼리 접기`)
 was removed at the user's request; every scope is always drawn open.
-`−` / `＋` / `전체 보기` zoom, with the current scale shown between them.
-A new statement starts on "fit", because a wide statement at 100% is
-cropped and looks broken until you find the zoom control. The viewport
-pans by dragging.
+`−` / `＋` / `전체 보기` zoom, with the current scale shown between them. The
+viewport pans by dragging.
+
+**Opening a statement.** It starts fitted and centred, but never below
+55% (`READABLE_SCALE`). A bigger graph opens at its top-left instead, and
+**전체 보기** or the minimap show the rest. A fit smaller than that can't be
+read, which is what made the old screen look broken.
+
+**Resizing.** Until the user zooms or pans, a change of the graph area's
+size refits it. That covers the window and the side panels
+(`ResizeObserver`; `lineageState.autoFit`).
+
+**Side panels.** The icon buttons at both ends of the toolbar fold the tree
+(left) and the cards (right) away. Dragging a panel's inner edge resizes it
+(200–560px). Both are remembered in this browser (`localStorage`
+`lineage.panels`, `wireSidePanels`).
+
+| Width | Layout |
+|---|---|
+| > 1280px | three columns |
+| ≤ 1280px | the right cards start folded; opened, they float over the graph's right edge instead of taking its width |
+| ≤ 860px | one column: the graph first, then the tree and the cards; the header's actions wrap under the title |
 
 The breadcrumb shows where a clicked node sits (`MAIN → S1 → TABLE`).
 
@@ -119,6 +137,11 @@ The breadcrumb shows where a clicked node sits (`MAIN → S1 → TABLE`).
     or click the background to clear.
   - **Double-click** a line to straighten it.
   - Dragging a line never pans.
+- **Layout version.** Offsets are relative to where the layout put a box,
+  so a saved arrangement carries `engine` (`LAYOUT_ENGINE`, 2 = lanes in
+  columns, `placeLanes`). One saved by another layout would put every box
+  elsewhere. It is not applied: the status says so, and it stays on the
+  server until the statement is saved again.
 - **Saving.** **배치 저장** (or Ctrl/⌘+S in this view) stores the offsets and
   the current zoom/pan for that statement on the server (`LayoutStore`,
   `data/layouts/` or `LAYOUT_DIR`; `GET/PUT/DELETE /api/v1/layouts/:id`).
@@ -140,7 +163,7 @@ The breadcrumb shows where a clicked node sits (`MAIN → S1 → TABLE`).
 
 | Panel | What it answers |
 |---|---|
-| SELECT 컬럼 매핑 | For each output column: the SQL expression, its alias, and the source table/column it resolves to |
+| SELECT 컬럼 매핑 | For each output column: its name (alias) with the SQL expression under it, and the source table/column it resolves to; ⌫ opens the column-removal guide. Fixed columns: a name is elided (full text on hover), never broken mid-word |
 | JAVA 매핑 | The resultMap class and each `property ← COLUMN` binding, or the `resultClass` when there is no resultMap |
 | 조인 관계 | Every join: which scope, type, table, and ON clause (this is where the ON text lives, not on the graph) |
 | 서브쿼리 / UNION 요약 | Each nested scope: id, kind, depth, tables |
@@ -157,9 +180,13 @@ pane is actually visible — `redrawEdgesWhenVisible()` retries until the
 layout settles. The same applies to the initial fit. Anything that changes
 node geometry must redraw edges afterwards.
 
+**Cost.** `measureNodes()` reads every box once per redraw, in graph units,
+and the minimap draws from that. Panning and zooming change only a CSS
+transform and the minimap's view rectangle; nothing is re-measured. Hover
+and click on boxes use one delegated listener on the graph, not three per
+box.
+
 ## Known limits
 
-- The minimap re-measures every visible node on redraw; a genuinely huge
-  statement will want caching.
 - A statement whose SQL failed to flatten (`SQL_PARSE_FAILED`) has no
   lineage to draw and says so instead of rendering an empty graph.

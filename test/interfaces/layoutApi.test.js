@@ -54,3 +54,18 @@ test('an invalid layout is refused', async () => {
     stop();
   }
 });
+
+test('a layout keeps which graph layout its offsets are relative to (engine)', async () => {
+  const { call, stop } = startServer();
+  try {
+    const layout = { offsets: { 'node:tbl:MAIN:C': [10, 20] }, view: null, engine: 2 };
+    assert.equal((await call('PUT', 'a.b', layout)).status, 200);
+    assert.equal((await call('GET', 'a.b')).body.engine, 2);
+    // saved before engines existed: read back as engine 1, which the UI does not apply to engine 2
+    assert.equal((await call('PUT', 'a.c', { offsets: { x: [1, 2] } })).status, 200);
+    assert.equal((await call('GET', 'a.c')).body.engine, 1);
+    assert.equal((await call('PUT', 'a.d', { offsets: { x: [1, 2] }, engine: 'two' })).status, 400);
+  } finally {
+    stop();
+  }
+});

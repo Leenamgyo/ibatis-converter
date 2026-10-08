@@ -523,7 +523,7 @@ function showView(view) {
   // Toolbar controls belong to the graph; they'd be inert over the XML.
   document.querySelector('.dash-toolbar').hidden = view !== 'lineage';
   // The schema diff needs the width; the lineage side panel says nothing about it.
-  document.getElementById('lineageRight').hidden = view === 'schema';
+  document.getElementById('lineageRightPanel').hidden = view === 'schema';
   document.querySelector('.dash-body').classList.toggle('no-right', view === 'schema');
   decorateSchemaTree();
 

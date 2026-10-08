@@ -88,6 +88,7 @@
       <header class="dash-stats" id="dashStats"></header>
       <div class="dash-body">
         <aside class="dash-left" id="dashLeft">
+          <div class="panel-resizer" data-side="left" role="separator" aria-orientation="vertical" aria-label="왼쪽 패널 너비" title="드래그해서 너비 조절"></div>
           <div class="view-switch" id="viewSwitch" role="tablist" aria-label="보기 전환">
             <button class="view-tab active" role="tab" id="viewTabLineage"
                     data-view="lineage" aria-selected="true" aria-controls="lineagePane">
@@ -109,6 +110,9 @@
 
         <div class="dash-center">
           <div class="dash-toolbar">
+            <button class="tool-btn icon panel-toggle" type="button" data-panel-toggle="left" title="왼쪽 패널 (트리) 접기/펼치기" aria-label="왼쪽 패널 접기/펼치기">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><rect x="2" y="3" width="4" height="10" rx="1" fill="currentColor" opacity=".55"/></svg>
+            </button>
             <div class="breadcrumb" id="lineageBreadcrumb"></div>
             <div class="tool-btns">
               <button class="tool-btn" data-graph-action="zoom-out">−</button>
@@ -120,6 +124,9 @@
               <button class="tool-btn" data-graph-action="reset-layout" title="드래그로 옮긴 위치를 모두 되돌립니다">배치 초기화</button>
               <button class="tool-btn primary" data-graph-action="save-layout" title="옮긴 위치와 확대/이동 상태를 이 statement에 저장 (Ctrl/⌘+S)" disabled>배치 저장</button>
             </div>
+            <button class="tool-btn icon panel-toggle" type="button" data-panel-toggle="right" title="오른쪽 패널 (컬럼 매핑·조인·미니맵) 접기/펼치기" aria-label="오른쪽 패널 접기/펼치기">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><rect x="10" y="3" width="4" height="10" rx="1" fill="currentColor" opacity=".55"/></svg>
+            </button>
           </div>
           <div class="view-pane" id="lineagePane" role="tabpanel" aria-labelledby="viewTabLineage">
             <div class="graph-viewport" id="lineageViewport">
@@ -133,7 +140,10 @@
           <div class="view-pane" id="schemaPane" role="tabpanel" aria-labelledby="viewTabSchema" hidden></div>
         </div>
 
-        <aside class="dash-right" id="lineageRight"></aside>
+        <aside class="dash-right" id="lineageRightPanel">
+          <div class="panel-resizer" data-side="right" role="separator" aria-orientation="vertical" aria-label="오른쪽 패널 너비" title="드래그해서 너비 조절"></div>
+          <div id="lineageRight"></div>
+        </aside>
       </div>
     </section>
 

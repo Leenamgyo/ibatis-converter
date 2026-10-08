@@ -134,7 +134,7 @@ async function selectLineageStatement(qualifiedId) {
   // cropped at 100% and looks broken until you find the zoom control.
   const view = lineageState.layout.view;
   if (view) {
-    Object.assign(lineageState, { scale: view.scale, tx: view.tx, ty: view.ty, fitted: true });
+    Object.assign(lineageState, { scale: view.scale, tx: view.tx, ty: view.ty, fitted: true, autoFit: false });
     applyTransform();
     redrawEdgesWhenVisible();
   } else {
@@ -170,15 +170,27 @@ function applyLayoutOffsets() {
   }
 }
 
+/**
+ * Which graph layout saved offsets are relative to. 2: lanes placed in columns (placeLanes).
+ * An arrangement saved against another one would put every box somewhere else, so it is
+ * not applied (it stays on the server until this statement is saved again).
+ */
+const LAYOUT_ENGINE = 2;
+
 async function loadLayout(qualifiedId, sourceFile) {
   lineageState.layout = { offsets: {}, view: null };
   lineageState.layoutSaved = null;
+  lineageState.layoutStale = false;
   try {
     const res = await fetch(`/api/v1/layouts/${encodeURIComponent(qualifiedId)}`);
     if (!res.ok) return;
     const saved = await res.json();
     // a layout saved for a statement of the same id in another project's file is not this one's
     if (saved.sourceFile && sourceFile && saved.sourceFile !== sourceFile) return;
+    if ((saved.engine ?? 1) !== LAYOUT_ENGINE) {
+      lineageState.layoutStale = true;
+      return;
+    }
     lineageState.layout = { offsets: saved.offsets ?? {}, view: saved.view ?? null };
     lineageState.layoutSaved = JSON.stringify(lineageState.layout);
   } catch { /* no saved layout: the default one */ } finally {
@@ -214,7 +226,8 @@ function renderLayoutStatus() {
   const dirty = layoutDirty();
   save.disabled = !lineageState.statementId || !dirty;
   reset.disabled = !moved && lineageState.layoutSaved === null;
-  status.textContent = dirty ? `이동 ${moved}개 · 저장 안 됨` : lineageState.layoutSaved !== null ? '배치 저장됨' : '';
+  status.textContent = dirty ? `이동 ${moved}개 · 저장 안 됨` : lineageState.layoutSaved !== null ? '배치 저장됨'
+    : lineageState.layoutStale ? '예전 배치는 새 레이아웃과 맞지 않아 적용하지 않았습니다' : '';
   status.classList.toggle('dirty', dirty);
 }
 
@@ -224,7 +237,7 @@ async function saveLayout() {
   // the view is saved with the boxes: reopening shows exactly what was saved
   const view = { scale: lineageState.scale, tx: lineageState.tx, ty: lineageState.ty };
   const offsets = lineageState.layout.offsets;
-  const body = Object.keys(offsets).length ? { offsets, view, sourceFile: lineageState.sourceFile } : { offsets: {}, view: null };
+  const body = Object.keys(offsets).length ? { offsets, view, sourceFile: lineageState.sourceFile, engine: LAYOUT_ENGINE } : { offsets: {}, view: null };
   const res = await fetch(`/api/v1/layouts/${encodeURIComponent(qualifiedId)}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
@@ -235,6 +248,7 @@ async function saveLayout() {
   if (lineageState.statementId !== qualifiedId) return;
   lineageState.layout = { offsets, view: body.view };
   lineageState.layoutSaved = res.status === 204 ? null : JSON.stringify(lineageState.layout);
+  lineageState.layoutStale = false;
   renderLayoutStatus();
 }
 
@@ -431,17 +445,19 @@ function renderIncludeUsage() {
  * ------------------------------------------------------------------ */
 
 /** One box in the graph. `id` doubles as the edge endpoint key. */
+/** A box of the graph. Hover / click are handled once on the host (wireLineageDashboard), not per box. */
 function gnode(id, className, ...children) {
   const node = el('div', { class: `gnode ${className}`, 'data-node-id': id }, ...children);
-  node.addEventListener('mouseenter', () => highlightNeighbours(id));
-  node.addEventListener('mouseleave', clearHighlight);
-  node.addEventListener('click', (e) => { e.stopPropagation(); selectGraphNode(id); });
   lineageState.nodeById.set(id, node);
   return node;
 }
 
-function edge(from, to, kind = 'flow') {
-  lineageState.edges.push({ from, to, kind });
+/**
+ * A line between two boxes. `toAnchor`: an element inside the target box the line points at
+ * (a join line ends at its own FROM row of the JOIN 테이블, not at the box's middle).
+ */
+function edge(from, to, kind = 'flow', { toAnchor = null } = {}) {
+  lineageState.edges.push({ from, to, kind, toAnchor });
 }
 
 /** Splits a predicate into its top-level AND/OR terms, so each condition can be its own box. */
@@ -615,7 +631,8 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   const section = (label, ...children) => {
     const kids = children.filter(Boolean);
     if (!kids.length) return null;
-    return el('div', { class: 'tsec' },
+    const kind = label === 'WHERE' ? 'where' : label === 'FROM' ? 'from' : label.startsWith('GROUP') ? 'group' : 'select';
+    return el('div', { class: `tsec tsec-${kind}` },
       el('div', { class: 'tsec-head' }, label),
       el('div', { class: 'tsec-body' }, ...kids),
     );
@@ -686,6 +703,9 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
     ));
   });
 
+  // a result with many terms / columns lays them out side by side instead of one tall column
+  const wide = conditionNodes.length > 3 || select.outputs.length > 6;
+
   const aggregateNodes = [];
   let havingId = null;
   if (select.groupBy.length) {
@@ -736,7 +756,8 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   // An inline view holds a table slot; the query that fills it is drawn
   // outside this scope and points at the slot.
   const slotObject = (view, ...sections) => {
-    const node = tableObject(slotId(view.id), 'subref', view.alias ?? view.id, view.id,
+    // a slot that also carries the scope's result (its only source) is the wide result table
+    const node = tableObject(slotId(view.id), `subref${sections.length && wide ? ' wide' : ''}`, view.alias ?? view.id, view.id,
       section('FROM', sqlLine(`(${ORIGIN_LABEL[view.origin] ?? view.origin})`)),
       ...sections,
     );
@@ -749,7 +770,7 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
     const only = physical[0];
     body.appendChild(el('div', { class: 'lane-col result' },
       only
-        ? tableObject(tableNodeId(labelOf(only)), 'table', only.name, only.alias,
+        ? tableObject(tableNodeId(labelOf(only)), `table${wide ? ' wide' : ''}`, only.name, only.alias,
             section('FROM', sqlLine(`${only.name}${only.alias ? ` ${only.alias}` : ''}`)),
             ...resultSections())
         : slotObject(inlineViews[0], ...resultSections()),
@@ -768,7 +789,12 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
     const feeders = new Set();
     if (startId) feeders.add(startId);
     const fromLines = [];
-    if (baseTable) fromLines.push(sqlLine(`${baseTable.name}${baseTable.alias ? ` ${baseTable.alias}` : ''}`));
+    const fromAnchor = new Map(); // feeder box -> its row in this table's FROM
+    if (baseTable) {
+      const line = sqlLine(`${baseTable.name}${baseTable.alias ? ` ${baseTable.alias}` : ''}`);
+      fromLines.push(line);
+      fromAnchor.set(startId, line);
+    }
     for (const { join, left, right } of joinWiring) {
       const rightId = join.derived ? slotId(join.selectId) : tableNodeId(right);
       feeders.add(rightId);
@@ -780,25 +806,31 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
       // Joined only when a dynamic tag says so: the tag is its own object,
       // one depth under the join that it guards.
       const guard = guardByTable.get(right);
+      const line = sqlLine(text);
+      if (!fromAnchor.has(rightId)) fromAnchor.set(rightId, line);
       fromLines.push(guard
-        ? el('div', { class: 'cond-stack' }, sqlLine(text), el('div', { class: 'cond-children' },
+        ? el('div', { class: 'cond-stack' }, line, el('div', { class: 'cond-children' },
             gnode(`dynjoin:${select.id}:${right}`, 'dynamic', el('div', { class: 'title' }, guard.label))))
-        : sqlLine(text));
+        : line);
     }
     for (const view of inlineViews) {
       if (feeders.has(slotId(view.id))) continue;
       feeders.add(slotId(view.id));
-      fromLines.push(sqlLine(`${view.alias ?? view.id} (${ORIGIN_LABEL[view.origin] ?? view.origin})`));
+      const line = sqlLine(`${view.alias ?? view.id} (${ORIGIN_LABEL[view.origin] ?? view.origin})`);
+      fromAnchor.set(slotId(view.id), line);
+      fromLines.push(line);
     }
 
     body.appendChild(el('div', { class: 'lane-col result' },
-      tableObject(resultId, 'jointbl', joinWiring.length ? 'JOIN 테이블' : '결과 테이블', null,
+      tableObject(resultId, `jointbl${wide ? ' wide' : ''}`, joinWiring.length ? 'JOIN 테이블' : '결과 테이블', null,
         section('FROM', ...fromLines.slice(0, 8)),
         ...resultSections()),
     ));
     for (const feeder of feeders) {
       if (feeder === resultId) continue;
-      edge(feeder, resultId, joinWiring.length ? 'join' : 'flow');
+      // only rows that are drawn (FROM shows its first 8) can be pointed at
+      const anchor = fromAnchor.get(feeder);
+      edge(feeder, resultId, joinWiring.length ? 'join' : 'flow', { toAnchor: anchor && fromLines.slice(0, 8).some((l) => l === anchor || l.contains(anchor)) ? anchor : null });
     }
   }
 
@@ -879,9 +911,96 @@ function renderGraph() {
     host.appendChild(buildSelectCluster(next, byParent, analysis, false));
   }
 
+  placeLanes(host, lineage);
   applyLayoutOffsets();
   applySearchHighlight();
   redrawEdgesWhenVisible();
+}
+
+/** Gap between lane columns / between stacked lanes (graph units). */
+const LANE_GAP_X = 120;
+const LANE_GAP_Y = 36;
+
+/**
+ * Where each lane goes. A subquery lane sits in the column right of the query that reads
+ * it, so every line between lanes runs one short step sideways. The children of one lane
+ * are stacked in the order of what they point at in it (top to bottom), so their lines
+ * never cross. Columns are as wide as their widest lane. Lanes are positioned absolutely;
+ * a dragged lane's offset (`translate`) still applies on top.
+ */
+function placeLanes(host, lineage) {
+  const lanes = [...host.children].filter((c) => c.classList.contains('cluster'));
+  host.style.width = '';
+  host.style.height = '';
+  if (!lanes.length) return;
+  // which top-level lane each SELECT is drawn in (a UNION branch: the UNION group)
+  const laneOf = new Map();
+  for (const lane of lanes) {
+    for (const c of [lane, ...lane.querySelectorAll('.cluster[data-select-id]')]) {
+      if (c.dataset.selectId) laneOf.set(c.dataset.selectId, lane);
+    }
+  }
+  const selectById = new Map(lineage.selects.map((sel) => [sel.id, sel]));
+  const children = new Map(lanes.map((lane) => [lane, []]));
+  const hasParent = new Set();
+  for (const lane of lanes) {
+    const parent = laneOf.get(selectById.get(lane.dataset.selectId)?.parentId);
+    if (parent && parent !== lane) {
+      children.get(parent).push(lane);
+      hasParent.add(lane);
+    }
+  }
+  // measure every lane where it would sit alone, at its natural width (an absolutely
+  // positioned box shrinks to its container: give the container room while measuring)
+  host.style.width = '100000px';
+  for (const lane of lanes) Object.assign(lane.style, { position: 'absolute', left: '0px', top: '0px' });
+  const size = new Map(lanes.map((lane) => [lane, { w: lane.offsetWidth, h: lane.offsetHeight }]));
+  for (const lane of lanes) lane.style.width = `${size.get(lane).w}px`; // keeps that width once the container shrinks
+  // how far down its parent lane a child's line lands
+  const targetY = (child, parent) => {
+    const e = lineageState.edges.find((x) => x.from === `select:${child.dataset.selectId}`);
+    const target = e && lineageState.nodeById.get(e.to);
+    if (!target || !parent.contains(target)) return 0;
+    return (target.getBoundingClientRect().top - parent.getBoundingClientRect().top) / lineageState.scale;
+  };
+  const depth = new Map();
+  const visit = (lane, d) => {
+    depth.set(lane, d);
+    const kids = children.get(lane);
+    const ys = new Map(kids.map((k) => [k, targetY(k, lane)]));
+    kids.sort((a, b) => ys.get(a) - ys.get(b));
+    for (const k of kids) visit(k, d + 1);
+    children.set(lane, kids.map((k) => [k, ys.get(k)]));
+  };
+  const roots = lanes.filter((lane) => !hasParent.has(lane));
+  for (const root of roots) visit(root, 0);
+  const columns = [];
+  for (const lane of lanes) {
+    const d = depth.get(lane) ?? 0;
+    columns[d] = Math.max(columns[d] ?? 0, size.get(lane).w);
+  }
+  const columnX = [];
+  columns.reduce((x, w, d) => { columnX[d] = x; return x + w + LANE_GAP_X; }, 0);
+  let right = 0;
+  let bottom = 0;
+  const place = (lane, y) => {
+    const d = depth.get(lane);
+    lane.style.left = `${columnX[d]}px`;
+    lane.style.top = `${y}px`;
+    right = Math.max(right, columnX[d] + size.get(lane).w);
+    let next = y;
+    for (const [kid, ky] of children.get(lane)) {
+      // a child starts level with what it points at, below its previous sibling
+      next = place(kid, Math.max(next, y + ky - 28)) + LANE_GAP_Y;
+    }
+    const end = Math.max(y + size.get(lane).h, next - LANE_GAP_Y);
+    bottom = Math.max(bottom, end);
+    return end;
+  };
+  let y = 0;
+  for (const root of roots) y = place(root, y) + LANE_GAP_Y * 1.5;
+  host.style.width = `${right}px`;
+  host.style.height = `${bottom}px`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -934,23 +1053,49 @@ function arrowDefs() {
   return defs;
 }
 
+/**
+ * Every box's rectangle in graph units, read in one pass (the edges, the router's obstacles
+ * and the minimap all use it; panning and zooming never change it).
+ */
+function measureNodes() {
+  const content = document.getElementById('lineageNodes');
+  const base = content.getBoundingClientRect();
+  const scale = lineageState.scale;
+  const rect = (node) => {
+    const r = node.getBoundingClientRect();
+    return { left: (r.left - base.left) / scale, top: (r.top - base.top) / scale, width: r.width / scale, height: r.height / scale };
+  };
+  const rects = new Map();
+  for (const [id, node] of lineageState.nodeById) if (node.offsetParent !== null) rects.set(id, rect(node));
+  lineageState.nodeRects = rects;
+  return rect;
+}
+
+/** A path through `points` with rounded corners (orthogonal routes). */
+function roundedPath(points, radius = 10) {
+  let d = `M ${points[0][0]} ${points[0][1]}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [px, py] = points[i - 1];
+    const [x, y] = points[i];
+    const [nx, ny] = points[i + 1];
+    const r = Math.min(radius, Math.hypot(x - px, y - py) / 2, Math.hypot(nx - x, ny - y) / 2);
+    const inX = x - Math.sign(x - px) * r;
+    const inY = y - Math.sign(y - py) * r;
+    const outX = x + Math.sign(nx - x) * r;
+    const outY = y + Math.sign(ny - y) * r;
+    d += ` L ${inX} ${inY} Q ${x} ${y} ${outX} ${outY}`;
+  }
+  const [lx, ly] = points[points.length - 1];
+  return `${d} L ${lx} ${ly}`;
+}
+
 function drawEdges() {
   const svg = document.getElementById('lineageEdges');
   const content = document.getElementById('lineageNodes');
   if (!svg || !content) return;
 
-  const scale = lineageState.scale;
-  const base = content.getBoundingClientRect();
-  const rect = (node) => {
-    const r = node.getBoundingClientRect();
-    return {
-      left: (r.left - base.left) / scale,
-      top: (r.top - base.top) / scale,
-      width: r.width / scale,
-      height: r.height / scale,
-    };
-  };
-
+  const rectOf = measureNodes();
+  const rects = lineageState.nodeRects;
   svg.setAttribute('width', String(content.scrollWidth));
   svg.setAttribute('height', String(content.scrollHeight));
   svg.replaceChildren(arrowDefs());
@@ -959,40 +1104,59 @@ function drawEdges() {
   const hits = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   hits.setAttribute('class', 'edge-hits');
 
+  // A line ends at the OUTSIDE of the table object holding its target, level with the target
+  // (a condition, a column, a FROM row): it never runs under a box to reach something inside.
+  const outerOf = (node) => node.parentElement?.closest('.gnode.tobj') ?? node;
+  const idOf = (node) => node.dataset.nodeId;
+  const obstacles = [...content.querySelectorAll('.gnode.tobj')].filter((n) => n.offsetParent !== null).map((n) => ({ node: n, r: rects.get(idOf(n)) })).filter((o) => o.r);
+  const blocked = (x1, x2, y1, y2, skip) => obstacles.filter(({ node, r }) => !skip.includes(node)
+    && r.left < Math.max(x1, x2) - 2 && r.left + r.width > Math.min(x1, x2) + 2
+    && r.top < Math.max(y1, y2) + 6 && r.top + r.height > Math.min(y1, y2) - 6);
+
   lineageState.edges.forEach((e, index) => {
     const fromEl = visibleAnchor(e.from);
     const toEl = visibleAnchor(e.to);
     if (!fromEl || !toEl || fromEl === toEl) return;
-    const a = rect(fromEl);
-    const b = rect(toEl);
+    const fromOuter = outerOf(fromEl);
+    const toOuter = outerOf(toEl);
+    const a = rects.get(idOf(fromOuter)) ?? rectOf(fromOuter);
+    const b = rects.get(idOf(toOuter)) ?? rectOf(toOuter);
+    const ai = rects.get(e.from) ?? rectOf(fromEl);
+    const bi = e.toAnchor?.isConnected ? rectOf(e.toAnchor) : rects.get(e.to) ?? rectOf(toEl);
+    const clampY = (y, r) => Math.min(r.top + r.height - 6, Math.max(r.top + 6, y));
+    const ya = clampY(ai.top + Math.min(ai.height / 2, 14), a);
+    const yb = clampY(bi.top + Math.min(bi.height / 2, 12), b);
 
-    let x1;
-    let y1;
-    let x2;
-    let y2;
-    let path;
-    // Sides are picked from where the boxes are, not assumed: a dragged box can be
-    // anywhere relative to the other one.
     // a user's bend: both control points shifted by it (the curve's middle moves 3/4 of that)
     const [bx, by] = lineageState.layout.offsets[edgeKey(e)] ?? [0, 0];
-    const curve = (c1x, c1y, c2x, c2y) => `M ${x1} ${y1} C ${c1x + bx} ${c1y + by}, ${c2x + bx} ${c2y + by}, ${x2} ${y2}`;
-    const horizontal = (fromRight) => {
-      x1 = fromRight ? a.left + a.width : a.left; y1 = a.top + a.height / 2;
-      x2 = fromRight ? b.left : b.left + b.width; y2 = b.top + b.height / 2;
-      const dx = Math.max(18, Math.abs(x2 - x1) / 2) * (fromRight ? 1 : -1);
-      return curve(x1 + dx, y1, x2 - dx, y2);
-    };
-    const vertical = (fromBottom) => {
-      x1 = a.left + a.width / 2; y1 = fromBottom ? a.top + a.height : a.top;
-      x2 = b.left + b.width / 2; y2 = fromBottom ? b.top : b.top + b.height;
-      const dy = Math.max(14, Math.abs(y2 - y1) / 2) * (fromBottom ? 1 : -1);
-      return curve(x1, y1 + dy, x2, y2 - dy);
-    };
-    if (b.left >= a.left + a.width - 8) path = horizontal(true); // left -> right: source -> output
-    else if (b.top >= a.top + a.height - 8) path = vertical(true); // stacked: bottom -> top
-    else if (b.left + b.width <= a.left + 8) path = horizontal(false); // a reference pointing back left
-    else if (b.top + b.height <= a.top + 8) path = vertical(false); // b above a
-    else path = horizontal(b.left + b.width / 2 >= a.left + a.width / 2); // overlapping: by centres
+    let path;
+    if (b.left >= a.left + a.width - 8 || b.left + b.width <= a.left + 8) {
+      // side by side: out of one side, into the facing side
+      const rightward = b.left >= a.left + a.width - 8;
+      const x1 = rightward ? a.left + a.width : a.left;
+      const x2 = rightward ? b.left : b.left + b.width;
+      const dir = rightward ? 1 : -1;
+      const inTheWay = bx || by ? [] : blocked(x1, x2, ya, yb, [fromOuter, toOuter]);
+      if (inTheWay.length) {
+        // something sits between them: go round it, over or under, whichever is the shorter way
+        const over = Math.min(...inTheWay.map((o) => o.r.top), ya, yb) - 22;
+        const under = Math.max(...inTheWay.map((o) => o.r.top + o.r.height), ya, yb) + 22;
+        const bus = (ya - over) + (yb - over) <= (under - ya) + (under - yb) ? over : under;
+        path = roundedPath([[x1, ya], [x1 + dir * 18, ya], [x1 + dir * 18, bus], [x2 - dir * 18, bus], [x2 - dir * 18, yb], [x2, yb]]);
+      } else {
+        const dx = Math.max(24, Math.abs(x2 - x1) / 2) * dir;
+        path = `M ${x1} ${ya} C ${x1 + dx + bx} ${ya + by}, ${x2 - dx + bx} ${yb + by}, ${x2} ${yb}`;
+      }
+    } else {
+      // stacked: bottom -> top (or up)
+      const down = b.top >= a.top + a.height - 8 || b.top + b.height / 2 >= a.top + a.height / 2;
+      const x1 = ai.left + ai.width / 2;
+      const x2 = bi.left + Math.min(bi.width / 2, 40);
+      const y1 = down ? a.top + a.height : a.top;
+      const y2 = down ? b.top : b.top + b.height;
+      const dy = Math.max(18, Math.abs(y2 - y1) / 2) * (down ? 1 : -1);
+      path = `M ${x1} ${y1} C ${x1 + bx} ${y1 + dy + by}, ${x2 + bx} ${y2 - dy + by}, ${x2} ${y2}`;
+    }
 
     const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     el.setAttribute('d', path);
@@ -1245,9 +1409,11 @@ function renderRightPanel() {
         }
       },
     },
-      el('td', {}, String(i + 1)),
-      el('td', { class: 'mono' }, entry.expression),
-      el('td', { class: 'mono' }, entry.alias ?? '—'),
+      el('td', { class: 'num' }, String(i + 1)),
+      // the result column's name first, the expression that makes it under it
+      el('td', { class: 'mono expr' },
+        el('span', { class: 'alias-name', title: entry.alias ?? '' }, entry.alias ?? '—'),
+        entry.expression !== entry.alias ? el('span', { class: 'expr-text', title: entry.expression }, entry.expression) : null),
       // Table and column on their own lines: `PRODUCT.PRODUCT_ID` does
       // not fit the panel width, and wrapping it mid-word ("PRODUCT.PRO
       // DUCT_ID") is worse than eliding it.
@@ -1255,15 +1421,16 @@ function renderRightPanel() {
         entry.sourceTable
           ? [el('span', { class: 't' }, entry.sourceTable), entry.sourceColumn ? el('span', { class: 'c' }, entry.sourceColumn) : null]
           : '—'),
-      el('td', {}, el('button', {
-        class: 'tool-btn guide-btn',
+      el('td', { class: 'act' }, el('button', {
+        class: 'tool-btn icon guide-btn',
         type: 'button',
-        title: '이 결과 컬럼을 없애려면 고칠 곳 (refid·resultMap 포함)',
+        title: '컬럼 삭제 가이드 — 이 결과 컬럼을 없애려면 고칠 곳 (refid·resultMap 포함)',
+        'aria-label': `${entry.alias ?? entry.expression} 컬럼 삭제 가이드`,
         onclick: (e) => {
           e.stopPropagation();
           openColumnGuide(entry.alias ?? entry.sourceColumn ?? String(entry.expression).split('.').pop());
         },
-      }, '가이드')),
+      }, '⌫')),
     );
     return row;
   });
@@ -1271,7 +1438,8 @@ function renderRightPanel() {
   const columnCard = sideCard('SELECT 컬럼 매핑', lineage.columnLineage.length,
     columnRows.length
       ? el('table', { class: 'data lineage-cols' },
-        el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'SQL Expression'), el('th', {}, 'Alias'), el('th', {}, 'Source'), el('th', { title: '컬럼 삭제 가이드' }, ''))),
+        el('colgroup', {}, el('col', { class: 'c-num' }), el('col', { class: 'c-expr' }), el('col', { class: 'c-src' }), el('col', { class: 'c-act' })),
+        el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, '결과 컬럼 · 식'), el('th', {}, '원천'), el('th', { title: '컬럼 삭제 가이드' }, ''))),
         el('tbody', {}, ...columnRows))
       : el('div', { class: 'side-empty' }, 'no resolved output columns'),
   );
@@ -1387,12 +1555,12 @@ function applyTransform() {
   const content = document.getElementById('lineageContent');
   content.style.transform = `translate(${lineageState.tx}px, ${lineageState.ty}px) scale(${lineageState.scale})`;
   document.getElementById('lineageZoomLevel').textContent = `${Math.round(lineageState.scale * 100)}%`;
-  renderMinimap();
+  updateMinimapView(); // panning / zooming moves only the view box: the boxes' map is unchanged
 }
 
 function setScale(next, originX, originY) {
   const viewport = document.getElementById('lineageViewport');
-  const clamped = Math.min(2.5, Math.max(0.2, next));
+  const clamped = Math.min(2.5, Math.max(0.15, next));
   const rect = viewport.getBoundingClientRect();
   const cx = originX ?? rect.width / 2;
   const cy = originY ?? rect.height / 2;
@@ -1400,6 +1568,7 @@ function setScale(next, originX, originY) {
   lineageState.tx = cx - ((cx - lineageState.tx) * clamped) / lineageState.scale;
   lineageState.ty = cy - ((cy - lineageState.ty) * clamped) / lineageState.scale;
   lineageState.scale = clamped;
+  lineageState.autoFit = false;
   applyTransform();
 }
 
@@ -1417,25 +1586,36 @@ function fitGraphWhenVisible(attempts = 20) {
     if (attempts > 0) requestAnimationFrame(() => fitGraphWhenVisible(attempts - 1));
     return;
   }
-  fitGraph();
+  fitGraph({ readable: true });
 }
 
-function fitGraph() {
+/** Smallest zoom a statement opens at: below it the text is unreadable, so it opens at its top-left instead. */
+const READABLE_SCALE = 0.55;
+
+/**
+ * The whole graph in view, centred. `readable` (opening a statement): never below
+ * READABLE_SCALE — a big graph opens at its start, and 전체 보기 / the minimap show the rest.
+ */
+function fitGraph({ readable = false } = {}) {
   const viewport = document.getElementById('lineageViewport');
   const content = document.getElementById('lineageNodes');
   if (!viewport || !content) return;
-  const width = content.scrollWidth + 32;
-  const height = content.scrollHeight + 32;
+  const pad = 24;
+  const width = content.scrollWidth + pad * 2;
+  const height = content.scrollHeight + pad * 2;
   if (!viewport.clientWidth || !content.scrollWidth) return;
-  const scale = Math.min(1, Math.min(viewport.clientWidth / width, viewport.clientHeight / height));
-  lineageState.scale = Math.max(0.2, scale);
-  lineageState.tx = 8;
-  lineageState.ty = 8;
+  const fit = Math.min(1, viewport.clientWidth / width, viewport.clientHeight / height);
+  const scale = Math.max(readable ? READABLE_SCALE : 0.15, fit);
+  lineageState.scale = scale;
+  // centred when it fits; otherwise from its top-left corner
+  lineageState.tx = Math.max(pad * scale, (viewport.clientWidth - content.scrollWidth * scale) / 2);
+  lineageState.ty = Math.max(pad * scale, (viewport.clientHeight - content.scrollHeight * scale) / 2);
   lineageState.fitted = true;
+  lineageState.autoFit = true; // until the user zooms or pans: a resize fits it again
   applyTransform();
-  drawEdges();
 }
 
+/** The minimap: every box (from the last measurement, see measureNodes) and the visible area. */
 function renderMinimap() {
   const host = document.getElementById('lineageMinimap');
   const content = document.getElementById('lineageNodes');
@@ -1444,50 +1624,48 @@ function renderMinimap() {
 
   const width = Math.max(content.scrollWidth, 1);
   const height = Math.max(content.scrollHeight, 1);
-  const base = content.getBoundingClientRect();
-  const scale = lineageState.scale;
-
-  const rects = [];
-  for (const node of content.querySelectorAll('.gnode')) {
-    if (node.offsetParent === null) continue;
-    const r = node.getBoundingClientRect();
-    rects.push({
-      x: (r.left - base.left) / scale,
-      y: (r.top - base.top) / scale,
-      w: r.width / scale,
-      h: r.height / scale,
-    });
-  }
-
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  for (const r of rects) {
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', String(r.x));
-    rect.setAttribute('y', String(r.y));
-    rect.setAttribute('width', String(Math.max(r.w, 4)));
-    rect.setAttribute('height', String(Math.max(r.h, 4)));
+  for (const [id, r] of lineageState.nodeRects ?? []) {
+    if (!lineageState.nodeById.get(id)?.classList.contains('tobj')) continue; // table objects only: the shape of the graph
+    const rect = document.createElementNS(NS, 'rect');
+    rect.setAttribute('x', String(r.left));
+    rect.setAttribute('y', String(r.top));
+    rect.setAttribute('width', String(Math.max(r.width, 4)));
+    rect.setAttribute('height', String(Math.max(r.height, 4)));
+    rect.setAttribute('rx', '6');
     rect.setAttribute('class', 'mm-node');
     svg.appendChild(rect);
   }
-  const view = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  view.setAttribute('x', String(-lineageState.tx / scale));
-  view.setAttribute('y', String(-lineageState.ty / scale));
-  view.setAttribute('width', String(viewport.clientWidth / scale));
-  view.setAttribute('height', String(viewport.clientHeight / scale));
+  const view = document.createElementNS(NS, 'rect');
   view.setAttribute('class', 'mm-view');
+  view.setAttribute('rx', '6');
   svg.appendChild(view);
-
   host.replaceChildren(svg);
+  lineageState.minimapView = view;
+  updateMinimapView();
   host.onclick = (e) => {
     const rect = host.getBoundingClientRect();
     const px = ((e.clientX - rect.left) / rect.width) * width;
     const py = ((e.clientY - rect.top) / rect.height) * height;
     lineageState.tx = viewport.clientWidth / 2 - px * lineageState.scale;
     lineageState.ty = viewport.clientHeight / 2 - py * lineageState.scale;
+    lineageState.autoFit = false;
     applyTransform();
   };
+}
+
+function updateMinimapView() {
+  const view = lineageState.minimapView;
+  const viewport = document.getElementById('lineageViewport');
+  if (!view?.isConnected || !viewport) return;
+  const scale = lineageState.scale;
+  view.setAttribute('x', String(-lineageState.tx / scale));
+  view.setAttribute('y', String(-lineageState.ty / scale));
+  view.setAttribute('width', String(viewport.clientWidth / scale));
+  view.setAttribute('height', String(viewport.clientHeight / scale));
 }
 
 /* ------------------------------------------------------------------ *
@@ -1496,6 +1674,27 @@ function renderMinimap() {
 (function wireLineageDashboard() {
   const viewport = document.getElementById('lineageViewport');
   if (!viewport) return;
+
+  // hover / click on any box: one listener for the whole graph (a big statement has thousands)
+  const nodesHost = document.getElementById('lineageNodes');
+  let hovered = null;
+  nodesHost.addEventListener('mouseover', (e) => {
+    const node = e.target.closest('[data-node-id]');
+    if (node === hovered) return;
+    hovered = node;
+    clearHighlight();
+    if (node) highlightNeighbours(node.dataset.nodeId);
+  });
+  nodesHost.addEventListener('mouseleave', () => {
+    hovered = null;
+    clearHighlight();
+  });
+  nodesHost.addEventListener('click', (e) => {
+    const node = e.target.closest('[data-node-id]');
+    if (!node) return;
+    e.stopPropagation();
+    selectGraphNode(node.dataset.nodeId);
+  });
 
   // Dragging a box: a table object moves whole (a drag that starts on one of its
   // condition / column chips moves the table, never the chip out of it); a lane or
@@ -1587,6 +1786,7 @@ function renderMinimap() {
     if (!panning) return;
     lineageState.tx = e.clientX - panning.x;
     lineageState.ty = e.clientY - panning.y;
+    lineageState.autoFit = false;
     applyTransform();
   });
   window.addEventListener('mouseup', () => {
@@ -1653,10 +1853,80 @@ function renderMinimap() {
     }
   });
 
-  window.addEventListener('resize', () => {
-    if (state.activeTab === 'lineage') {
-      drawEdges();
-      renderMinimap();
-    }
-  });
+  // The graph area changes size with the window and with the side panels: boxes re-wrap, so
+  // the edges are re-measured; a view nobody has zoomed or panned is fitted again.
+  let resizeFrame = 0;
+  let lastSize = '';
+  new ResizeObserver(() => {
+    const size = `${viewport.clientWidth}x${viewport.clientHeight}`;
+    if (size === lastSize || !viewport.clientWidth) return;
+    lastSize = size;
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => {
+      if (!lineageState.analysis) return;
+      if (lineageState.autoFit) fitGraph({ readable: true });
+      else updateMinimapView();
+    });
+  }).observe(viewport);
+
+  wireSidePanels();
 })();
+
+/**
+ * The tree (left) and the detail cards (right) can be folded away or resized, so the graph
+ * gets the room on a small screen; their state is remembered in this browser.
+ */
+function wireSidePanels() {
+  const body = document.querySelector('#lineageScreen .dash-body');
+  if (!body) return;
+  const read = (key, fallback) => {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+  };
+  const write = (key, value) => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* not remembered */ }
+  };
+  // on a narrow screen the right cards start folded (open, they float over the graph)
+  const panels = read('lineage.panels', { left: 264, right: 336, leftOpen: true, rightOpen: window.innerWidth > 1280 });
+  const apply = () => {
+    body.style.setProperty('--left-w', `${panels.left}px`);
+    body.style.setProperty('--right-w', `${panels.right}px`);
+    body.classList.toggle('left-closed', !panels.leftOpen);
+    body.classList.toggle('right-closed', !panels.rightOpen);
+    for (const button of document.querySelectorAll('[data-panel-toggle]')) {
+      const open = panels[`${button.dataset.panelToggle}Open`];
+      button.setAttribute('aria-pressed', String(open));
+      button.classList.toggle('active', open);
+    }
+  };
+  apply();
+  document.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-panel-toggle]');
+    if (!button) return;
+    const key = `${button.dataset.panelToggle}Open`;
+    panels[key] = !panels[key];
+    write('lineage.panels', panels);
+    apply();
+  });
+  // drag a panel's inner edge to resize it
+  for (const handle of body.querySelectorAll('.panel-resizer')) {
+    handle.addEventListener('pointerdown', (e) => {
+      const side = handle.dataset.side;
+      const startX = e.clientX;
+      const start = panels[side];
+      handle.setPointerCapture(e.pointerId);
+      body.classList.add('resizing');
+      const move = (ev) => {
+        const delta = (ev.clientX - startX) * (side === 'left' ? 1 : -1);
+        panels[side] = Math.round(Math.min(560, Math.max(200, start + delta)));
+        apply();
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        body.classList.remove('resizing');
+        write('lineage.panels', panels);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up, { once: true });
+    });
+  }
+}

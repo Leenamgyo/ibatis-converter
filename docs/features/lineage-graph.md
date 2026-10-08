@@ -83,6 +83,32 @@ three-level query is three lanes, each wired to the one above it.
 `renderGraph()` does this by queueing children while a scope is built
 (`lineageState.scopeQueue`) and draining the queue at top level.
 
+## Where the lanes go
+
+`placeLanes()` positions the lanes absolutely after they are built; there is
+no layout library.
+
+- A subquery lane sits in the **column to the right of the query that reads
+  it**: depth 1 one column right of MAIN, depth 2 one more. Each line
+  between lanes is then one short step sideways.
+- A column is as wide as its widest lane.
+- The children of one lane are stacked **in the order of what they point at
+  inside it**, top to bottom. Each child starts level with its target,
+  below its previous sibling, so the lines never cross.
+- Roots (MAIN, a UNION group, a write statement) stack top to bottom in
+  column 0.
+
+The graph therefore grows sideways, which suits a landscape screen, instead
+of piling up into one column that only fits at 25%.
+
+Inside a lane the browser still lays out the boxes (flex), as before.
+
+Inside the result table:
+- When a result has more than 3 WHERE objects or more than 6 columns, its
+  table object is `wide`. The conditions (each with its guard under it)
+  then form a grid of cards, not one tall column.
+- The SELECT columns are always chips that wrap.
+
 ## UNION
 
 A UNION is **one box around its branches** (`UNION ALL · 3개 브랜치가 하나의
@@ -96,6 +122,21 @@ of edge exist:
 
 - table → JOIN table, for a join (rule 2)
 - subquery lane → the slot / condition / column / HAVING that reads it (rule 4)
+
+**Where a line ends.** A line never runs under a box to reach something
+inside it. It ends at the **border of the table object holding its
+target**, level with the target:
+- a join line: at its own FROM row of the JOIN 테이블 (`edge(..., { toAnchor })`);
+- a subquery line: at the condition, column or HAVING it feeds.
+
+So five joins arrive as five arrows at five FROM rows, not one bundle at
+the box's middle.
+
+**Routing.** Boxes side by side get one S-curve between their facing sides.
+If another table object sits between them, the line goes round it as an
+orthogonal path with rounded corners. It goes over or under the box,
+whichever is the shorter detour (`drawEdges`). Stacked boxes get a
+vertical curve. A line the user bent keeps its bend.
 
 There is no refid box or edge: the graph is drawn from the statement **with
 its refids spliced in** (see [lineage-dashboard.md](lineage-dashboard.md),
@@ -128,8 +169,9 @@ join chip on the joined table, the guard as its own object.
 
 ## Known limits
 
-- The edge router is three cases (left→right, stacked, back-reference)
-  with no obstacle avoidance, so a long back-reference can cross a box.
+- Obstacle avoidance looks at table objects only, and at one detour (over
+  or under). Two lines can still share a stretch, and a heavily rearranged
+  graph can still cross a box.
 - Columns cap at 12 entries and then show "+N more"; there is no
   drill-down for the remainder.
 - `LineageAnalyzer` attributes a column's source only when the expression

@@ -1,69 +1,89 @@
 /* ------------------------------------------------------------------ *
  * SQL Lineage Dashboard (spec section 26) + MyBatis tab               *
  *                                                                      *
- * Layout is plain CSS grid/flex on purpose: the lineage graph's boxes  *
- * are laid out by the browser (nesting a subquery inside its parent    *
- * SELECT is just a nested <div>), and the SVG edge layer is drawn      *
- * afterwards from the measured positions - so there is no hand-rolled  *
- * layout engine to keep in sync with the DOM.                          *
+ * Inside a lane the browser lays the boxes out (grid/flex); the lanes  *
+ * themselves are placed in columns by lineage.js placeLanes, and the   *
+ * SVG edge layer is drawn afterwards from the measured positions.      *
  * ------------------------------------------------------------------ */
 
 :root {
-  --node-table-bg: #e9f1fd;
-  --node-table-bd: #b3ceef;
-  --node-table-fg: #17457e;
+  /* one hue per kind of object; boxes stay light, the hue goes to the header stripe and badges */
+  --node-table: #3b6fd8;
+  --node-table-bg: #eef3fd;
+  --node-table-bd: #c9d8f6;
+  --node-table-fg: #1f4fae;
   --node-refid-bg: #e9f7ee;
   --node-refid-bd: #aed8bf;
   --node-refid-fg: #1c6238;
-  --node-sub-bg: #fdf7e6;
-  --node-sub-bd: #e4d19c;
-  --node-sub-fg: #7a5a10;
-  --node-union-bg: #f4eefd;
-  --node-union-bd: #cfbcee;
-  --node-union-fg: #563086;
-  --node-col-bg: #fdecf2;
-  --node-col-bd: #f0bed3;
-  --node-col-fg: #8d2b53;
-  --node-join-bg: #f0efeb;
-  --node-join-bd: #c9c6bb;
-  --node-join-fg: #4f4d45;
-  --node-dyn-bd: #d59ab8;
-  --node-dyn-fg: #93315e;
-  --node-java-bg: #f1ecfb;
-  --node-java-bd: #cdbdee;
-  --edge: #7b8794;
-  --edge-ref: #9aa4b1;
-  --edge-join: #c2566d;
+  --node-sub: #c48a12;
+  --node-sub-bg: #fdf6e6;
+  --node-sub-bd: #ecd59c;
+  --node-sub-fg: #835c08;
+  --node-union: #7a4fd0;
+  --node-union-bg: #f3eefd;
+  --node-union-bd: #d6c7f3;
+  --node-union-fg: #5a34a6;
+  --node-col-bg: #fdeef4;
+  --node-col-bd: #f2c4d6;
+  --node-col-fg: #a02b5c;
+  --node-join: #6b6f7a;
+  --node-join-bg: #f5f4f0;
+  --node-join-bd: #d9d6cc;
+  --node-join-fg: #4a4c52;
+  --node-dyn-bd: #d98ab3;
+  --node-dyn-bg: #fdf3f8;
+  --node-dyn-fg: #a3336b;
+  --node-java-bg: #f4f0fc;
+  --node-java-bd: #d8ccf2;
+  --node-cond-bg: #fafaf7;
+  --edge: #8a94a3;
+  --edge-ref: #a3acb8;
+  --edge-join: #d0627a;
   --edge-hi: var(--accent);
+  --graph-bg: #f3f2ec;
+  --graph-dot: rgba(60, 60, 50, 0.09);
+  --box-shadow: 0 1px 2px rgba(20, 20, 40, 0.06), 0 2px 8px rgba(20, 20, 40, 0.05);
+  --box-shadow-hi: 0 4px 16px rgba(30, 30, 80, 0.14);
+  --box-radius: 9px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --node-table-bg: rgba(70, 130, 210, 0.16);
-    --node-table-bd: rgba(110, 165, 230, 0.5);
-    --node-table-fg: #9ec6f2;
+    --node-table: #6d9bf0;
+    --node-table-bg: #1e2433;
+    --node-table-bd: #33415e;
+    --node-table-fg: #a9c5f6;
     --node-refid-bg: rgba(70, 175, 115, 0.15);
     --node-refid-bd: rgba(105, 200, 145, 0.45);
     --node-refid-fg: #8ed7ab;
-    --node-sub-bg: rgba(205, 165, 60, 0.15);
-    --node-sub-bd: rgba(220, 185, 95, 0.45);
-    --node-sub-fg: #e0c37c;
-    --node-union-bg: rgba(150, 110, 225, 0.16);
-    --node-union-bd: rgba(175, 140, 235, 0.45);
-    --node-union-fg: #c3a9f0;
-    --node-col-bg: rgba(220, 100, 150, 0.16);
-    --node-col-bd: rgba(235, 130, 175, 0.45);
-    --node-col-fg: #f0a8c4;
-    --node-join-bg: rgba(160, 160, 160, 0.14);
-    --node-join-bd: rgba(180, 180, 180, 0.35);
-    --node-join-fg: #c3c1b8;
-    --node-dyn-bd: rgba(230, 140, 185, 0.5);
-    --node-dyn-fg: #eda6c6;
-    --node-java-bg: rgba(150, 110, 225, 0.14);
-    --node-java-bd: rgba(175, 140, 235, 0.4);
-    --edge: #99a4b1;
-    --edge-ref: #7b8592;
-    --edge-join: #d3798c;
+    --node-sub: #e0b052;
+    --node-sub-bg: #2a2518;
+    --node-sub-bd: #5a4a24;
+    --node-sub-fg: #ecc878;
+    --node-union: #a98af0;
+    --node-union-bg: #251f36;
+    --node-union-bd: #4b3d72;
+    --node-union-fg: #c9b5f5;
+    --node-col-bg: #33202a;
+    --node-col-bd: #63364a;
+    --node-col-fg: #f2aeca;
+    --node-join: #9aa0ab;
+    --node-join-bg: #20212a;
+    --node-join-bd: #3a3c48;
+    --node-join-fg: #d3d4da;
+    --node-dyn-bd: #8f4d70;
+    --node-dyn-bg: #2a1c24;
+    --node-dyn-fg: #f0a6cb;
+    --node-java-bg: rgba(150, 110, 225, 0.12);
+    --node-java-bd: rgba(175, 140, 235, 0.35);
+    --node-cond-bg: #1a1b22;
+    --edge: #7d8796;
+    --edge-ref: #6c7584;
+    --edge-join: #e07d93;
+    --graph-bg: #111218;
+    --graph-dot: rgba(255, 255, 255, 0.05);
+    --box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 10px rgba(0, 0, 0, 0.25);
+    --box-shadow-hi: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -72,40 +92,53 @@
  * ------------------------------------------------------------------ */
 .dashboard { flex-direction: column; min-width: 0; }
 .dash-stats {
-  display: flex; align-items: stretch; gap: 0.5rem; flex-wrap: wrap;
-  padding: 0.55rem 0.8rem; background: var(--bg-raised); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.6rem 0.9rem; background: var(--bg-raised); border-bottom: 1px solid var(--border);
 }
-.dash-title { min-width: 0; margin-right: auto; }
-.dash-title h2 { margin: 0; font-size: 0.95rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dash-title .sub { font-size: 0.72rem; color: var(--text-faint); }
+.dash-title { min-width: 0; flex: 1 1 260px; margin-right: auto; }
+.dash-title h2 { margin: 0; font-size: 1rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.01em; }
+.dash-title .sub { font-size: 0.72rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-title .sub .mono { color: var(--text-muted); }
 .stat {
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
-  padding: 0.25rem 0.6rem; min-width: 74px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  padding: 0.28rem 0.65rem; min-width: 68px;
 }
-.stat .k { font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; }
-.stat .v { font-size: 0.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .k { font-size: 0.6rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; }
+.stat .v { font-size: 0.95rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; }
 .stat.ok { background: var(--safe-soft); border-color: transparent; }
 .stat.ok .v, .stat.ok .k { color: var(--safe); }
 
-.dash-body { flex: 1; display: grid; grid-template-columns: 264px minmax(0, 1fr) 336px; min-height: 0; }
-.dash-left, .dash-right { min-height: 0; overflow-y: auto; background: var(--bg-raised); }
+/* left | graph | right; the side widths are resizable (lineage.js wireSidePanels) */
+.dash-body {
+  --left-w: 264px; --right-w: 336px;
+  flex: 1; display: grid; grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w); min-height: 0;
+}
+.dash-body.left-closed { grid-template-columns: 0 minmax(0, 1fr) var(--right-w); }
+.dash-body.right-closed { grid-template-columns: var(--left-w) minmax(0, 1fr) 0; }
+.dash-body.left-closed.right-closed { grid-template-columns: 0 minmax(0, 1fr) 0; }
+.dash-body.left-closed > .dash-left, .dash-body.right-closed > .dash-right { visibility: hidden; overflow: hidden; border: none; }
+.dash-body.resizing, .dash-body.resizing * { cursor: col-resize !important; user-select: none; }
+.dash-left, .dash-right { position: relative; min-height: 0; min-width: 0; overflow-y: auto; background: var(--bg-raised); }
 .dash-left { border-right: 1px solid var(--border); }
 .dash-right { border-left: 1px solid var(--border); padding-bottom: 1rem; }
-.dash-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
+.dash-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--graph-bg); }
+.panel-resizer { position: sticky; float: right; top: 0; width: 6px; height: 100%; margin-bottom: -100%; z-index: 4; cursor: col-resize; }
+.dash-left > .panel-resizer { margin-right: -1px; }
+.dash-right > .panel-resizer { float: left; margin-left: -1px; }
+.panel-resizer:hover, .dash-body.resizing .panel-resizer { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 
 .dash-search { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
 .dash-search input {
-  width: 100%; padding: 0.35rem 0.5rem; font-size: 0.78rem; color: var(--text);
-  background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  width: 100%; padding: 0.4rem 0.6rem; font-size: 0.78rem; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 7px;
 }
-.dash-search input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.dash-search input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
 /* ------------------------------------------------------------------ *
  * Left: XML structure tree + include usage                             *
  * ------------------------------------------------------------------ */
-.xml-tree { font-size: 0.78rem; padding: 0.35rem 0; }
-.xml-tree .node { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.6rem; cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--text); font: inherit; }
+.xml-tree { font-size: 0.79rem; padding: 0.35rem 0.3rem; }
+.xml-tree .node { display: flex; align-items: center; gap: 0.35rem; padding: 0.24rem 0.5rem; cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--text); font: inherit; border-radius: 6px; }
 .xml-tree .node:hover { background: var(--bg-sunken); }
 .xml-tree .node.loading { opacity: 0.6; cursor: progress; }
 .xml-tree .node.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -118,7 +151,7 @@
 .xml-tree .twisty { width: 0.7rem; flex: none; color: var(--text-faint); font-size: 0.6rem; }
 .xml-tree .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xml-tree .count { margin-left: auto; font-size: 0.68rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.xml-tree .kind { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.25rem; border-radius: 2px; background: var(--bg-sunken); color: var(--text-muted); flex: none; }
+.xml-tree .kind { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.02rem 0.3rem; border-radius: 4px; background: var(--bg-sunken); color: var(--text-muted); flex: none; }
 .xml-tree .kind.sql { background: var(--node-refid-bg); color: var(--node-refid-fg); }
 .xml-tree .kind.select { background: var(--node-table-bg); color: var(--node-table-fg); }
 .xml-tree .kind.insert, .xml-tree .kind.update, .xml-tree .kind.delete, .xml-tree .kind.procedure { background: var(--node-join-bg); color: var(--node-join-fg); }
@@ -131,7 +164,7 @@
 .usage-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0; }
 .usage-row .n { color: var(--text-faint); width: 1.1rem; text-align: right; font-variant-numeric: tabular-nums; }
 .usage-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.usage-row .bar { margin-left: auto; height: 0.45rem; border-radius: 2px; background: var(--node-refid-bd); flex: none; }
+.usage-row .bar { margin-left: auto; height: 0.4rem; border-radius: 3px; background: var(--node-refid-bd); flex: none; }
 .usage-row .c { width: 2rem; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* ------------------------------------------------------------------ *
@@ -141,68 +174,75 @@
   display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
   padding: 0.4rem 0.6rem; background: var(--bg-raised); border-bottom: 1px solid var(--border);
 }
-.breadcrumb { display: flex; align-items: center; gap: 0.3rem; font-size: 0.74rem; color: var(--text-muted); min-width: 0; overflow: hidden; }
+.breadcrumb { display: flex; align-items: center; gap: 0.3rem; font-size: 0.76rem; color: var(--text-muted); min-width: 0; overflow: hidden; flex: 1 1 120px; }
 .breadcrumb .crumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .breadcrumb .sep { color: var(--text-faint); }
 .breadcrumb .crumb.current { color: var(--text); font-weight: 700; }
-.tool-btns { display: flex; gap: 0.25rem; margin-left: auto; }
+.tool-btns { display: flex; align-items: center; gap: 0.25rem; margin-left: auto; flex-wrap: wrap; }
 .tool-btn {
-  font-size: 0.7rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: var(--radius);
+  font-size: 0.72rem; font-weight: 600; padding: 0.24rem 0.55rem; border-radius: 7px;
   border: 1px solid var(--border-strong); background: var(--bg-raised); color: var(--text-muted); cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 .tool-btn:hover { color: var(--accent); border-color: var(--accent); }
+.tool-btn.icon { display: inline-flex; align-items: center; justify-content: center; padding: 0.2rem; width: 1.75rem; height: 1.6rem; }
+.tool-btn.icon svg { width: 1rem; height: 1rem; }
+.tool-btn.panel-toggle.active { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
 .zoom-level { font-size: 0.7rem; color: var(--text-faint); align-self: center; font-variant-numeric: tabular-nums; width: 3rem; text-align: center; }
 
-.graph-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; }
+.graph-viewport {
+  position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab;
+  background-color: var(--graph-bg);
+  background-image: radial-gradient(var(--graph-dot) 1.1px, transparent 1.3px);
+  background-size: 18px 18px;
+}
 .graph-viewport.panning { cursor: grabbing; }
 /* boxes and lanes can be dragged (lineage.js: applyLayoutOffsets) */
 .graph-nodes .gnode.tobj, .graph-nodes .cluster-head { cursor: grab; }
 .graph-viewport.moving, .graph-viewport.moving * { cursor: grabbing !important; user-select: none; }
-.graph-nodes .dragging { z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); opacity: 0.95; }
+.graph-nodes .dragging { z-index: 5; box-shadow: var(--box-shadow-hi); opacity: 0.96; }
 .tool-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.25rem; }
-.layout-status { font-size: 0.72rem; color: var(--text-faint); }
+.layout-status { font-size: 0.72rem; color: var(--text-faint); max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layout-status.dirty { color: var(--warning); font-weight: 600; }
 .tool-btn.primary:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tool-btn:disabled { opacity: 0.45; cursor: default; }
-.graph-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; padding: 1rem; }
+.graph-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 /* Edges sit between the two paint layers on purpose: above the cluster's
-   opaque background (otherwise every intra-cluster line is buried under
-   it - `.graph-nodes` is a positioned sibling that comes later in the DOM,
-   so it wins by paint order), and below the node boxes, so a line reaches
-   a box's edge instead of running across its text. That means
-   `.graph-nodes` must stay `z-index: auto`: give it one and it becomes a
-   stacking context, trapping `.gnode` below the edges again. */
+   background and below the node boxes, so a line reaches a box's edge
+   instead of running across its text. That means `.graph-nodes` must stay
+   `z-index: auto`: give it one and it becomes a stacking context, trapping
+   `.gnode` below the edges again. */
 .graph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 1; }
 /* edges can be grabbed: a wide invisible stroke over each (lineage.js drawEdges) */
 .graph-edges .edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: grab; }
-.graph-edges .edge-hit:hover { stroke: var(--edge-hi); stroke-opacity: 0.18; }
-.graph-edges path.selected { stroke: var(--edge-hi); stroke-width: 2.6; opacity: 1; }
+.graph-edges .edge-hit:hover { stroke: var(--edge-hi); stroke-opacity: 0.16; }
+.graph-edges path { fill: none; stroke: var(--edge); stroke-width: 1.6; opacity: 0.9; stroke-linecap: round; transition: opacity 0.12s; }
+.graph-edges path.ref { stroke: var(--edge-ref); stroke-dasharray: 5 4; }
+.graph-edges path.join { stroke: var(--edge-join); stroke-width: 1.4; }
+.graph-edges path.dim { opacity: 0.1; }
+.graph-edges path.hi, .graph-edges path.selected { stroke: var(--edge-hi); stroke-width: 2.4; opacity: 1; }
 .graph-nodes .edge-end { outline: 2px solid var(--edge-hi); outline-offset: 2px; }
-.graph-edges path { fill: none; stroke: var(--edge); stroke-width: 1.5; opacity: 0.85; }
-.graph-edges path.ref { stroke: var(--edge-ref); stroke-dasharray: 4 3; }
-.graph-edges path.join { stroke: var(--edge-join); stroke-width: 1.1; }
-.graph-edges path.dim { opacity: 0.12; }
-.graph-edges path.hi { stroke: var(--edge-hi); stroke-width: 2.2; opacity: 1; }
-.graph-nodes { position: relative; display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
+/* lanes are placed absolutely (lineage.js placeLanes); the host gets their extent */
+.graph-nodes { position: relative; }
+.graph-nodes > .cluster { position: absolute; }
+.graph-nodes > .side-empty { position: static; padding: 2rem; }
 
-/* Cluster boxes -------------------------------------------------- */
-.cluster { border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-raised); min-width: 0; }
+/* Lanes (SELECT scopes) ----------------------------------------- */
+.cluster { border: 1px solid var(--border-strong); border-radius: var(--box-radius); background: var(--bg-raised); min-width: 0; }
 .cluster > .cluster-head {
-  display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem;
-  font-size: 0.72rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0.45rem; padding: 0.32rem 0.6rem;
+  font-size: 0.76rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border);
 }
 .cluster > .cluster-head .badge {
-  font-size: 0.62rem; font-weight: 700; padding: 0.05rem 0.3rem; border-radius: 2px;
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.05em; padding: 0.08rem 0.36rem; border-radius: 5px;
   background: var(--bg-sunken); color: var(--text-muted);
 }
 .cluster > .cluster-head .origin { font-weight: 500; color: var(--text-faint); }
-.cluster > .cluster-body { padding: 0.5rem; display: flex; gap: 2.6rem; align-items: flex-start; }
+.cluster > .cluster-body { padding: 0.6rem; display: flex; gap: 4.5rem; align-items: flex-start; }
 
-/* A SELECT scope is NOT a box. Drawing a border around it makes one box
-   look like it contains several tables, which is exactly what the objects
-   must never do. So a scope is a lane: a header chip, then the objects,
-   with no outline of its own. The only boxes on screen are the objects -
-   one per table, the JOIN table, each condition, each column. */
+/* A SELECT scope is NOT a box: a box around it makes one box look like it
+   contains several tables. A scope is a lane: a header chip, then the
+   objects, with no outline of its own. */
 .cluster.select-main, .cluster.select-sub, .cluster.select-union, .cluster.select-cte {
   border: none; background: transparent; border-radius: 0;
 }
@@ -210,161 +250,170 @@
 .cluster.select-sub > .cluster-head,
 .cluster.select-union > .cluster-head,
 .cluster.select-cte > .cluster-head {
-  width: fit-content; border: 1px solid; border-radius: 4px; margin-bottom: 0.1rem;
+  width: fit-content; border: 1px solid; border-radius: 999px; margin-bottom: 0.2rem; padding: 0.26rem 0.75rem 0.26rem 0.35rem;
+  box-shadow: var(--box-shadow); background: var(--bg-raised);
 }
-.cluster.select-main > .cluster-head { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
-.cluster.select-sub > .cluster-head { color: var(--node-sub-fg); background: var(--node-sub-bg); border-color: var(--node-sub-bd); }
-.cluster.select-union > .cluster-head { color: var(--node-union-fg); background: var(--node-union-bg); border-color: var(--node-union-bd); }
-.cluster.select-cte > .cluster-head { color: var(--node-union-fg); background: var(--node-union-bg); border-color: var(--node-union-bd); border-style: dashed; }
+.cluster.select-main > .cluster-head { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.cluster.select-main > .cluster-head .badge { background: var(--accent); color: #fff; }
+.cluster.select-sub > .cluster-head { color: var(--node-sub-fg); border-color: var(--node-sub-bd); }
+.cluster.select-sub > .cluster-head .badge { background: var(--node-sub); color: #fff; }
+.cluster.select-union > .cluster-head, .cluster.select-cte > .cluster-head { color: var(--node-union-fg); border-color: var(--node-union-bd); }
+.cluster.select-union > .cluster-head .badge, .cluster.select-cte > .cluster-head .badge { background: var(--node-union); color: #fff; }
+.cluster.select-cte > .cluster-head { border-style: dashed; }
 .cluster.select-main > .cluster-body,
 .cluster.select-sub > .cluster-body,
 .cluster.select-union > .cluster-body,
-.cluster.select-cte > .cluster-body { padding: 0.35rem 0 0.2rem 0.9rem; }
-/* A write statement (INSERT/UPDATE/DELETE) root - same machinery, but it
-   must never be mistaken for a SELECT at a glance. */
-.cluster.select-write { border-color: var(--warning); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08); }
-.cluster.select-write > .cluster-head { color: var(--warning); background: var(--warning-soft); border-bottom-color: var(--warning); }
+.cluster.select-cte > .cluster-body { padding: 0.55rem 0 0.2rem 0.4rem; }
+/* A write statement (INSERT/UPDATE/DELETE) root: never mistaken for a SELECT at a glance. */
+.cluster.select-write { border-color: var(--warning); box-shadow: var(--box-shadow); }
+.cluster.select-write > .cluster-head { color: var(--warning); background: var(--warning-soft); border-bottom-color: var(--warning); border-radius: var(--box-radius) var(--box-radius) 0 0; }
 
 .cluster-col { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
-.cluster-col > .col-head {
-  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint);
-}
+.cluster-col > .col-head { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
 
 /* A lane holds table objects: the source tables in one column, the table
    the joins produce in the next. */
-.lane-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; align-items: flex-start; }
-.lane-col.sources { min-width: 190px; }
-.lane-col.result { min-width: 230px; }
+.lane-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; align-items: stretch; }
+.lane-col.sources { width: 240px; }
+.lane-col.result { min-width: 260px; }
 
-/* Table object internals: FROM / WHERE / SELECT sections. This is the only
-   nesting allowed inside a box - clauses and columns, never another table. */
-.tobj { max-width: 340px; padding: 0; overflow: hidden; }
-.tobj > .tobj-head {
-  display: flex; align-items: baseline; gap: 0.35rem; padding: 0.3rem 0.45rem;
-  border-bottom: 1px solid var(--border); font-size: 0.74rem;
-}
-.tobj > .tobj-head .badge {
-  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.05rem 0.28rem;
-  border-radius: 2px; background: var(--bg-sunken); color: var(--text-muted);
-}
-.tobj > .tobj-head .tname { font-weight: 700; }
-.tobj > .tobj-head .alias { font-weight: 500; color: var(--text-faint); font-size: 0.68rem; }
-.tsec { display: flex; gap: 0.45rem; padding: 0.3rem 0.45rem; border-top: 1px dashed var(--border); }
-.tsec:first-of-type { border-top: none; }
-.tsec > .tsec-head {
-  flex: 0 0 62px; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--text-faint); padding-top: 0.15rem;
-}
-.tsec > .tsec-body { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; flex: 1 1 auto; }
-
-/* Node cards ------------------------------------------------------ */
+/* Table objects ---------------------------------------------------- */
 .gnode { position: relative; z-index: 2; }
 .cluster > .cluster-head, .cluster-col > .col-head { position: relative; z-index: 2; }
 .gnode {
-  border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg-raised);
-  padding: 0.3rem 0.45rem; font-size: 0.72rem; cursor: pointer; max-width: 260px; min-width: 0;
+  border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-raised);
+  padding: 0.32rem 0.5rem; font-size: 0.74rem; cursor: pointer; max-width: 280px; min-width: 0;
+  transition: border-color 0.12s, box-shadow 0.12s, opacity 0.12s;
 }
 .gnode .title { font-weight: 700; display: flex; align-items: baseline; gap: 0.3rem; }
 .gnode .title .alias { font-weight: 500; color: var(--text-faint); font-size: 0.68rem; }
-.gnode .meta { font-size: 0.66rem; color: var(--text-faint); }
-.gnode .sql { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.68rem; color: var(--text-muted); word-break: break-word; }
+.gnode .meta { font-size: 0.67rem; color: var(--text-faint); }
+.gnode .sql { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.7rem; line-height: 1.45; color: var(--text-muted); overflow-wrap: anywhere; }
 .gnode:hover { border-color: var(--accent); }
-.gnode.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
-.gnode.dim, .cluster.dim { opacity: 0.28; }
+.gnode.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gnode.dim, .cluster.dim { opacity: 0.25; }
 .gnode.search-hit { box-shadow: 0 0 0 2px var(--warning); }
 
-.gnode.table { background: var(--node-table-bg); border-color: var(--node-table-bd); }
-.gnode.table .title { color: var(--node-table-fg); }
-/* The slot a subquery fills. The subquery itself is drawn outside the
-   scope and points at this box. */
-.gnode.subref { background: var(--node-sub-bg); border-color: var(--node-sub-bd); border-style: dashed; }
-.gnode.subref .title { color: var(--node-sub-fg); }
+.gnode.tobj {
+  width: 100%; max-width: 340px; padding: 0; overflow: hidden; border-radius: var(--box-radius);
+  box-shadow: var(--box-shadow); background: var(--bg-raised); border-color: var(--node-table-bd);
+  border-top: 3px solid var(--node-table);
+}
+.gnode.tobj:hover { box-shadow: var(--box-shadow-hi); }
+.gnode.tobj.wide { max-width: 640px; min-width: 460px; }
+.tobj > .tobj-head {
+  display: flex; align-items: center; gap: 0.4rem; padding: 0.42rem 0.6rem 0.38rem;
+  font-size: 0.8rem; background: var(--node-table-bg);
+}
+.tobj > .tobj-head .badge {
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.06em; padding: 0.06rem 0.32rem;
+  border-radius: 4px; background: var(--node-table); color: #fff;
+}
+.tobj > .tobj-head .tname { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tobj > .tobj-head .alias { font-weight: 500; color: var(--text-faint); font-size: 0.7rem; }
+.tsec { display: flex; gap: 0.5rem; padding: 0.38rem 0.6rem; border-top: 1px solid var(--border); }
+.tsec > .tsec-head {
+  flex: 0 0 52px; font-size: 0.56rem; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-faint); padding-top: 0.2rem;
+}
+.tsec > .tsec-body { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; flex: 1 1 auto; }
+.tsec-from > .tsec-body > .sql, .tsec-from .cond-stack > .sql { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.7rem; color: var(--text-muted); }
+/* a wide result: conditions as a grid of cards, columns as chips */
+.tobj.wide .tsec-where > .tsec-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.4rem; align-items: start; }
+.tsec-select > .tsec-body { flex-direction: row; flex-wrap: wrap; gap: 0.3rem; }
+.tsec-select > .tsec-body > .sql { width: 100%; }
 
-/* The table a set of joins produces - a table object like any other,
-   sitting at the end of every join line. */
-.gnode.jointbl {
-  background: var(--node-join-bg); border-color: var(--node-join-bd); border-width: 2px;
-}
-.gnode.jointbl > .tobj-head { color: var(--node-join-fg); }
-.gnode.table > .tobj-head { color: var(--node-table-fg); }
-.gnode.subref > .tobj-head { color: var(--node-sub-fg); }
-/* Nested clause/column objects must not inherit the parent's tint. */
-.tobj .gnode { background: var(--bg-raised); max-width: 100%; }
+.gnode.table .tobj-head { color: var(--node-table-fg); }
+/* The slot a subquery fills (the subquery is drawn outside and points at it). */
+.gnode.tobj.subref { border-color: var(--node-sub-bd); border-top-color: var(--node-sub); border-style: dashed; border-top-style: solid; }
+.gnode.subref > .tobj-head { background: var(--node-sub-bg); color: var(--node-sub-fg); }
+.gnode.subref > .tobj-head .badge { background: var(--node-sub); }
+/* The table a set of joins produces, at the end of every join line. */
+.gnode.tobj.jointbl { border-color: var(--node-join-bd); border-top-color: var(--edge-join); }
+.gnode.jointbl > .tobj-head { background: var(--node-join-bg); color: var(--node-join-fg); }
+.gnode.jointbl > .tobj-head .badge { background: var(--edge-join); }
+/* Nested clause / column objects never inherit the table's tint. */
+.tobj .gnode { max-width: 100%; box-shadow: none; }
 .gnode.join { background: var(--node-join-bg); border-color: var(--node-join-bd); }
-/* Each WHERE condition is its own object; the dynamic tag that guards it
-   is another object, one depth below it. */
-.gnode.cond { background: var(--node-join-bg); border-color: var(--node-join-bd); }
-.cond-stack { display: flex; flex-direction: column; gap: 0.3rem; }
-.cond-children { padding-left: 0.9rem; border-left: 1px dashed var(--node-dyn-bd, var(--border-strong)); margin-left: 0.35rem; }
+/* Each WHERE condition is its own object; the dynamic tag guarding it is another, one depth below. */
+.gnode.cond { background: var(--node-cond-bg); border-color: var(--node-join-bd); border-radius: 6px; }
+.cond-stack { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.cond-children { padding-left: 0.6rem; border-left: 2px solid var(--node-dyn-bd); margin-left: 0.4rem; }
 .cond-kw {
-  font-size: 0.56rem; font-weight: 700; letter-spacing: 0.04em;
-  color: var(--node-join-fg); text-transform: uppercase;
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.05em; padding: 0 0.28rem; border-radius: 3px;
+  color: var(--node-join-fg); background: var(--bg-sunken); text-transform: uppercase;
 }
-/* What a join step produces: the integrated relation so far. */
 .gnode.join .relation {
   margin-top: 0.25rem; padding-top: 0.22rem; border-top: 1px dashed var(--node-join-bd);
-  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.01em; color: var(--node-join-fg);
+  font-size: 0.62rem; font-weight: 700; color: var(--node-join-fg);
 }
 .gnode.join .title { color: var(--node-join-fg); }
-.gnode.column { background: var(--node-col-bg); border-color: var(--node-col-bd); }
-.gnode.column .title { color: var(--node-col-fg); font-weight: 600; }
-.gnode.column .meta { color: var(--node-col-fg); opacity: 0.75; }
-.gnode.dynamic { background: transparent; border: 1px dashed var(--node-dyn-bd); }
-.gnode.dynamic .title { color: var(--node-dyn-fg); }
-.gnode.clause { background: var(--bg); border-style: dashed; }
+/* output columns: chips */
+.gnode.column { background: var(--node-col-bg); border-color: var(--node-col-bd); border-radius: 999px; padding: 0.14rem 0.55rem; }
+.gnode.column .title { color: var(--node-col-fg); font-weight: 600; font-size: 0.7rem; }
+.gnode.column .meta { color: var(--node-col-fg); opacity: 0.75; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.62rem; }
+.gnode.dynamic { background: var(--node-dyn-bg); border: 1px dashed var(--node-dyn-bd); border-radius: 6px; padding: 0.2rem 0.45rem; }
+.gnode.dynamic .title { color: var(--node-dyn-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.66rem; font-weight: 600; overflow-wrap: anywhere; }
+.gnode.clause { background: var(--node-cond-bg); border-style: dashed; }
 .gnode.lineage-hi { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.join-type { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em; padding: 0 0.25rem; border-radius: 2px; }
+.join-type { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em; padding: 0 0.25rem; border-radius: 3px; }
 .join-type.INNER_JOIN { background: var(--node-table-bg); color: var(--node-table-fg); }
 .join-type.LEFT_JOIN { background: var(--node-refid-bg); color: var(--node-refid-fg); }
 .join-type.RIGHT_JOIN { background: var(--node-sub-bg); color: var(--node-sub-fg); }
 .join-type.FULL_JOIN, .join-type.FULL_OUTER_JOIN { background: var(--node-union-bg); color: var(--node-union-fg); }
 .join-type.CROSS_JOIN { background: var(--node-join-bg); color: var(--node-join-fg); }
-/* Recovered from the WHERE clause rather than written as a JOIN - dashed,
-   so it never reads as an explicit join in the mapper. */
+/* Recovered from the WHERE clause rather than written as a JOIN. */
 .join-type.IMPLICIT_JOIN { background: transparent; border: 1px dashed var(--node-join-bd); color: var(--node-join-fg); }
 
-/* Legend + summary ------------------------------------------------ */
+/* Legend ----------------------------------------------------------- */
 .dash-legend {
-  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
-  padding: 0.4rem 0.7rem; background: var(--bg-raised); border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 0.4rem 0.9rem; flex-wrap: wrap;
+  padding: 0.4rem 0.75rem; background: var(--bg-raised); border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--text-muted);
 }
-.legend-item { display: inline-flex; align-items: center; gap: 0.3rem; }
-.legend-swatch { width: 0.75rem; height: 0.6rem; border-radius: 2px; border: 1px solid var(--border-strong); display: inline-block; }
-.legend-line { width: 1.1rem; height: 0; border-top: 2px solid var(--edge); display: inline-block; }
+.legend-item { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+.legend-swatch { width: 0.8rem; height: 0.65rem; border-radius: 3px; border: 1px solid var(--border-strong); display: inline-block; }
+.legend-line { width: 1.2rem; height: 0; border-top: 2px solid var(--edge); display: inline-block; }
 .legend-line.ref { border-top-style: dashed; border-color: var(--edge-ref); }
 .legend-line.join { border-color: var(--edge-join); }
 
-/* Right panel cards ----------------------------------------------- */
+/* Right panel cards ------------------------------------------------ */
 .side-card { border-bottom: 1px solid var(--border); }
 .side-card > .side-head {
-  display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.6rem;
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint);
+  display: flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.7rem 0.4rem;
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint);
 }
-.side-card > .side-head .n { margin-left: auto; font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.side-card > .side-body { padding: 0 0.6rem 0.6rem; }
+.side-card > .side-head .n { margin-left: auto; font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.side-card > .side-body { padding: 0 0.7rem 0.7rem; }
 .side-card.java > .side-body { background: var(--node-java-bg); border-top: 1px solid var(--node-java-bd); padding-top: 0.5rem; }
-.side-card table.data td, .side-card table.data th { padding: 0.25rem 0.3rem; font-size: 0.7rem; overflow-wrap: anywhere; vertical-align: top; }
-.side-card table.data th { white-space: nowrap; }
+.side-card table.data { width: 100%; }
+.side-card table.data td, .side-card table.data th { padding: 0.3rem 0.3rem; font-size: 0.71rem; overflow-wrap: anywhere; vertical-align: top; }
+.side-card table.data th { white-space: nowrap; font-size: 0.62rem; letter-spacing: 0.04em; color: var(--text-faint); }
 .side-card td.src { overflow-wrap: normal; }
 .side-card td.src .t, .side-card td.src .c { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-card td.src .c { color: var(--text-muted); }
-/* Short id-ish first columns ("MAIN", "S1") must not wrap mid-word. */
 .side-card table.data.compact-first td:first-child { white-space: nowrap; }
-/* Only the alias/lineage table gets a hairline "#" column; the Java
-   mapping table needs every column to size to its own content. */
-.side-card table.data.lineage-cols td:first-child, .side-card table.data.lineage-cols th:first-child { width: 1.1rem; color: var(--text-faint); }
+/* the result-column table: fixed columns, names never broken mid-word */
+.side-card table.data.lineage-cols { table-layout: fixed; }
+.side-card table.data.lineage-cols col.c-num { width: 1.6rem; }
+.side-card table.data.lineage-cols col.c-src { width: 38%; }
+.side-card table.data.lineage-cols col.c-act { width: 2rem; }
+.side-card table.data.lineage-cols td.num { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.side-card td.expr .alias-name, .side-card td.expr .expr-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-card td.expr .alias-name { font-weight: 700; color: var(--text); }
+.side-card td.expr .expr-text { color: var(--text-faint); font-size: 0.66rem; }
+.side-card td.act { text-align: right; }
+.side-card .guide-btn { width: 1.5rem; height: 1.4rem; font-size: 0.72rem; }
 .side-card table.data tr.clickable { cursor: pointer; }
 .side-card table.data tr.clickable:hover { background: var(--bg-sunken); }
 .side-card table.data tr.selected { background: var(--accent-soft); }
 .side-card .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .side-empty { font-size: 0.74rem; color: var(--text-faint); padding: 0 0.6rem 0.6rem; }
 
-.minimap { position: relative; margin: 0 0.6rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-sunken); }
-.minimap svg { display: block; width: 100%; height: 130px; }
+.minimap { position: relative; margin: 0 0.7rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--graph-bg); overflow: hidden; cursor: pointer; }
+.minimap svg { display: block; width: 100%; height: 140px; }
 .minimap rect.mm-node { fill: var(--node-table-bd); }
-.minimap rect.mm-cluster { fill: none; stroke: var(--border-strong); }
-.minimap rect.mm-view { fill: rgba(125, 128, 240, 0.16); stroke: var(--accent); }
+.minimap rect.mm-view { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: var(--accent); stroke-width: 6; vector-effect: non-scaling-stroke; }
 
 /* ------------------------------------------------------------------ *
  * MyBatis tab                                                          *
@@ -380,30 +429,33 @@
 
 /* ------------------------------------------------------------------ *
  * Responsive                                                           *
- *   >1200px  three columns                                             *
- *   <=1200px right panel drops under the graph as a card row           *
- *   <=860px  single column, sidebars become collapsible accordions      *
+ *   >1280px  three columns (sides resizable / foldable)                *
+ *   <=1280px the right panel is folded by default into an overlay      *
+ *   <=860px  one column: the graph first, the tree and cards below     *
  * ------------------------------------------------------------------ */
-@media (max-width: 1200px) {
-  .dash-body { grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: minmax(260px, 1fr) auto; }
-  .dash-left { grid-row: 1 / span 2; }
-  .dash-right {
-    grid-column: 2; border-left: none; border-top: 1px solid var(--border);
-    max-height: 300px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+@media (max-width: 1280px) {
+  .dash-body:not(.right-closed) { grid-template-columns: var(--left-w) minmax(0, 1fr) 0; }
+  .dash-body.left-closed:not(.right-closed) { grid-template-columns: 0 minmax(0, 1fr) 0; }
+  /* the cards float over the graph's right edge instead of taking its width */
+  .dash-body:not(.right-closed) > .dash-right {
+    position: absolute; right: 0; top: 0; bottom: 0; width: min(var(--right-w), 86vw); z-index: 6;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
   }
-  .side-card { border-right: 1px solid var(--border); }
+  .dash-body { position: relative; }
+  .stat { min-width: 58px; padding: 0.22rem 0.5rem; }
 }
 
 @media (max-width: 860px) {
-  .dash-body { display: flex; flex-direction: column; overflow-y: auto; }
-  .dash-left, .dash-right { max-height: none; border: none; border-bottom: 1px solid var(--border); display: block; }
-  .dash-center { min-height: 62vh; }
+  .dash-body, .dash-body.left-closed, .dash-body.right-closed, .dash-body.left-closed.right-closed { display: flex; flex-direction: column; overflow-y: auto; }
+  .dash-center { order: -1; min-height: 64vh; }
+  .dash-left, .dash-right, .dash-body:not(.right-closed) > .dash-right { position: static; width: auto; max-height: none; border: none; border-top: 1px solid var(--border); box-shadow: none; }
+  .dash-body.left-closed > .dash-left, .dash-body.right-closed > .dash-right { display: none; }
+  .panel-resizer { display: none; }
   .dash-stats { gap: 0.35rem; padding: 0.5rem; }
-  .stat { min-width: 62px; padding: 0.2rem 0.4rem; }
-  .cluster > .cluster-body { flex-direction: column; gap: 0.6rem; }
+  .dash-title { flex-basis: 100%; }
+  .stat { min-width: 0; flex: 1 1 64px; }
+  .tool-sep, .layout-status { display: none; }
   .mybatis-list { width: 100%; }
-  /* A collapsed sidebar section keeps its header as the tap target. */
-  .dash-left.collapsed .panel-body, .dash-left.collapsed .dash-search { display: none; }
 }
 
 /* ------------------------------------------------------------------ *
