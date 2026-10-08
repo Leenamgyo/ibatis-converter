@@ -168,3 +168,17 @@ test('GET /api/v1/version names the UI build, uncached, so an old tab can tell i
     stop();
   }
 });
+
+test('GET /api/v1/search filters a project by ids, paths and SQL text', async () => {
+  const { call, stop } = startServer();
+  try {
+    const { body: { projectId } } = await call('POST', '/api/v1/projects', { files: files() });
+    const found = await call('GET', `/api/v1/search?q=TB_ORD_H&projectId=${projectId}`);
+    assert.equal(found.status, 200);
+    assert.ok(found.body.statements >= 1);
+    assert.ok(found.body.files.every((f) => Object.values(f.statements).every((r) => r.includes('sql') || r.includes('id'))));
+    assert.equal((await call('GET', `/api/v1/search?q=nothing_like_this&projectId=${projectId}`)).body.files.length, 0);
+  } finally {
+    stop();
+  }
+});

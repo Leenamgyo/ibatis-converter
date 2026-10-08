@@ -110,6 +110,9 @@
 .xml-tree .node.loading { opacity: 0.6; cursor: progress; }
 .xml-tree .node.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .xml-tree .node.search-hit { box-shadow: inset 2px 0 0 var(--warning); }
+.xml-tree .hit-why { font-size: 0.6rem; padding: 0 0.3em; border-radius: 3px; background: var(--warning-soft, rgba(255, 180, 0, 0.15)); color: var(--warning); margin-left: 0.35rem; }
+.tree-search-summary { font-size: 0.72rem; color: var(--text-muted); padding: 0.35rem 0.6rem 0.45rem; border-bottom: 1px dashed var(--border); margin-bottom: 0.25rem; }
+.tree-search-summary.error { color: var(--manual, #c0563b); }
 .xml-tree .twisty { width: 0.7rem; flex: none; color: var(--text-faint); font-size: 0.6rem; }
 .xml-tree .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xml-tree .count { margin-left: auto; font-size: 0.68rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }

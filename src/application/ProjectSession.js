@@ -752,6 +752,74 @@ export class ProjectSession {
     return this.statementAnalyzer.analyze(resolved.originalTree, resolved.resolvedTree, qualifiedId, this.dialect);
   }
 
+  // ---------------------------------------------------------------- search
+
+  /**
+   * Finds `query` (case-insensitive) in the project's mappers: in file paths,
+   * namespaces and ids, and in the XML text itself — so a table, column,
+   * alias, parameter or refid finds the statements using it. A text hit
+   * belongs to the statement / `<sql>` / resultMap whose element contains
+   * that line; a hit inside a `<sql>` fragment also counts for every
+   * statement that includes it (directly or not). Files are read through the
+   * same bounded cache as everything else.
+   * @returns {{ query: string, files: object[], statements: number, truncated: boolean }}
+   */
+  search(query, { limit = 2000 } = {}) {
+    const q = String(query ?? '').trim().toLowerCase();
+    if (!q) return { query: '', files: [], statements: 0, truncated: false };
+    const hits = new Map(); // sourceFile -> { file, statements: Map<qid, Set<reason>>, fragments: Map<qid, Set<reason>> }
+    const at = (sourceFile) => hits.get(sourceFile) ?? hits.set(sourceFile, { file: false, statements: new Map(), fragments: new Map() }).get(sourceFile);
+    const add = (sourceFile, kind, qid, reason) => {
+      const map = at(sourceFile)[kind];
+      (map.get(qid) ?? map.set(qid, new Set()).get(qid)).add(reason);
+    };
+    let count = 0;
+    for (const file of this.files) {
+      if (count >= limit) break;
+      if (file.sourceFile.toLowerCase().includes(q) || (file.namespace ?? '').toLowerCase().includes(q)) at(file.sourceFile).file = true;
+      for (const s of file.statements) if (s.qualifiedId.toLowerCase().includes(q)) add(file.sourceFile, 'statements', s.qualifiedId, 'id');
+      for (const f of file.fragments) if (f.qualifiedId.toLowerCase().includes(q)) add(file.sourceFile, 'fragments', f.qualifiedId, 'id');
+      if (!file.parsed) continue;
+      // the element owning a line: the last statement / fragment / resultMap starting at or before it
+      const owners = [
+        ...file.statements.map((s) => ({ line: s.line, kind: 'statements', qid: s.qualifiedId })),
+        ...file.fragments.map((f) => ({ line: f.line, kind: 'fragments', qid: f.qualifiedId })),
+        ...file.resultMaps.map((r) => ({ line: r.line, kind: 'resultMaps', qid: null })),
+      ].sort((a, b) => a.line - b.line);
+      const lines = this.text(file.sourceFile).split('\n');
+      let o = -1;
+      for (let i = 0; i < lines.length; i++) {
+        while (o + 1 < owners.length && owners[o + 1].line <= i + 1) o++;
+        if (o < 0 || !owners[o].qid || !lines[i].toLowerCase().includes(q)) continue;
+        add(file.sourceFile, owners[o].kind, owners[o].qid, 'sql');
+      }
+      count += hits.get(file.sourceFile)?.statements.size ?? 0;
+    }
+    // a fragment hit reaches every statement including it (the refid chain), whatever file it is in
+    for (const [, hit] of [...hits]) {
+      for (const fid of hit.fragments.keys()) {
+        const seen = new Set();
+        const walk = (id) => {
+          for (const from of this.includedBy.get(id) ?? []) {
+            if (seen.has(from)) continue;
+            seen.add(from);
+            if (this.statementIds.has(from)) add(this.fileByQualifiedId.get(from), 'statements', from, `refid:${fid}`);
+            else walk(from);
+          }
+        };
+        walk(fid);
+      }
+    }
+    const files = [...hits].filter(([, h]) => h.file || h.statements.size || h.fragments.size).map(([sourceFile, h]) => ({
+      sourceFile,
+      file: h.file,
+      statements: Object.fromEntries([...h.statements].map(([k, v]) => [k, [...v]])),
+      fragments: Object.fromEntries([...h.fragments].map(([k, v]) => [k, [...v]])),
+    }));
+    const statements = files.reduce((n, f) => n + Object.keys(f.statements).length, 0);
+    return { query: q, files, statements, matchedFiles: files.filter((f) => f.file).length, truncated: count >= limit };
+  }
+
   // ---------------------------------------------------------------- summary, lifecycle
 
   /** the index as JSON: what the UI tree and the stat strip need, nothing heavier */

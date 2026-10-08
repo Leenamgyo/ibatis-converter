@@ -264,6 +264,13 @@ export function createApp({
     sendJson(req, res, project.analyze(req.params.id));
   });
 
+  // search the project: ids, paths, and the mapper text (tables, columns, aliases, refids...)
+  app.get('/api/v1/search', (req, res) => {
+    const project = resolveProject(req, res);
+    if (!project) return;
+    sendJson(req, res, project.search(req.query.q));
+  });
+
   // the statement's original XML and the XML of every fragment it includes (sliced from the files)
   app.get('/api/v1/statements/:id/xml', (req, res) => {
     const project = resolveProject(req, res);

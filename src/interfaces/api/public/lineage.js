@@ -294,7 +294,7 @@ function renderDashStats() {
 /* ------------------------------------------------------------------ *
  * Left: XML structure tree + include usage                             *
  * ------------------------------------------------------------------ */
-function treeRow({ depth, kind, label, count, statementId, toggleKey }) {
+function treeRow({ depth, kind, label, count, statementId, toggleKey, hint = null }) {
   const row = el('button', {
     class: `node depth-${depth}`,
     role: 'treeitem',
@@ -313,6 +313,7 @@ function treeRow({ depth, kind, label, count, statementId, toggleKey }) {
     el('span', { class: 'twisty' }, toggleKey ? (lineageState.collapsedTree.has(toggleKey) ? '▶' : '▼') : ''),
     kind ? el('span', { class: `kind ${kind.toLowerCase()}` }, kind) : null,
     el('span', { class: 'label' }, label),
+    hint ? el('span', { class: 'hit-why', title: hint.title }, hint.text) : null,
     count === undefined ? null : el('span', { class: 'count' }, String(count)),
   );
   if (statementId) row.classList.toggle('selected', statementId === lineageState.statementId);
@@ -320,46 +321,74 @@ function treeRow({ depth, kind, label, count, statementId, toggleKey }) {
   return row;
 }
 
+/** why a statement matched the search: shown next to it in the filtered tree */
+function hitHint(reasons) {
+  if (!reasons?.length) return null;
+  const refids = reasons.filter((r) => r.startsWith('refid:')).map((r) => r.slice(6));
+  if (reasons.includes('sql')) return { text: 'SQL', title: '이 statement의 XML/SQL에 있음' };
+  if (refids.length) return { text: 'refid', title: `포함한 <sql>에 있음: ${refids.join(', ')}` };
+  return null; // matched by its id: the label itself shows it
+}
+
 function renderXmlTree() {
   const host = document.getElementById('lineageTree');
   const tree = el('div', { class: 'xml-tree' });
+  // while searching, the tree is filtered to the hits (server-side search over ids, paths and the
+  // mapper text), every file with a hit unfolded
+  const search = lineageState.searchResult;
+  const hitsByFile = search ? new Map(search.files.map((f) => [f.sourceFile, f])) : null;
+  const summary = search ? el('div', { class: 'tree-search-summary', role: 'status' }) : null;
+  if (summary) tree.appendChild(summary);
 
   // built from the index alone: no file is read or parsed to draw the tree
   for (const mapper of state.index?.files ?? []) {
+    const hit = hitsByFile?.get(mapper.sourceFile);
+    if (hitsByFile && !hit) continue;
     const fileKey = `file:${mapper.sourceFile}`;
+    const folded = !search && lineageState.collapsedTree.has(fileKey);
     tree.appendChild(treeRow({
       depth: 0,
       label: `${mapper.sourceFile} (${mapper.lines.toLocaleString()})`,
-      toggleKey: fileKey,
+      toggleKey: search ? null : fileKey,
     }));
-    if (lineageState.collapsedTree.has(fileKey)) continue;
+    if (folded) continue;
+    // a file matched by its path / namespace shows everything in it
+    const whole = !hit || hit.file;
 
-    const fragments = mapper.fragments;
+    const fragments = whole ? mapper.fragments : mapper.fragments.filter((f) => hit.fragments[f.qualifiedId]);
     if (fragments.length) {
       const key = `${fileKey}:sql`;
-      tree.appendChild(treeRow({ depth: 1, kind: 'sql', label: 'sql', count: fragments.length, toggleKey: key }));
-      if (!lineageState.collapsedTree.has(key)) {
+      tree.appendChild(treeRow({ depth: 1, kind: 'sql', label: 'sql', count: fragments.length, toggleKey: search ? null : key }));
+      if (search || !lineageState.collapsedTree.has(key)) {
         for (const fragment of fragments) {
-          tree.appendChild(treeRow({ depth: 2, label: fragment.id }));
+          tree.appendChild(treeRow({ depth: 2, label: fragment.id, hint: hit ? hitHint(hit.fragments[fragment.qualifiedId]) : null }));
         }
       }
     }
 
     const byType = new Map();
     for (const stmt of mapper.statements) {
+      if (!whole && !hit.statements[stmt.qualifiedId]) continue;
       if (!byType.has(stmt.type)) byType.set(stmt.type, []);
       byType.get(stmt.type).push(stmt);
     }
     for (const [type, statements] of byType) {
       const key = `${fileKey}:${type}`;
-      tree.appendChild(treeRow({ depth: 1, kind: type, label: type.toLowerCase(), count: statements.length, toggleKey: key }));
-      if (lineageState.collapsedTree.has(key)) continue;
+      tree.appendChild(treeRow({ depth: 1, kind: type, label: type.toLowerCase(), count: statements.length, toggleKey: search ? null : key }));
+      if (!search && lineageState.collapsedTree.has(key)) continue;
       for (const stmt of statements) {
-        tree.appendChild(treeRow({ depth: 2, label: stmt.id, statementId: stmt.qualifiedId }));
+        tree.appendChild(treeRow({ depth: 2, label: stmt.id, statementId: stmt.qualifiedId, hint: hit ? hitHint(hit.statements[stmt.qualifiedId]) : null }));
       }
     }
   }
 
+  if (summary) {
+    // what the tree shows: a file matched by its name lists all of its statements
+    const shown = tree.querySelectorAll('.node[data-statement-id]').length;
+    summary.textContent = search.files.length
+      ? `“${search.query}” · statement ${shown.toLocaleString()}개 · 파일 ${search.files.length.toLocaleString()}개${search.truncated ? ' (일부만 표시)' : ''}`
+      : `“${search.query}”: 결과 없음 — 파일명, statement id, 테이블·컬럼·별칭, refid로 찾습니다`;
+  }
   host.replaceChildren(tree);
   // Only the schema view adds its change badges; the lineage view stays free of conversion output.
   decorateSchemaTree();
@@ -1507,10 +1536,41 @@ function renderMinimap() {
     else if (action === 'reset-layout') resetLayout();
   });
 
-  document.getElementById('lineageSearch').addEventListener('input', (e) => {
+  // typing filters the tree to the hits (debounced; the server searches ids, paths and mapper text)
+  let searchTimer = 0;
+  let searchSeq = 0;
+  const searchBox = document.getElementById('lineageSearch');
+  searchBox.addEventListener('input', (e) => {
     lineageState.search = e.target.value.trim().toLowerCase();
-    applySearchHighlight();
-    renderXmlTree();
+    applySearchHighlight(); // the open statement's graph, at once
+    clearTimeout(searchTimer);
+    if (!lineageState.search) {
+      lineageState.searchResult = null;
+      renderXmlTree();
+      return;
+    }
+    searchTimer = setTimeout(async () => {
+      const seq = ++searchSeq;
+      const term = lineageState.search;
+      try {
+        const result = await api(`/api/v1/search?q=${encodeURIComponent(term)}`);
+        if (seq !== searchSeq || term !== lineageState.search) return; // typed on meanwhile
+        lineageState.searchResult = result;
+        renderXmlTree();
+      } catch (err) {
+        if (seq === searchSeq) document.getElementById('lineageTree').prepend(el('div', { class: 'tree-search-summary error' }, `검색 실패: ${err.message}`));
+      }
+    }, 180);
+  });
+  // Enter opens the first statement found; Escape clears the search
+  searchBox.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#lineageTree .node[data-statement-id]');
+      if (first) selectLineageStatement(first.dataset.statementId);
+    } else if (e.key === 'Escape' && searchBox.value) {
+      searchBox.value = '';
+      searchBox.dispatchEvent(new Event('input'));
+    }
   });
 
   window.addEventListener('resize', () => {

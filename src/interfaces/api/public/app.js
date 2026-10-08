@@ -709,6 +709,10 @@ async function openProject(index) {
     }
   }
   invalidateSchemaResult(); // a new project invalidates the last migration run
+  // and its search: results name the old project's statements
+  lineageState.search = '';
+  lineageState.searchResult = null;
+  document.getElementById('lineageSearch').value = '';
   // a big project starts with its files folded: only the open statement's file is expanded
   lineageState.collapsedTree = new Set(index.totals.statements > LARGE_TREE ? index.files.map((f) => `file:${f.sourceFile}`) : []);
 

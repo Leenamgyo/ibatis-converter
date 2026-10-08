@@ -185,3 +185,33 @@ test('includeTree resolves a nested bare refid against the including statement\'
     session.close();
   }
 });
+
+test('search finds statements by id, file name, and by what their SQL uses — through <include> too', () => {
+  const session = new ProjectSession(new DirectorySource(SAMPLES), { maxFiles: 2 }).open();
+  try {
+    const ids = (r) => r.files.flatMap((f) => Object.keys(f.statements)).sort();
+    // a table / column in the SQL
+    const region = session.search('region_code');
+    assert.ok(region.statements > 0);
+    for (const id of ids(region)) {
+      const a = session.analyze(id);
+      const text = session.statementXml(id);
+      const all = [text.xml, ...Object.values(text.fragments).map((f) => f.xml)].join('\n').toLowerCase();
+      assert.ok(all.includes('region_code') || a.sql.toLowerCase().includes('region_code'), id);
+    }
+    // a fragment's content reaches the statements that include it, wherever they are
+    const viaRefid = session.search('activeCondition');
+    const reasons = viaRefid.files.flatMap((f) => Object.values(f.statements).flat());
+    assert.ok(reasons.some((r) => r.startsWith('refid:') || r === 'sql'));
+    assert.ok(ids(viaRefid).length >= 2);
+    // a file name
+    const byFile = session.search('02-dynamic');
+    assert.equal(byFile.matchedFiles, 1);
+    assert.equal(byFile.files[0].sourceFile, '02-dynamic.xml');
+    // nothing / blank
+    assert.equal(session.search('zz_no_such_thing').files.length, 0);
+    assert.equal(session.search('  ').files.length, 0);
+  } finally {
+    session.close();
+  }
+});
