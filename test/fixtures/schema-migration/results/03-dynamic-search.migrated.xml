@@ -3,52 +3,27 @@
 <mapper namespace="order">
 
   <select id="searchOrders" parameterType="map" resultType="java.util.HashMap">
-
     SELECT H.ORDER_ID AS ordNo, H.TOTAL_AMOUNT AS totAmt, H.STATUS AS ordStatCd
       FROM ORDERS H
-    
     <where>
-
-      
       <if test="custNo != null and custNo != ''">
-
         AND H.CUSTOMER_ID = #{custNo}
-      
       </if>
-
-      
       <if test="fromDt != null and fromDt != ''">
-
-        AND 
- H.ORDERED_AT &gt;= #{fromDt} 
-
-      
+        AND
+        H.ORDERED_AT &gt;= #{fromDt}
       </if>
-
-      
       <if test="onlyBig == 'Y'.toString()">
-
         AND TOTAL_AMOUNT &gt; 100000
-      
       </if>
-
-      
       <if test="statList != null and statList.size() &gt; 0">
-
         AND H.STATUS IN
-        
         <foreach collection="statList" item="item" open="(" close=")" separator=",">
-#{item}
+          #{item}
         </foreach>
-
-      
       </if>
-
-    
     </where>
-
     ORDER BY ${sortColumn} ${sortDir}
-  
   </select>
 
 </mapper>

@@ -1,3 +1,5 @@
+import { layoutSqlText } from './layoutSqlText.js';
+
 const STATEMENT_TAG = Object.freeze({ SELECT: 'select', INSERT: 'insert', UPDATE: 'update', DELETE: 'delete' });
 
 function escapeText(text) {
@@ -23,10 +25,11 @@ function renderNode(node, level, lines) {
   const pad = '  '.repeat(level);
   switch (node.type) {
     case 'TextSql':
-      // Original SQL text is emitted verbatim (its own internal whitespace
-      // from the source file is preserved byte-for-byte) — only re-escaped
-      // for XML, never reformatted. See "SQL 내용 임의 변경 금지" in the spec.
-      if (node.text !== '') lines.push(escapeText(node.text));
+      // SQL text is laid out at this tag's depth (layoutSqlText): only the
+      // indentation and the blank lines around it change, never a character
+      // of the SQL itself ("SQL 내용 임의 변경 금지"), nor anything inside a
+      // multi-line string literal. Re-escaped for XML.
+      for (const line of layoutSqlText(node.text, pad)) lines.push(escapeText(line));
       break;
     case 'Include':
       lines.push(`${pad}<include${attrsString([['refid', node.refid]])}/>`);
@@ -155,10 +158,12 @@ function renderNode(node, level, lines) {
  * Section 17 — renders an `ast/mybatis` MapperNode back to XML text.
  *
  * Structural indentation (2 spaces per nesting level) is applied
- * consistently to every tag; leaf SQL text is emitted verbatim (re-escaped
- * for XML, never reformatted or reindented) so the original SQL content is
- * never altered beyond the deliberate `#x#`/`$x$` conversions already
- * applied by `converter/mybatis`.
+ * consistently to every tag, and leaf SQL text is laid out at the depth of
+ * the tag it sits in (`layoutSqlText`: a converted statement is re-nested,
+ * so the source file's own indentation would be wrong). Only indentation
+ * and blank lines move — never a SQL character, never anything inside a
+ * multi-line string literal — so the SQL is not altered beyond the
+ * deliberate `#x#`/`$x$` conversions already applied by `converter/mybatis`.
  */
 export class XmlGenerator {
   /**

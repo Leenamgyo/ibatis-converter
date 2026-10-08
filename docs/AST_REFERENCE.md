@@ -175,10 +175,18 @@ Only columns with a `RESOLVED` table are attributed here — `UNKNOWN`/`UNRESOLV
 ## `src/generator/xml/XmlGenerator.js`
 
 `generate(mapperNode)` -> XML text. No model of its own — it's a pure
-renderer over `ast/mybatis` nodes. Leaf `TextSqlNode.text` is emitted
-verbatim (only re-escaped for `&`/`<`/`>`, never reformatted or
-reindented); every structural tag gets consistent 2-space-per-level
-indentation. There is no MyBatis DTD/XSD validation — only well-formedness
+renderer over `ast/mybatis` nodes. Every structural tag gets consistent
+2-space-per-level indentation, and leaf `TextSqlNode.text` is laid out at
+its tag's depth (`layoutSqlText`, shared with `IbatisXmlGenerator`).
+- Whitespace-only text emits no line.
+- A block is dedented by its common indentation and re-indented, so
+  relative alignment is kept.
+- A line that starts inside a multi-line string literal is kept byte for
+  byte.
+- Only indentation and blank lines change, then `&`/`<`/`>` are re-escaped.
+- `test/generator/layoutSqlText.test.js` checks, over every text block of
+  the samples, fixtures and generated projects, that the SQL tokens
+  (string literals whole) are identical. There is no MyBatis DTD/XSD validation — only well-formedness
 is checked, in tests, by round-tripping the output back through this
 project's own `parseXml`.
 

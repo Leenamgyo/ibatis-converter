@@ -3,7 +3,6 @@
 <mapper namespace="order">
 
   <select id="getOrderDetail" parameterType="string" resultType="java.util.HashMap">
-
     SELECT H.ORDER_ID       AS ordNo,
            H.ORDERED_AT       AS ordDt,
            C.CUSTOMER_NAME      AS custNm,
@@ -16,17 +15,14 @@
       LEFT OUTER JOIN PRODUCT P ON P.PRODUCT_ID = D.PRODUCT_ID AND P.IS_SELLABLE = 'Y'
      WHERE H.ORDER_ID = #{ordNo}
      ORDER BY D.LINE_NO
-  
   </select>
 
   <select id="getOrderWithCode" parameterType="string" resultType="java.util.HashMap">
-
     SELECT H.ORDER_ID AS ordNo, CC.CODE_NAME AS statNm
       FROM ORDERS H, COMMON_CODE CC
      WHERE CC.GROUP_CODE = 'ORD_STAT'
        AND CC.CODE = H.STATUS
        AND H.ORDER_ID = #{ordNo}
-  
   </select>
 
 </mapper>

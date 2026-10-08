@@ -3,27 +3,19 @@
 <mapper namespace="order">
 
   <insert id="insertOrder" parameterType="Order">
-
-    
     <selectKey keyProperty="ordNo" resultType="string" order="BEFORE">
-
       SELECT 'O' || LPAD(SEQ_ORD_NO.NEXTVAL, 9, '0') FROM DUAL
-    
     </selectKey>
-
     INSERT INTO TB_ORD_H (ORD_NO, CUST_NO, ORD_DT, ORD_STAT_CD, TOT_AMT, REG_ID)
     VALUES (#{ordNo}, #{custNo}, SYSDATE, '10', #{totAmt}, #{regId})
-  
   </insert>
 
   <insert id="copyOrderItems" parameterType="map">
-
     INSERT INTO TB_ORD_D (ORD_NO, ITEM_SEQ, PRD_CD, ORD_QTY, UNIT_PRC)
     SELECT #{newOrdNo}, S.ITEM_SEQ, S.PRD_CD, S.ORD_QTY, P.SALE_PRC
       FROM TB_ORD_D S
       JOIN TB_PRD_M P ON P.PRD_CD = S.PRD_CD
      WHERE S.ORD_NO = #{srcOrdNo}
-  
   </insert>
 
 </mapper>

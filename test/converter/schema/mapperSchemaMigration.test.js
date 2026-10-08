@@ -204,7 +204,8 @@ test('IbatisXmlGenerator output parses back to the same statement structure', as
   const shape = (node) => ({
     type: node.type,
     ...(node.type === 'Conditional' ? { c: node.conditionType, p: node.property, cv: node.compareValue, cp: node.compareProperty, pre: node.prepend } : {}),
-    ...(node.type === 'TextSql' ? { t: node.text.trim() } : {}),
+    // the generator re-indents text to its depth (layoutSqlText): compare the SQL, not its indentation
+    ...(node.type === 'TextSql' ? { t: node.text.replace(/\s+/g, ' ').trim() } : {}),
     // whitespace-only text (e.g. around a CDATA section) carries no SQL
     children: (node.children ?? []).filter((c) => c.type !== 'TextSql' || c.text.trim()).map(shape),
   });

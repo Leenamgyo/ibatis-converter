@@ -8,7 +8,6 @@
   </resultMap>
 
   <select id="getCustomer" parameterType="string" resultType="Customer">
-
     SELECT C.CUSTOMER_ID   AS custNo,
            C.CUSTOMER_NAME   AS custNm,
            C.REGION_CODE    AS rgnCd,
@@ -16,15 +15,12 @@
       FROM CUSTOMER C
      WHERE C.CUSTOMER_ID = #{custNo}
        AND C.IS_ACTIVE  = 'Y'
-  
   </select>
 
   <select id="getCustomerByMap" parameterType="string" resultMap="customerResult">
-
     SELECT CUSTOMER_ID, CUSTOMER_NAME
       FROM CUSTOMER
      WHERE CUSTOMER_ID = #{custNo}
-  
   </select>
 
 </mapper>

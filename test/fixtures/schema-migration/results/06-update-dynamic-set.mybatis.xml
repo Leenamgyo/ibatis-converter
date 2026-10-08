@@ -3,39 +3,25 @@
 <mapper namespace="customer">
 
   <update id="updateCustomer" parameterType="Customer">
-
     UPDATE TB_CUST_M
-    
     <set>
-
-      
       <if test="custNm != null">
-CUST_NM = #{custNm},
+        CUST_NM = #{custNm},
       </if>
-
-      
       <if test="rgnCd != null">
-RGN_CD = #{rgnCd},
+        RGN_CD = #{rgnCd},
       </if>
-
-      
       <if test="useYn != null">
-USE_YN = #{useYn},
+        USE_YN = #{useYn},
       </if>
-
-    
     </set>
-
-     WHERE CUST_NO = #{custNo}
-  
+    WHERE CUST_NO = #{custNo}
   </update>
 
   <update id="refreshOrderTotal" parameterType="string">
-
     UPDATE TB_ORD_H H
        SET H.TOT_AMT = (SELECT SUM(D.ORD_QTY * D.UNIT_PRC) FROM TB_ORD_D D WHERE D.ORD_NO = H.ORD_NO)
      WHERE H.ORD_NO = #{ordNo}
-  
   </update>
 
 </mapper>

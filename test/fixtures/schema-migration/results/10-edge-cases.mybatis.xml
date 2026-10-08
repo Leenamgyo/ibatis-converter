@@ -3,7 +3,6 @@
 <mapper namespace="payment">
 
   <select id="paymentAudit" parameterType="map" resultType="java.util.HashMap">
-
     SELECT /*+ INDEX(TB_ORD_H IDX_ORD_01) */
            PY.PAY_NO AS payNo,
            PY.PAY_AMT AS payAmt,
@@ -13,23 +12,18 @@
       JOIN TB_ORD_H H ON H.ORD_NO = PY.ORD_NO
       LEFT JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
      WHERE PY.PAY_DT BETWEEN #{fromDt} AND #{toDt}
-  
   </select>
 
   <select id="logJoin" resultType="java.util.HashMap">
-
     SELECT ORD_STAT_CD, MSG
       FROM TB_ORD_H H
       JOIN TB_LOG L ON L.ORD_NO = H.ORD_NO
-  
   </select>
 
   <select id="ambiguousColumn" resultType="int">
-
     SELECT COUNT(*)
       FROM TB_CUST_M C, TB_PRD_M P
      WHERE USE_YN = 'Y'
-  
   </select>
 
 </mapper>

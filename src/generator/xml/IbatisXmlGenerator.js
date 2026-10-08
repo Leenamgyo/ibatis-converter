@@ -1,3 +1,4 @@
+import { layoutSqlText } from './layoutSqlText.js';
 import { CONDITION_TAG_MAP } from '../../ast/ibatis/enums.js';
 
 /**
@@ -39,7 +40,8 @@ function render(node, level, lines) {
   };
   switch (node.type) {
     case 'TextSql':
-      if (node.text !== '') lines.push(escapeText(node.text));
+      // laid out at this tag's depth, like XmlGenerator's (same rule, so the 변환 view's sides line up)
+      for (const line of layoutSqlText(node.text, pad)) lines.push(escapeText(line));
       break;
     case 'Include':
       lines.push(`${pad}<include${attrs([['refid', node.refid]])}/>`);

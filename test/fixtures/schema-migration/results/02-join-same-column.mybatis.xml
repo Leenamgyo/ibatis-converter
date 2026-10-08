@@ -3,7 +3,6 @@
 <mapper namespace="order">
 
   <select id="getOrderDetail" parameterType="string" resultType="java.util.HashMap">
-
     SELECT H.ORD_NO       AS ordNo,
            H.ORD_DT       AS ordDt,
            C.CUST_NM      AS custNm,
@@ -16,17 +15,14 @@
       LEFT OUTER JOIN TB_PRD_M P ON P.PRD_CD = D.PRD_CD AND P.USE_YN = 'Y'
      WHERE H.ORD_NO = #{ordNo}
      ORDER BY D.ITEM_SEQ
-  
   </select>
 
   <select id="getOrderWithCode" parameterType="string" resultType="java.util.HashMap">
-
     SELECT H.ORD_NO AS ordNo, CC.CD_NM AS statNm
       FROM TB_ORD_H H, TB_CMM_CD CC
      WHERE CC.GRP_CD = 'ORD_STAT'
        AND CC.CD = H.ORD_STAT_CD
        AND H.ORD_NO = #{ordNo}
-  
   </select>
 
 </mapper>

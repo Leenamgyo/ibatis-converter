@@ -65,9 +65,10 @@ iBATIS XML
     |                 bare warning list (spec sections 12-16)
     v
 [generator/xml]       ast/mybatis MapperNode -> MyBatis mapper XML text;
-    |                 leaf SQL text is emitted verbatim (re-escaped, never
-    |                 reformatted); structural indentation is consistent
-    |                 (spec section 17)
+    |                 leaf SQL text is laid out at its tag's depth
+    |                 (layoutSqlText: indentation / blank lines only, never a
+    |                 SQL character, never inside a string literal);
+    |                 structural indentation is consistent (spec section 17)
     v
 [converter/schema]    OPTIONAL (AnalyzerPipeline `schemaMigrationConverter`):
     |                 old -> new schema table/column renames over the

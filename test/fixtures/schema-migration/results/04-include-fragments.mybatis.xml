@@ -3,63 +3,38 @@
 <mapper namespace="product">
 
   <sql id="productColumns">
-
     P.PRD_CD AS prdCd, P.PRD_NM AS prdNm, P.CTG_CD AS ctgCd
-  
   </sql>
 
   <sql id="categoryFilter">
-
-    
     <if test="ctgCd != null and ctgCd != ''">
-
       AND CTG_CD = #{ctgCd}
-    
     </if>
-
-  
   </sql>
 
   <sql id="activeOnly">
-
     AND USE_YN = 'Y'
-  
   </sql>
 
   <select id="listProducts" parameterType="map" resultType="Product">
-
-    SELECT 
+    SELECT
     <include refid="productColumns"/>
-
-      FROM TB_PRD_M P
-     WHERE 1 = 1
-     
+     FROM TB_PRD_M P
+    WHERE 1 = 1
     <include refid="categoryFilter"/>
-
-     
     <include refid="activeOnly"/>
-
-  
   </select>
 
   <select id="countProducts" parameterType="map" resultType="int">
-
     SELECT COUNT(*)
       FROM TB_PRD_M
      WHERE 1 = 1
-     
     <include refid="categoryFilter"/>
-
-  
   </select>
 
   <select id="countActiveCustomers" resultType="int">
-
     SELECT COUNT(*) FROM TB_CUST_M WHERE 1 = 1
-    
     <include refid="activeOnly"/>
-
-  
   </select>
 
 </mapper>

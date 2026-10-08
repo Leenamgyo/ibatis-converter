@@ -3,17 +3,13 @@
 <mapper namespace="order">
 
   <delete id="deleteOrphanItems">
-
     DELETE FROM TB_ORD_D D
      WHERE NOT EXISTS (SELECT 1 FROM TB_ORD_H H WHERE H.ORD_NO = D.ORD_NO)
         OR D.PRD_CD IN (SELECT PRD_CD FROM TB_PRD_M WHERE USE_YN = 'N')
-  
   </delete>
 
   <delete id="deleteCode" parameterType="map">
-
     DELETE TB_CMM_CD WHERE GRP_CD = #{grpCd} AND CD = #{cd}
-  
   </delete>
 
 </mapper>
