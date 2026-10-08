@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="order">
+  <select id="q0">SELECT 1 FROM T_q0 WHERE 1 = 1
+    AND <include refid="  ns1_1.f1_2 "/>
+    AND <include refid="lt1_4.ltf1_5"/>
+    AND <include refid="ns1_7.f1_8"/>
+  </select>
+  <select id="q1">SELECT 1 FROM T_q1 WHERE 1 = 1
+    AND <include refid="  ns1_10.f1_11 "/>
+  </select>
+  <select id="q2">SELECT 1 FROM T_q2 WHERE 1 = 1
+    AND <include refid="near1_13"/>
+    AND <include refid="ns1_19.f1_20"/>
+  </select>
+</sqlMap>

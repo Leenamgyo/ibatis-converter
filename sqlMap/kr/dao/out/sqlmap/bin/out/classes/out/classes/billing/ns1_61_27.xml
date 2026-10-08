@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="ns1_61">
+  <sql id="f1_62">SPACED_c1_60 = 1 AND <include refid="inner1_63.g1_64"/></sql>
+</sqlMap>

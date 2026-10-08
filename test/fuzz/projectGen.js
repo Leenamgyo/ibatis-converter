@@ -100,16 +100,48 @@ export function generateProject(seed, rootDir, { hard = false } = {}) {
     }
   });
 
-  // deliberate errors
+  // the same bare fragment id defined in several mappers (a common fragment copied into modules)
   const expectedAmbiguous = [];
-  if (style !== 'QUALIFIED' && files.length >= 3 && chance(0.4)) {
-    // the same bare fragment id in two mappers, referenced bare from a third: ambiguous
-    const id = `dup${seed}`;
-    const [a, b, c] = [files[files.length - 1], files[files.length - 2], files[0]];
-    a.fragments.push({ id, qid: `${a.namespace}.${id}`, file: a, refs: [] });
-    b.fragments.push({ id, qid: `${b.namespace}.${id}`, file: b, refs: [] });
-    c.statements.push({ id: 'usesDuplicate', refs: [{ missing: true, refid: id }], column: 'S_DUP' });
-    expectedAmbiguous.push(id);
+  const expectedDuplicates = []; // { id, chosen, rule }
+  const extraFile = (rel, namespace) => {
+    const file = { rel, namespace, fragments: [], statements: [], resultMaps: [], encoding: 'UTF-8' };
+    files.push(file);
+    return file;
+  };
+  if (style !== 'QUALIFIED' && files.length >= 3) {
+    const c = files[0];
+    if (chance(0.5)) {
+      // different SQL: the copy in the includer's own folder wins
+      const id = `dup${seed}`;
+      const near = extraFile(path.join(path.dirname(c.rel), `DupNear${seed}_SQL.xml`), `dupnear${seed}`);
+      const far = extraFile(path.join('zz-far', 'elsewhere', `DupFar${seed}_SQL.xml`), `dupfar${seed}`);
+      const nearFragment = { id, qid: `${near.namespace}.${id}`, file: near, refs: [] };
+      near.fragments.push(nearFragment);
+      far.fragments.push({ id, qid: `${far.namespace}.${id}`, file: far, refs: [] });
+      c.statements.push({ id: 'usesNearDuplicate', refs: [{ target: nearFragment, refid: id }], column: 'S_DUPN' });
+      expectedDuplicates.push({ id, chosen: nearFragment.qid, rule: 'REFID_NEAREST_DUPLICATE' });
+    }
+    if (chance(0.5)) {
+      // the same SQL copied into two modules: one fragment
+      const id = `same${seed}`;
+      const a = extraFile(path.join('zz-mod-a', 'sql', `SameA${seed}_SQL.xml`), `samea${seed}`);
+      const b = extraFile(path.join('zz-mod-b', 'sql', `SameB${seed}_SQL.xml`), `sameb${seed}`);
+      const first = { id, qid: `${a.namespace}.${id}`, file: a, refs: [], text: `/*F:${a.namespace}.${id}*/ AND F_${id} = 1` };
+      a.fragments.push(first);
+      b.fragments.push({ id, qid: `${b.namespace}.${id}`, file: b, refs: [], text: first.text });
+      c.statements.push({ id: 'usesSameDuplicate', refs: [{ target: first, refid: id }], column: 'S_DUPS' });
+      expectedDuplicates.push({ id, chosen: first.qid, rule: 'REFID_DUPLICATE_SAME' });
+    }
+    if (chance(0.4)) {
+      // different SQL, equally far from the includer: genuinely ambiguous, never guessed
+      const id = `tie${seed}`;
+      const a = extraFile(path.join('zz-tie', `TieA${seed}_SQL.xml`), `tiea${seed}`);
+      const b = extraFile(path.join('zz-tie', `TieB${seed}_SQL.xml`), `tieb${seed}`);
+      a.fragments.push({ id, qid: `${a.namespace}.${id}`, file: a, refs: [] });
+      b.fragments.push({ id, qid: `${b.namespace}.${id}`, file: b, refs: [] });
+      c.statements.push({ id: 'usesTie', refs: [{ missing: true, refid: id }], column: 'S_TIE' });
+      expectedAmbiguous.push(id);
+    }
   }
   const expectedMissing = [];
   const expectedCircular = [];
@@ -173,7 +205,7 @@ export function generateProject(seed, rootDir, { hard = false } = {}) {
       lines.push(`  <resultMap id="${rm.id}" class="java.util.HashMap"${rm.extendsRef ? ` extends="${rm.extendsRef}"` : ''}>`, `    <result property="c${rm.id}" column="C_${rm.id.toUpperCase()}"/>`, '  </resultMap>');
     }
     for (const fragment of file.fragments) {
-      lines.push(`  <sql id="${fragment.id}">`, `    /*F:${fragment.qid}*/ AND F_${fragment.id} = 1`);
+      lines.push(`  <sql id="${fragment.id}">`, `    ${fragment.text ?? `/*F:${fragment.qid}*/ AND F_${fragment.id} = 1`}`);
       for (const ref of fragment.refs) lines.push(renderRef(ref, '    '));
       lines.push('  </sql>');
     }
@@ -232,19 +264,39 @@ export function generateProject(seed, rootDir, { hard = false } = {}) {
   for (const file of files) for (const f of file.fragments) allQids.set(f.qid, f);
   const byLocal = new Map();
   for (const f of allQids.values()) byLocal.set(f.id, [...(byLocal.get(f.id) ?? []), f]);
-  const lookup = (refid, ns) => allQids.get(refid) ?? allQids.get(`${ns}.${refid}`)
-    ?? (!refid.includes('.') && byLocal.get(refid)?.length === 1 ? byLocal.get(refid)[0] : null);
-  const resolveRef = (refid, lexicalNs, rootNs) => lookup(refid, rootNs) ?? lookup(refid, lexicalNs);
+  // several fragments of one id: identical text -> the first by qualified id; else the one sharing
+  // the most folders with the referencing file; a tie -> unresolved (an independent statement of
+  // the tool's policy, so the corpus checks it rather than mirrors it)
+  const posix = (p) => p.split(path.sep).join('/');
+  const sharedFolders = (x, y) => {
+    const a = posix(x).split('/').slice(0, -1);
+    const b = posix(y).split('/').slice(0, -1);
+    let n = 0;
+    while (n < a.length && n < b.length && a[n] === b[n]) n++;
+    return n;
+  };
+  const textOf = (f) => f.text ?? `/*F:${f.qid}*/ AND F_${f.id} = 1|${f.refs.map((r) => r.refid).join(',')}`;
+  const pickDuplicate = (refid, fromFile) => {
+    const candidates = [...(byLocal.get(refid) ?? [])].sort((x, y) => x.qid.localeCompare(y.qid));
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length < 2) return null;
+    if (candidates.every((f) => textOf(f) === textOf(candidates[0]) && !f.refs.length)) return candidates[0];
+    const best = Math.max(...candidates.map((f) => sharedFolders(fromFile, f.file.rel)));
+    const nearest = candidates.filter((f) => sharedFolders(fromFile, f.file.rel) === best);
+    return nearest.length === 1 ? nearest[0] : null;
+  };
+  const lookup = (refid, ns, fromFile) => allQids.get(refid) ?? allQids.get(`${ns}.${refid}`) ?? pickDuplicate(refid, fromFile);
+  const resolveRef = (refid, lexicalNs, rootNs, fromFile) => lookup(refid, rootNs, fromFile) ?? lookup(refid, lexicalNs, fromFile);
   /** markers in the order the fully expanded SQL must contain them */
-  const expand = (refs, lexicalNs, rootNs, stack) => refs.flatMap((ref) => {
-    const target = resolveRef(ref.refid, lexicalNs, rootNs);
+  const expand = (refs, lexicalNs, rootNs, stack, fromFile) => refs.flatMap((ref) => {
+    const target = resolveRef(ref.refid, lexicalNs, rootNs, fromFile);
     if (!target || stack.includes(target.qid)) return [];
-    return [target.qid, ...expand(target.refs, target.file.namespace, rootNs, [...stack, target.qid])];
+    return [target.qid, ...expand(target.refs, target.file.namespace, rootNs, [...stack, target.qid], target.file.rel)];
   });
   const statements = files.flatMap((file) => file.statements.map((st) => ({
     qualifiedId: `${file.namespace}.${st.id}`,
     file: file.rel.split(path.sep).join('/'),
-    markers: expand(st.refs, file.namespace, file.namespace, []),
+    markers: expand(st.refs, file.namespace, file.namespace, [], file.rel),
     circular: expectedCircular.includes(`${file.namespace}.${st.id}`),
   })));
   const depthOf = (refs, stack = []) => Math.max(0, ...refs.filter((x) => x.target && !stack.includes(x.target.qid)).map((x) => 1 + depthOf(x.target.refs, [...stack, x.target.qid])));
@@ -259,6 +311,7 @@ export function generateProject(seed, rootDir, { hard = false } = {}) {
     expectedMissing,
     expectedCircular,
     expectedAmbiguous,
+    expectedDuplicates,
     maxDirDepth: Math.max(...files.map((f) => f.rel.split(path.sep).length - 1)),
     maxIncludeDepth: Math.max(0, ...files.flatMap((f) => f.statements.map((s) => depthOf(s.refs)))),
     resultMapChains: resultMaps.map((rm) => {

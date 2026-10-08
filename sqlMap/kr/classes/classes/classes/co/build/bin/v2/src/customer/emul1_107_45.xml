@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="emul1_107">
+  <sql id="grp1_108.cols">DOTTED_c1_106 = 1</sql>
+</sqlMap>

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="nearns1_57">
+  <sql id="near1_55">NEAR_near1_55 = 1</sql>
+</sqlMap>

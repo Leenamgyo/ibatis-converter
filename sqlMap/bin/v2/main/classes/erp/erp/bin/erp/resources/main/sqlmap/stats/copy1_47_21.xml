@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace=" copy1_47 ">
+  <sql id="same1_44">SAME_same1_44 = 1</sql>
+</sqlMap>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper namespace=" customer ">
+  <select id="q0">SELECT 1 FROM T_q0 WHERE 1 = 1
+    AND <include refid="ns1_24.f1_25"/>
+  </select>
+  <select id="q1">SELECT 1 FROM T_q1 WHERE 1 = 1
+    AND <include refid="ns1_29.f1_30"/>
+    AND <include refid="uniq1_33"/>
+    AND <include refid="near1_35"/>
+  </select>
+  <select id="q2">SELECT 1 FROM T_q2 WHERE 1 = 1
+    AND <include refid="same1_44"/>
+    AND <include refid="  ns1_50.f1_51 "/>
+    AND <include refid="near1_55"/>
+  </select>
+</mapper>

@@ -127,8 +127,8 @@ export class ProjectMetadata {
   // ---------------------------------------------------------------- lookup
 
   /** where an `<include refid>` points (ReferenceIndex#includeTarget) */
-  includeTarget(refid, writtenIn, rootNamespace = writtenIn) {
-    return this.index.includeTarget(refid, writtenIn, rootNamespace);
+  includeTarget(refid, writtenIn, rootNamespace = writtenIn, fromFile = null) {
+    return this.index.includeTarget(refid, writtenIn, rootNamespace, fromFile);
   }
 
   /** the converter's question: what a reference resolves to and whether to write it qualified */
@@ -191,7 +191,7 @@ export class ProjectMetadata {
       const stub = loc && this.symbolTable.get(owner)?.node;
       for (const inc of stub?.children ?? []) {
         if (inc.type !== 'Include') continue;
-        if (this.qualifiedIdOf(inc.refid, loc.namespace, 'SQL_FRAGMENT')?.qualifiedId !== fragmentQualifiedId) continue;
+        if (this.includeTarget(inc.refid, loc.namespace, loc.namespace, inc.sourceFile ?? loc.sourceFile).symbol?.qualifiedId !== fragmentQualifiedId) continue;
         sites.push({ statement: owner, file: loc.sourceFile, line: inc.sourceLine, refid: inc.refid });
       }
     }
@@ -215,7 +215,7 @@ export class ProjectMetadata {
           const own = this.locate(child.qualifiedId)?.namespace ?? writtenIn;
           const file = this.fileByQualifiedId.get(child.qualifiedId);
           const unparsed = this.fileEntries.get(file)?.parsed === false;
-          out.push({ refid: child.refid, qualifiedId: child.qualifiedId, rule: this.includeTarget(child.refid, writtenIn, at.namespace).rule, ...(unparsed ? { unparsed: true, file } : {}), children: walk(child.children, own) });
+          out.push({ refid: child.refid, qualifiedId: child.qualifiedId, rule: this.includeTarget(child.refid, writtenIn, at.namespace, child.sourceFile ?? null).rule, ...(unparsed ? { unparsed: true, file } : {}), children: walk(child.children, own) });
         } else if (child.type === 'UnresolvedInclude') {
           out.push({ refid: child.refid, unresolved: child.reason, rule: child.reason === 'MISSING' ? 'MISSING' : 'CIRCULAR' });
         } else walk(child.children, writtenIn, out);

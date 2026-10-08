@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="inner1_102">
+  <sql id="g1_103">INNER_g1_103 = 1</sql>
+</sqlMap>

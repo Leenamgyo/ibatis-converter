@@ -123,7 +123,7 @@ test(`generated legacy projects: scan, refid chains, diagnostics, MyBatis output
         for (const statement of sqlMap?.statements ?? []) {
           const qid = `${sqlMap.namespace}.${statement.id}`;
           const expected = expanded.get(qid) ?? [];
-          if (truth.expectedCircular.includes(qid) || statement.id === 'usesDuplicate' || expected.some((m) => perIncluder.has(m))) continue;
+          if (truth.expectedCircular.includes(qid) || statement.id === 'usesTie' || expected.some((m) => perIncluder.has(m))) continue;
           const { el, ns } = statements.get(qid);
           let mybatis;
           try {

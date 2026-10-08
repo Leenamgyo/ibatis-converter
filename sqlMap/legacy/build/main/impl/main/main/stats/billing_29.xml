@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="billing">
+  <sql id="split1_66">SPLIT_NS_c1_65 = 1</sql>
+</sqlMap>

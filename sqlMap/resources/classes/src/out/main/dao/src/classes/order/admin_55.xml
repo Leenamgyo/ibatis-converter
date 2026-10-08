@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="admin">
+  <sql id="split1_135">SPLIT_NS_c1_134 = 1</sql>
+</sqlMap>

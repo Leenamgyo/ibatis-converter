@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="stats">
+  <sql id="split1_105">SPLIT_NS_c1_104 = 1</sql>
+</sqlMap>

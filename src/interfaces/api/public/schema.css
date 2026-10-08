@@ -136,7 +136,7 @@ main#app[hidden] { display: none; }
 .sd-inc-depth, .sd-inc-sub { font-size: 0.66rem; padding: 0 0.4em; border-radius: 3px; background: var(--bg-sunken, rgba(0,0,0,.06)); color: var(--text-muted); }
 .sd-inc-note { color: var(--manual, #c0563b); }
 .sd-inc-rule { font-size: 0.64rem; padding: 0 0.4em; border-radius: 3px; border: 1px solid var(--border-strong); color: var(--text-muted); cursor: help; }
-.sd-inc-rule.rule-global_unique, .sd-inc-rule.rule-author_namespace, .sd-inc-rule.rule-runtime_shadowed { border-color: var(--warning, #b7791f); color: var(--warning, #b7791f); }
+.sd-inc-rule.rule-global_unique, .sd-inc-rule.rule-author_namespace, .sd-inc-rule.rule-runtime_shadowed, .sd-inc-rule.rule-nearest_duplicate { border-color: var(--warning, #b7791f); color: var(--warning, #b7791f); }
 .sd-inc-rule.rule-missing, .sd-inc-rule.rule-circular { border-color: var(--manual, #c0563b); color: var(--manual, #c0563b); }
 .sd-row { display: grid; grid-template-columns: 3.2em minmax(0, 1fr) 3.2em minmax(0, 1fr); }
 .sd-row .ln { text-align: right; padding: 0 0.5em; color: var(--text-faint); user-select: none; border-right: 1px solid var(--border); font-variant-numeric: tabular-nums; }

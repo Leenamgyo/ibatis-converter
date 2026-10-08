@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="admin">
+  <select id="q0">SELECT 1 FROM T_q0 WHERE 1 = 1
+    AND <include refid="uniq1_111"/>
+    AND <include refid="uniq1_114"/>
+    AND <include refid="ns1_116.f1_117"/>
+    AND <include refid="grp1_120.cols"/>
+  </select>
+  <select id="q1">SELECT 1 FROM T_q1 WHERE 1 = 1
+    AND <include refid="split1_122"/>
+    AND <include refid="broken1_124.bf1_125"/>
+    AND <include refid="split1_127"/>
+  </select>
+  <select id="q2">SELECT 1 FROM T_q2 WHERE 1 = 1
+    AND <include refid="near1_129"/>
+    AND <include refid="split1_135"/>
+  </select>
+  <select id="q3">SELECT 1 FROM T_q3 WHERE 1 = 1
+    AND <include refid="lt1_137.ltf1_138"/>
+    AND <include refid="split1_140"/>
+    AND <include refid="split1_142"/>
+    AND <include refid="near1_144"/>
+  </select>
+  <select id="q4">SELECT 1 FROM T_q4 WHERE 1 = 1
+    AND <include refid="lt1_150.ltf1_151"/>
+  </select>
+</sqlMap>

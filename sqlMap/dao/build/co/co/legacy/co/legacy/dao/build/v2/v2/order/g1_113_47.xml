@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="g1_113">
+  <sql id="uniq1_114">GLOBAL_c1_112 = 1</sql>
+</sqlMap>

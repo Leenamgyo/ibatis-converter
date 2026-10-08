@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="farns1_133">
+  <sql id="near1_129">FAR_near1_129 = 1</sql>
+</sqlMap>

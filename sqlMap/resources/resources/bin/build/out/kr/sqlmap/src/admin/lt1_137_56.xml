@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="lt1_137">
+  <sql id="ltf1_138">A_ltf1_138 < 10 AND B <= 3</sql>
+</sqlMap>

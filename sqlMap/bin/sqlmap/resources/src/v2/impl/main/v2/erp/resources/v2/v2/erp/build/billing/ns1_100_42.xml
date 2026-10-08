@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="ns1_100">
+  <sql id="f1_101">QUALIFIED_c1_99 = 1 AND <include refid="inner1_102.g1_103"/></sql>
+</sqlMap>

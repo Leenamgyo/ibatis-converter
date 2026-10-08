@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="stats">
+  <select id="q0">SELECT 1 FROM T_q0 WHERE 1 = 1
+    AND <include refid="split1_84"/>
+    AND <include refid="ns1_86.f1_87"/>
+  </select>
+  <select id="q1">SELECT 1 FROM T_q1 WHERE 1 = 1
+    AND <include refid="lt1_89.ltf1_90"/>
+    AND <include refid="uniq1_93"/>
+  </select>
+  <select id="q2">SELECT 1 FROM T_q2 WHERE 1 = 1
+    AND <include refid="ns1_95.f1_96"/>
+    AND <include refid="ns1_100.f1_101"/>
+    AND <include refid="split1_105"/>
+    AND <include refid="grp1_108.cols"/>
+  </select>
+</sqlMap>

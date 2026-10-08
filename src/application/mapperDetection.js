@@ -171,14 +171,15 @@ export function copyScore(relativePath) {
 export function scanMapperIds(text) {
   const visible = text.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' ')); // keep offsets and lines
   const lineAt = (index) => (visible.slice(0, index).match(/\n/g) ?? []).length + 1;
-  const namespace = /<(?:sqlMap|mapper)\b[^>]*\bnamespace\s*=\s*["']([^"']+)["']/.exec(visible)?.[1] ?? null;
+  // trimmed like the XML parser trims them (XML_ATTRIBUTE_TRIMMED): the same ids either way
+  const namespace = /<(?:sqlMap|mapper)\b[^>]*\bnamespace\s*=\s*["']([^"']+)["']/.exec(visible)?.[1]?.trim() || null;
   const statements = [];
   const fragments = [];
   const tag = /<(select|insert|update|delete|procedure|statement|sql)\b[^>]*?\bid\s*=\s*["']([^"']+)["']/g;
   let m;
   while ((m = tag.exec(visible)) !== null) {
-    if (m[1] === 'sql') fragments.push({ id: m[2], line: lineAt(m.index) });
-    else statements.push({ id: m[2], tag: m[1], line: lineAt(m.index) });
+    if (m[1] === 'sql') fragments.push({ id: m[2].trim(), line: lineAt(m.index) });
+    else statements.push({ id: m[2].trim(), tag: m[1], line: lineAt(m.index) });
   }
   return { namespace, statements, fragments };
 }

@@ -31,7 +31,9 @@ fix landed in a different copy.
 |---|---|
 | QUALIFIED | the refid is a qualified id (`ns.id`) |
 | NAMESPACE | `<include>`'s own mapper has that id |
-| GLOBAL_UNIQUE | a bare id defined exactly once in the project (iBATIS `useStatementNamespaces=false`). Also for MyBatis 3 mappers, which projects rely on: found, plus a `MYBATIS_BARE_REFID` warning, because MyBatis's own lookup prefixes the current namespace. A short-lived strict mode reported these as missing, which hid real cross-file references. |
+| GLOBAL_UNIQUE | the id AS WRITTEN — bare, or dotted like `<sql id="common.paging">` inside namespace "common" (iBATIS registers ids as written when useStatementNamespaces=false) — defined exactly once in the project (iBATIS `useStatementNamespaces=false`). Also for MyBatis 3 mappers, which projects rely on: found, plus a `MYBATIS_BARE_REFID` warning, because MyBatis's own lookup prefixes the current namespace. A short-lived strict mode reported these as missing, which hid real cross-file references. |
+| DUPLICATE_SAME | several mappers define that id with the SAME SQL (a common fragment copied into each module): it is that fragment (the first by qualified id), with a `REFID_DUPLICATE_SAME` warning listing the copies |
+| NEAREST_DUPLICATE | several mappers define that id with DIFFERENT SQL: the one sharing the most folders with the referencing file, with a `REFID_NEAREST_DUPLICATE` warning naming the others. Only an exact tie stays ambiguous (MISSING) |
 | RUNTIME_SHADOWED | a bare refid inside a fragment, included from a statement of another namespace that has its own fragment of that id: iBATIS / MyBatis resolve against the statement's namespace |
 | AUTHOR_NAMESPACE | …the statement's namespace has none: the fragment author's (MyBatis output writes it qualified) |
 | MISSING / CIRCULAR | not found, or two candidates (ambiguous), or a cycle |
@@ -153,6 +155,30 @@ Test: `test/application/referenceDiscovery.test.js`. A `.git` repo with
 app / common / batch modules: qualified, bare and nested refids into common
 are found; a bare id defined in two modules is not guessed; an unrelated
 folder next to the repo is never read; the CLI writes only the app's files.
+
+## Torture test
+
+`test/fuzz/refidTorture.test.js` generates projects that mix, include by
+include, every way of writing and scattering refid targets. Each include has a
+known intended fragment; the session's include tree must match it, by path
+and by upload:
+
+- qualified ids, and bare ids into a namespace split over several files and
+  deep folders;
+- project-unique bare ids, and dotted ids;
+- identical copies, and different copies near and far;
+- spaces around refids and namespaces;
+- targets in a file with an unescaped `<`, or in an unparseable file;
+- MyBatis files, nested chains, and folders named `out` / `bin` / `build` /
+  `classes`.
+
+It runs 40 projects in `npm test`, 200 with `FUZZ_SEEDS`, and any number with
+`TORTURE_SEEDS=n`. Every case it has found was fixed in the one lookup
+(`ReferenceIndex`) or in parsing:
+- dotted ids;
+- duplicates;
+- stray spaces, where the XML parser and the text scanner (`scanMapperIds`)
+  now trim alike.
 
 ## Showing it
 

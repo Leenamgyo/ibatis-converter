@@ -84,8 +84,8 @@ export class ReferenceResolver {
    * mapper has to be written qualified. Null when it doesn't resolve.
    * @param {'SQL_FRAGMENT'|'RESULT_MAP'|'PARAMETER_MAP'|'STATEMENT'} type
    */
-  qualifiedIdOf(refid, currentNamespace, type, { fragmentQualifiedId = null } = {}) {
-    const symbol = this._resolveRefid(refid, currentNamespace, SymbolType[type] ?? type);
+  qualifiedIdOf(refid, currentNamespace, type, { fragmentQualifiedId = null, fromFile = null } = {}) {
+    const symbol = this.index.lookup(refid, currentNamespace, SymbolType[type] ?? type, { fromFile }).symbol;
     if (!symbol) return null;
     const target = { qualifiedId: symbol.qualifiedId, namespace: symbol.mapper, mustQualify: false };
     // Inside a <sql> fragment that statements of OTHER mappers include, a bare refid is
@@ -163,7 +163,14 @@ export class ReferenceResolver {
     const fromId = stack[stack.length - 1];
     const { refid } = includeNode;
     const root = this._rootNamespace;
-    const target = this.index.includeTarget(refid, namespace, root);
+    const target = this.index.includeTarget(refid, namespace, root, includeNode.sourceFile ?? null);
+    if (target.rule === 'DUPLICATE_SAME' || target.rule === 'NEAREST_DUPLICATE') {
+      const others = target.alternatives.map((s) => `${s.qualifiedId} (${s.sourceFile})`).join(', ');
+      this._warnOnce(`dup|${includeNode.sourceFile}|${refid}`, target.rule === 'DUPLICATE_SAME'
+        ? `<include refid="${refid}">: the same <sql> is defined in several mappers (identical SQL) — resolved to ${target.symbol.qualifiedId}; also ${others}`
+        : `<include refid="${refid}">: several mappers define a different <sql id="${refid}"> — resolved to the nearest, ${target.symbol.qualifiedId} (${target.symbol.sourceFile}); also ${others}. Qualify the refid if another was meant`,
+      includeNode, target.rule === 'DUPLICATE_SAME' ? 'REFID_DUPLICATE_SAME' : 'REFID_NEAREST_DUPLICATE');
+    }
     const { symbol } = target;
     const missingMessage = ReferenceIndex.ambiguousMessage('<include refid>', refid, target.ambiguous);
     if (target.rule === 'GLOBAL_UNIQUE' && this.mybatisNamespaces.has(namespace)) {
@@ -246,7 +253,7 @@ export class ReferenceResolver {
     let currentNamespace = namespace;
 
     while (current.extends) {
-      const { symbol, candidates } = this.index.lookup(current.extends, currentNamespace, SymbolType.RESULT_MAP);
+      const { symbol, candidates } = this.index.lookup(current.extends, currentNamespace, SymbolType.RESULT_MAP, { fromFile: current.sourceFile ?? null });
       if (!symbol) {
         this.diagnostics.error(
           ReferenceIndex.ambiguousMessage('<resultMap extends>', current.extends, candidates) ?? `Unresolved <resultMap extends="${current.extends}">`,
@@ -292,7 +299,7 @@ export class ReferenceResolver {
    */
   linkStatementDependencies(statementNode, namespace, qualifiedId) {
     if (statementNode.resultMap) {
-      const symbol = this._resolveRefid(statementNode.resultMap, namespace, SymbolType.RESULT_MAP);
+      const symbol = this.index.lookup(statementNode.resultMap, namespace, SymbolType.RESULT_MAP, { fromFile: statementNode.sourceFile ?? null }).symbol;
       if (symbol) {
         this.dependencyGraph.addEdge(qualifiedId, symbol.qualifiedId, 'RESULT_MAP');
       } else {
@@ -305,7 +312,7 @@ export class ReferenceResolver {
       }
     }
     if (statementNode.parameterMap) {
-      const symbol = this._resolveRefid(statementNode.parameterMap, namespace, SymbolType.PARAMETER_MAP);
+      const symbol = this.index.lookup(statementNode.parameterMap, namespace, SymbolType.PARAMETER_MAP, { fromFile: statementNode.sourceFile ?? null }).symbol;
       if (symbol) {
         this.dependencyGraph.addEdge(qualifiedId, symbol.qualifiedId, 'PARAMETER_MAP');
       } else {

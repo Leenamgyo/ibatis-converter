@@ -813,6 +813,8 @@ const REFID_RULE = {
   QUALIFIED: ['namespace.id', 'refid가 namespace까지 적힌 id라 그대로 찾았습니다'],
   NAMESPACE: ['같은 namespace', '<include>가 있는 매퍼의 namespace에서 찾았습니다'],
   GLOBAL_UNIQUE: ['프로젝트에서 유일', '같은 namespace엔 없지만, 프로젝트 전체에서 이 id의 <sql>이 하나뿐이라 그것으로 찾았습니다 (iBATIS useStatementNamespaces=false)'],
+  DUPLICATE_SAME: ['같은 SQL 사본', '여러 매퍼에 똑같은 <sql>이 복사돼 있어 그중 하나로 찾았습니다 (모두 같은 SQL)'],
+  NEAREST_DUPLICATE: ['가장 가까운 사본', '여러 매퍼에 같은 id의 다른 <sql>이 있어, 이 파일과 가장 가까운 폴더의 것으로 찾았습니다 — 다른 것이 맞다면 namespace를 붙여 쓰세요'],
   RUNTIME_SHADOWED: ['statement namespace 우선', 'fragment 안의 refid는 실행 시 statement의 namespace로 먼저 찾습니다 — 그 namespace에 같은 id가 있어 그쪽입니다'],
   AUTHOR_NAMESPACE: ['fragment의 namespace', 'statement namespace에는 없어 fragment가 있는 매퍼의 것으로 찾았습니다 (MyBatis 결과에는 namespace를 붙여 씁니다)'],
   MISSING: ['못 찾음', '프로젝트 어디에도 이 id의 <sql>이 없거나, 둘 이상이라 정할 수 없습니다'],

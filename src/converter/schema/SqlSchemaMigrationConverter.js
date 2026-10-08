@@ -111,24 +111,24 @@ export class SqlSchemaMigrationConverter {
     // Without the project's lookup (standalone use), the SAME rule — ReferenceIndex, the one
     // lookup of the codebase — over the fragments of the given mappers. Never a second copy of it.
     let localIndex = null;
-    const localTarget = (refid, writtenIn, root = writtenIn) => {
+    const localTarget = (refid, writtenIn, root = writtenIn, fromFile = null) => {
       if (!localIndex) {
         const table = new SymbolTable();
         for (const [qualifiedId, fragment] of fragments) {
           const namespace = fragmentNamespace.get(qualifiedId);
-          table.register(new Symbol({ qualifiedId, localId: fragment.id, type: SymbolType.SQL_FRAGMENT, mapper: namespace, sourceFile: null, sourceLine: null, node: fragment }));
+          table.register(new Symbol({ qualifiedId, localId: fragment.id, type: SymbolType.SQL_FRAGMENT, mapper: namespace, sourceFile: fragment.sourceFile ?? null, sourceLine: null, node: fragment }));
         }
         localIndex = new ReferenceIndex(table);
       }
-      return localIndex.includeTarget(refid, writtenIn, root).symbol?.qualifiedId ?? null;
+      return localIndex.includeTarget(refid, writtenIn, root, fromFile).symbol?.qualifiedId ?? null;
     };
     const target = resolveInclude ?? localTarget;
     const project = {
       lookup: (qualifiedId) => (qualifiedId ? fragments.get(qualifiedId) ?? null : null),
       /** (refid as written, namespace it is written in, the statement's namespace) -> qualified id | null */
-      qualifiedIdOf: (refid, writtenIn, root = writtenIn) => {
-        const qualifiedId = target(refid, writtenIn, root);
-        onInclude?.({ refid, writtenIn, root, qualifiedId }); // observation only (tests)
+      qualifiedIdOf: (refid, writtenIn, root = writtenIn, fromFile = null) => {
+        const qualifiedId = target(refid, writtenIn, root, fromFile);
+        onInclude?.({ refid, writtenIn, root, fromFile, qualifiedId }); // observation only (tests)
         return qualifiedId;
       },
       namespaceOf: (qualifiedId) => fragmentNamespace.get(qualifiedId),
@@ -336,7 +336,7 @@ export class SqlSchemaMigrationConverter {
           case 'Include': {
             // `namespace` is the statement's (the runtime resolves every include against it),
             // `writtenIn` the mapper this <include> is written in
-            const qualifiedId = project.qualifiedIdOf(node.refid, writtenIn, namespace);
+            const qualifiedId = project.qualifiedIdOf(node.refid, writtenIn, namespace, node.sourceFile ?? null);
             markers.push({ marker: marker(MarkerKind.INCLUDE), qualifiedId });
             const fragment = project.lookup(qualifiedId);
             if (fragment && !includeStack.includes(qualifiedId)) {

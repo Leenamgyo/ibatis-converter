@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="ns1_10">
+  <sql id="f1_11">SPACED_c1_9 = 1</sql>
+</sqlMap>

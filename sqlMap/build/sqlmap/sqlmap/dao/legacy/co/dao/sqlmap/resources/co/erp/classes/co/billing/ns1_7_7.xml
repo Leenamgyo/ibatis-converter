@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="ns1_7">
+  <sql id="f1_8">QUALIFIED_c1_6 = 1</sql>
+</sqlMap>

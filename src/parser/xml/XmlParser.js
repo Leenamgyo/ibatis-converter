@@ -157,10 +157,21 @@ function parseAttributes(scanner) {
       throw new XmlParseException(`Expected quoted value for attribute "${name}"`, scanner.line);
     }
     scanner.advance();
-    const value = scanner.readUntil(quote, `attribute "${name}" value`);
-    attributes[name] = decodeEntities(value);
+    const valueLine = scanner.line;
+    const value = decodeEntities(scanner.readUntil(quote, `attribute "${name}" value`));
+    // an id / namespace / reference never means its surrounding spaces: `refid=" common.cols "`
+    // is the reference common.cols (reported, since a strict runtime may not trim it)
+    if (REFERENCE_ATTRIBUTES.has(name) && value !== value.trim()) {
+      scanner.recoveries.push({ code: 'XML_ATTRIBUTE_TRIMMED', line: valueLine, message: `${name}="${value}" has spaces around it: read as "${value.trim()}"` });
+      attributes[name] = value.trim();
+    } else {
+      attributes[name] = value;
+    }
   }
 }
+
+/** attributes holding an id or a reference to one */
+const REFERENCE_ATTRIBUTES = new Set(['id', 'refid', 'namespace', 'extends', 'resultMap', 'parameterMap']);
 
 function parseText(scanner) {
   const startLine = scanner.line;

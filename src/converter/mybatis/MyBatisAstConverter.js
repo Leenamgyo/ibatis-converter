@@ -102,7 +102,8 @@ function leadingPrepends(children, tokens = new Set()) {
  */
 function qualifyReference(ref, type, context, events, node) {
   if (!context?.resolveReference || !ref || ref.includes('.')) return ref;
-  const target = context.resolveReference(ref, context.namespace, type, { fragmentQualifiedId: context.fragmentQualifiedId });
+  // where it is written decides between same-named fragments in several modules (ReferenceIndex)
+  const target = context.resolveReference(ref, context.namespace, type, { fragmentQualifiedId: context.fragmentQualifiedId, fromFile: node?.sourceFile ?? null });
   if (target?.perIncluderConflict) {
     const { shadowing, unresolved } = target.perIncluderConflict;
     events.push(new ConversionEvent({
@@ -232,7 +233,8 @@ export class MyBatisAstConverter {
           break;
         }
         case 'Include': {
-          result.push(new IncludeNode({ refid: qualifyReference(node.refid, 'SQL_FRAGMENT', state.context, state.events, node) }));
+          // the converted include keeps the file it came from (the schema migration resolves by it too)
+          result.push(Object.assign(new IncludeNode({ refid: qualifyReference(node.refid, 'SQL_FRAGMENT', state.context, state.events, node) }), { sourceFile: node.sourceFile }));
           state.events.push(new ConversionEvent({
             grade: MigrationGrade.SAFE,
             code: 'INCLUDE_KEPT',

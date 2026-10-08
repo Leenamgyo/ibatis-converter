@@ -20,6 +20,7 @@ import { IncludeNode } from '../ast/ibatis/nodes.js';
 import { SymbolType } from '../ast/ibatis/enums.js';
 import { buildSymbolTable } from '../resolver/symbol/ProjectScanner.js';
 import { ReferenceResolver } from '../resolver/reference/ReferenceResolver.js';
+import { fragmentSignature } from '../resolver/reference/ReferenceIndex.js';
 import { DiagnosticBag } from '../parser/xml/ParserDiagnostics.js';
 import { StatementAnalyzer } from '../analyzer/statement/StatementAnalyzer.js';
 import { DependencyAnalyzer } from '../analyzer/dependency/DependencyAnalyzer.js';
@@ -308,7 +309,8 @@ export class ProjectSession {
         entry.statements.push({ id: st.id, qualifiedId: qualify(ns, st.id), type: st.statementType, line: st.sourceLine, parameterClass: st.parameterClass, resultClass: st.resultClass, resultMap: st.resultMap });
       }
       for (const f of sqlMap.sqlFragments) {
-        stub.sqlFragments.push({ type: 'SqlFragment', id: f.id, sourceFile, sourceLine: f.sourceLine, children: includeStubs(f) });
+        // signature: what the fragment says, so identical copies in other modules are recognised as one
+        stub.sqlFragments.push({ type: 'SqlFragment', id: f.id, sourceFile, sourceLine: f.sourceLine, children: includeStubs(f), signature: fragmentSignature(f) });
         entry.fragments.push({ id: f.id, qualifiedId: qualify(ns, f.id), line: f.sourceLine });
       }
       for (const rm of sqlMap.resultMaps) {
@@ -684,7 +686,7 @@ export class ProjectSession {
     // the "keep the syntax" side: an iBATIS file's own AST, or a MyBatis file's own AST
     const originals = files.map((f) => this.mapper(f).mybatis ?? this.mapper(f).sqlMap);
     // includes resolved by the project-wide resolver, not by whichever mappers are loaded
-    const resolveInclude = (refid, writtenIn, root) => this.meta.includeTarget(refid, writtenIn, root).symbol?.qualifiedId ?? null;
+    const resolveInclude = (refid, writtenIn, root, fromFile) => this.meta.includeTarget(refid, writtenIn, root, fromFile ?? null).symbol?.qualifiedId ?? null;
     const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode), { resolveInclude });
     const ibatis = converter.convertMappers(originals, { resolveInclude });
     const results = new Map();
@@ -789,7 +791,7 @@ export class ProjectSession {
     const withChildren = (node, children) => Object.assign(Object.create(Object.getPrototypeOf(node)), node, { children });
     const expand = (nodes, writtenIn, stack) => (nodes ?? []).flatMap((node) => {
       if (node.type === 'Include') {
-        const qualifiedId = this.meta.includeTarget(node.refid, writtenIn, namespace).symbol?.qualifiedId;
+        const qualifiedId = this.meta.includeTarget(node.refid, writtenIn, namespace, node.sourceFile ?? null).symbol?.qualifiedId;
         const fragment = qualifiedId && fragments.get(qualifiedId);
         if (!fragment || stack.includes(qualifiedId)) return [node];
         return expand(fragment.children, this.meta.locate(qualifiedId)?.namespace ?? writtenIn, [...stack, qualifiedId]);

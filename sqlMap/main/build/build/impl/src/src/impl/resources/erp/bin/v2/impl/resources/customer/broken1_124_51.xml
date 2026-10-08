@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="broken1_124">
+  <sql id="bf1_125">BROKEN_FILE_c1_123 = 1</sql>
+  <sql id="oops" <broken-tag>
+</sqlMap>
