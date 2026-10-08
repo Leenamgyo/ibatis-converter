@@ -10,6 +10,7 @@ import { XmlGenerator } from '../../generator/xml/XmlGenerator.js';
 import { IbatisXmlGenerator } from '../../generator/xml/IbatisXmlGenerator.js';
 import { validateMappingDefinition } from '../../converter/schema/index.js';
 import { DatasetStore } from './DatasetStore.js';
+import { LayoutStore, layoutError } from './LayoutStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +42,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * MyBatis mappers, returning before/after XML per statement, fragment and file.
  */
 const DEFAULT_DATASET_DIR = path.resolve(__dirname, '..', '..', '..', 'data', 'datasets');
+const DEFAULT_LAYOUT_DIR = path.resolve(__dirname, '..', '..', '..', 'data', 'layouts');
 
 /**
  * JSON, gzipped when the client accepts it and it's big. The analyze and
@@ -59,7 +61,11 @@ function sendJson(req, res, body) {
   res.send(gzipSync(json));
 }
 
-export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATASET_DIR, sessionOptions = {} } = {}) {
+export function createApp({
+  datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATASET_DIR,
+  layoutDir = process.env.LAYOUT_DIR ?? DEFAULT_LAYOUT_DIR,
+  sessionOptions = {},
+} = {}) {
   const app = express();
   app.use(express.json({ limit: '100mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
@@ -255,6 +261,56 @@ export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATA
   app.delete('/api/v1/datasets/:id', (req, res) => {
     if (!datasets.delete(req.params.id)) {
       res.status(404).json({ error: `Unknown dataset "${req.params.id}"` });
+      return;
+    }
+    res.status(204).end();
+  });
+
+  // ---- saved lineage-graph layouts (dragged boxes + zoom/pan), per statement ----
+  const layouts = new LayoutStore(layoutDir);
+  const layoutKey = (req, res) => {
+    const { key } = req.params;
+    if (!key || key.length > 512) {
+      res.status(400).json({ error: 'layout key: the statement id (max 512 chars)' });
+      return null;
+    }
+    return key;
+  };
+
+  app.get('/api/v1/layouts/:key', (req, res) => {
+    const key = layoutKey(req, res);
+    if (!key) return;
+    const layout = layouts.get(key);
+    if (!layout) {
+      res.status(404).json({ error: `No saved layout for "${key}"` });
+      return;
+    }
+    res.json(layout);
+  });
+
+  app.put('/api/v1/layouts/:key', (req, res) => {
+    const key = layoutKey(req, res);
+    if (!key) return;
+    const error = layoutError(req.body);
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+    const { offsets, view = null, sourceFile = null } = req.body;
+    // nothing moved and no view: there is nothing to keep
+    if (!Object.keys(offsets).length && !view) {
+      layouts.delete(key);
+      res.status(204).end();
+      return;
+    }
+    res.json(layouts.save(key, { sourceFile, offsets, view }));
+  });
+
+  app.delete('/api/v1/layouts/:key', (req, res) => {
+    const key = layoutKey(req, res);
+    if (!key) return;
+    if (!layouts.delete(key)) {
+      res.status(404).json({ error: `No saved layout for "${key}"` });
       return;
     }
     res.status(204).end();

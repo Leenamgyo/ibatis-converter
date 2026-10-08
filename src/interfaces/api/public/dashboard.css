@@ -150,6 +150,15 @@
 
 .graph-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; }
 .graph-viewport.panning { cursor: grabbing; }
+/* boxes and lanes can be dragged (lineage.js: applyLayoutOffsets) */
+.graph-nodes .gnode.tobj, .graph-nodes .cluster-head { cursor: grab; }
+.graph-viewport.moving, .graph-viewport.moving * { cursor: grabbing !important; user-select: none; }
+.graph-nodes .dragging { z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); opacity: 0.95; }
+.tool-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.25rem; }
+.layout-status { font-size: 0.72rem; color: var(--text-faint); }
+.layout-status.dirty { color: var(--warning); font-weight: 600; }
+.tool-btn.primary:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tool-btn:disabled { opacity: 0.45; cursor: default; }
 .graph-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; padding: 1rem; }
 /* Edges sit between the two paint layers on purpose: above the cluster's
    opaque background (otherwise every intra-cluster line is buried under

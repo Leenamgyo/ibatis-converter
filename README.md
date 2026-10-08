@@ -109,6 +109,7 @@ curl -X POST http://localhost:3000/api/v1/projects/analyze \
 | `GET /api/v1/tables/:tableName` | operations (with statement ids), column usage, related tables |
 | `POST /api/v1/schema-migration[?file=]` `{datasetId \| mapping}` | old -> new renames, before/after per statement and fragment: one file (`?file=`) or the whole project |
 | `POST /api/v1/statements/:id/schema-migration` · `POST /api/v1/schema-summary` | the same for one statement · per-statement counts and the project total |
+| `GET/PUT/DELETE /api/v1/layouts/:id` | the lineage graph's saved arrangement for a statement (dragged offsets + zoom/pan), stored under `data/layouts/` |
 
 Project routes accept `?projectId=...`; omitting it means the most recently
 opened project. Projects are sessions: an index plus bounded caches, closed

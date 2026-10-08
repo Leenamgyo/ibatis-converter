@@ -37,6 +37,9 @@ const lineageState = {
   nodeById: new Map(),
   clusterById: new Map(),
   scopeQueue: [],
+  // dragged boxes / lanes: { [layoutKey]: [dx, dy] } in graph units, plus the saved zoom/pan
+  layout: { offsets: {}, view: null },
+  layoutSaved: null, // JSON of what the server has for this statement (null: nothing saved)
 };
 
 const ORIGIN_LABEL = {
@@ -98,6 +101,7 @@ async function selectLineageStatement(qualifiedId) {
   }
   if (seq !== lineageLoadSeq) return; // a later click won
 
+  keepLayoutDraft(); // the statement being left keeps its unsaved moves
   lineageState.statementId = qualifiedId;
   lineageState.doc = doc;
   lineageState.analysis = doc.analysis;
@@ -108,6 +112,8 @@ async function selectLineageStatement(qualifiedId) {
   lineageState.namespace = doc.namespace ?? null;
   lineageState.stmtEl = parseSlice(doc.xml, doc.namespace);
   lineageState.fragments = fragmentElements(doc);
+  await loadLayout(qualifiedId, doc.sourceFile);
+  if (seq !== lineageLoadSeq) return;
   if (lineageState.collapsedTree.delete(`file:${doc.sourceFile}`)) renderXmlTree(); // reveal it in a folded tree
 
   for (const node of document.querySelectorAll('#lineageTree .node')) {
@@ -123,10 +129,123 @@ async function selectLineageStatement(qualifiedId) {
   // The MyBatis view is a view of *this* statement, so it follows the
   // tree selection instead of keeping a selection of its own.
   if (state.activeView === 'schema') renderSchemaView();
-  // Start on "fit": a wide statement is otherwise cropped at 100% and
-  // looks broken until you find the zoom control.
-  lineageState.fitted = false;
-  fitGraphWhenVisible();
+  // Start on the saved view, else on "fit": a wide statement is otherwise
+  // cropped at 100% and looks broken until you find the zoom control.
+  const view = lineageState.layout.view;
+  if (view) {
+    Object.assign(lineageState, { scale: view.scale, tx: view.tx, ty: view.ty, fitted: true });
+    applyTransform();
+    redrawEdgesWhenVisible();
+  } else {
+    lineageState.fitted = false;
+    fitGraphWhenVisible();
+  }
+  renderLayoutStatus();
+}
+
+/* ------------------------------------------------------------------ *
+ * Moving boxes with the mouse, and saving the arrangement             *
+ *                                                                      *
+ * The browser still lays the graph out; a drag only adds an offset     *
+ * (CSS `translate`) to one table object or one lane, so containment,   *
+ * edges (measured from the boxes) and the minimap all keep working.    *
+ * Saved per statement on the server (data/layouts), with the zoom/pan. *
+ * ------------------------------------------------------------------ */
+
+/** The element a layout key names: `cluster:<id>` is a lane / group, `node:<id>` a box. */
+function layoutElement(key) {
+  if (key.startsWith('node:')) return lineageState.nodeById.get(key.slice(5)) ?? null;
+  return document.querySelector(`#lineageNodes [data-layout-key="${CSS.escape(key)}"]`);
+}
+
+function layoutKeyOf(element) {
+  return element.dataset.layoutKey ?? `node:${element.dataset.nodeId}`;
+}
+
+function applyLayoutOffsets() {
+  for (const [key, [dx, dy]] of Object.entries(lineageState.layout.offsets)) {
+    const element = layoutElement(key);
+    if (element) element.style.translate = `${dx}px ${dy}px`;
+  }
+}
+
+async function loadLayout(qualifiedId, sourceFile) {
+  lineageState.layout = { offsets: {}, view: null };
+  lineageState.layoutSaved = null;
+  try {
+    const res = await fetch(`/api/v1/layouts/${encodeURIComponent(qualifiedId)}`);
+    if (!res.ok) return;
+    const saved = await res.json();
+    // a layout saved for a statement of the same id in another project's file is not this one's
+    if (saved.sourceFile && sourceFile && saved.sourceFile !== sourceFile) return;
+    lineageState.layout = { offsets: saved.offsets ?? {}, view: saved.view ?? null };
+    lineageState.layoutSaved = JSON.stringify(lineageState.layout);
+  } catch { /* no saved layout: the default one */ } finally {
+    // unsaved moves made earlier in this page come back (still marked unsaved)
+    const draft = layoutDrafts.get(qualifiedId);
+    if (draft) lineageState.layout = { offsets: draft, view: lineageState.layout.view };
+  }
+}
+
+/** unsaved moves per statement, so switching statements never silently drops them */
+const layoutDrafts = new Map();
+
+function keepLayoutDraft() {
+  if (!lineageState.statementId) return;
+  if (layoutDirty()) layoutDrafts.set(lineageState.statementId, { ...lineageState.layout.offsets });
+  else layoutDrafts.delete(lineageState.statementId);
+}
+
+const EMPTY_LAYOUT = JSON.stringify({ offsets: {}, view: null });
+
+/** moved since the last save (or, with nothing saved, moved at all) */
+function layoutDirty() {
+  const current = JSON.stringify({ offsets: lineageState.layout.offsets, view: lineageState.layoutSaved === null ? null : lineageState.layout.view });
+  return current !== (lineageState.layoutSaved ?? EMPTY_LAYOUT);
+}
+
+function renderLayoutStatus() {
+  const status = document.getElementById('layoutStatus');
+  const save = document.querySelector('[data-graph-action="save-layout"]');
+  const reset = document.querySelector('[data-graph-action="reset-layout"]');
+  if (!status || !save) return;
+  const moved = Object.keys(lineageState.layout.offsets).length;
+  const dirty = layoutDirty();
+  save.disabled = !lineageState.statementId || !dirty;
+  reset.disabled = !moved && lineageState.layoutSaved === null;
+  status.textContent = dirty ? `이동 ${moved}개 · 저장 안 됨` : lineageState.layoutSaved !== null ? '배치 저장됨' : '';
+  status.classList.toggle('dirty', dirty);
+}
+
+async function saveLayout() {
+  const qualifiedId = lineageState.statementId;
+  if (!qualifiedId) return;
+  // the view is saved with the boxes: reopening shows exactly what was saved
+  const view = { scale: lineageState.scale, tx: lineageState.tx, ty: lineageState.ty };
+  const offsets = lineageState.layout.offsets;
+  const body = Object.keys(offsets).length ? { offsets, view, sourceFile: lineageState.sourceFile } : { offsets: {}, view: null };
+  const res = await fetch(`/api/v1/layouts/${encodeURIComponent(qualifiedId)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.status);
+  layoutDrafts.delete(qualifiedId);
+  if (lineageState.statementId !== qualifiedId) return;
+  lineageState.layout = { offsets, view: body.view };
+  lineageState.layoutSaved = res.status === 204 ? null : JSON.stringify(lineageState.layout);
+  renderLayoutStatus();
+}
+
+/** Back to the browser's own layout (saved only when 저장 is pressed again). */
+function resetLayout() {
+  for (const key of Object.keys(lineageState.layout.offsets)) {
+    const element = layoutElement(key);
+    if (element) element.style.translate = '';
+  }
+  lineageState.layout = { offsets: {}, view: lineageState.layoutSaved === null ? null : lineageState.layout.view };
+  fitGraph();
+  renderLayoutStatus();
 }
 
 /* ------------------------------------------------------------------ *
@@ -341,7 +460,7 @@ function buildRefidCluster(analysis) {
     edge(id, 'select:MAIN', 'ref');
   }
 
-  return el('div', { class: 'cluster refid' },
+  return el('div', { class: 'cluster refid', 'data-layout-key': 'cluster:refid' },
     el('div', { class: 'cluster-head' }, el('span', { class: 'badge' }, 'refid'), 'Include / Refid'),
     body,
   );
@@ -419,6 +538,7 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   const cluster = el('div', {
     class: `cluster ${isWrite ? 'select-write' : isMain ? 'select-main' : select.role === 'UNION_BRANCH' ? 'select-union' : select.role === 'CTE' ? 'select-cte' : 'select-sub'}${collapsed ? ' collapsed' : ''}`,
     'data-select-id': select.id,
+    'data-layout-key': `cluster:${select.id}`,
   }, head);
   lineageState.clusterById.set(select.id, cluster);
 
@@ -719,7 +839,7 @@ function renderGraph() {
     // box around them rather than sibling clusters tied together by
     // reference arrows.
     const operator = branches.find((b) => b.setOperator)?.setOperator ?? 'UNION';
-    const group = el('div', { class: 'cluster union-group' },
+    const group = el('div', { class: 'cluster union-group', 'data-layout-key': 'cluster:union' },
       el('div', { class: 'cluster-head' },
         el('span', { class: 'badge' }, operator),
         el('span', {}, `${roots.length + branches.length}개 브랜치가 하나의 결과로`),
@@ -742,6 +862,7 @@ function renderGraph() {
     host.appendChild(buildSelectCluster(next, byParent, analysis, false));
   }
 
+  applyLayoutOffsets();
   applySearchHighlight();
   redrawEdgesWhenVisible();
 }
@@ -834,25 +955,25 @@ function drawEdges() {
     let x2;
     let y2;
     let path;
-    if (b.left >= a.left + a.width - 8) {
-      // left -> right: the usual source -> transform -> output direction
-      x1 = a.left + a.width; y1 = a.top + a.height / 2;
-      x2 = b.left; y2 = b.top + b.height / 2;
-      const dx = Math.max(18, (x2 - x1) / 2);
-      path = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-    } else if (b.top >= a.top + a.height - 8) {
-      // stacked: bottom -> top
-      x1 = a.left + a.width / 2; y1 = a.top + a.height;
-      x2 = b.left + b.width / 2; y2 = b.top;
-      const dy = Math.max(14, (y2 - y1) / 2);
-      path = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
-    } else {
-      // right -> left (a reference pointing back up the graph)
-      x1 = a.left; y1 = a.top + a.height / 2;
-      x2 = b.left + b.width; y2 = b.top + b.height / 2;
-      const dx = Math.max(18, (x1 - x2) / 2);
-      path = `M ${x1} ${y1} C ${x1 - dx} ${y1}, ${x2 + dx} ${y2}, ${x2} ${y2}`;
-    }
+    // Sides are picked from where the boxes are, not assumed: a dragged box can be
+    // anywhere relative to the other one.
+    const horizontal = (fromRight) => {
+      x1 = fromRight ? a.left + a.width : a.left; y1 = a.top + a.height / 2;
+      x2 = fromRight ? b.left : b.left + b.width; y2 = b.top + b.height / 2;
+      const dx = Math.max(18, Math.abs(x2 - x1) / 2) * (fromRight ? 1 : -1);
+      return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+    };
+    const vertical = (fromBottom) => {
+      x1 = a.left + a.width / 2; y1 = fromBottom ? a.top + a.height : a.top;
+      x2 = b.left + b.width / 2; y2 = fromBottom ? b.top : b.top + b.height;
+      const dy = Math.max(14, Math.abs(y2 - y1) / 2) * (fromBottom ? 1 : -1);
+      return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+    };
+    if (b.left >= a.left + a.width - 8) path = horizontal(true); // left -> right: source -> output
+    else if (b.top >= a.top + a.height - 8) path = vertical(true); // stacked: bottom -> top
+    else if (b.left + b.width <= a.left + 8) path = horizontal(false); // a reference pointing back left
+    else if (b.top + b.height <= a.top + 8) path = vertical(false); // b above a
+    else path = horizontal(b.left + b.width / 2 >= a.left + a.width / 2); // overlapping: by centres
 
     const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     el.setAttribute('d', path);
@@ -1251,6 +1372,64 @@ function renderMinimap() {
   const viewport = document.getElementById('lineageViewport');
   if (!viewport) return;
 
+  // Dragging a box: a table object moves whole (a drag that starts on one of its
+  // condition / column chips moves the table, never the chip out of it); a lane or
+  // group moves by its header. Under 4px it stays a click.
+  let dragging = null;
+  let suppressClickUntil = 0;
+  viewport.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('button, input, a')) return;
+    const head = e.target.closest('.cluster-head');
+    const element = head ? head.closest('[data-layout-key]') : e.target.closest('.gnode.tobj') ?? e.target.closest('.gnode');
+    if (!element || !viewport.contains(element)) return;
+    const key = layoutKeyOf(element);
+    const [dx, dy] = lineageState.layout.offsets[key] ?? [0, 0];
+    dragging = { element, key, startX: e.clientX, startY: e.clientY, dx, dy, moved: false };
+    e.preventDefault(); // no text selection while dragging
+  });
+  let edgeFrame = 0;
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const mx = e.clientX - dragging.startX;
+    const my = e.clientY - dragging.startY;
+    if (!dragging.moved && Math.hypot(mx, my) < 4) return;
+    if (!dragging.moved) {
+      dragging.moved = true;
+      dragging.element.classList.add('dragging');
+      viewport.classList.add('moving');
+    }
+    const next = [Math.round(dragging.dx + mx / lineageState.scale), Math.round(dragging.dy + my / lineageState.scale)];
+    dragging.element.style.translate = `${next[0]}px ${next[1]}px`;
+    lineageState.layout.offsets[dragging.key] = next;
+    if (!edgeFrame) edgeFrame = requestAnimationFrame(() => { edgeFrame = 0; drawEdges(); });
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    if (dragging.moved) {
+      dragging.element.classList.remove('dragging');
+      viewport.classList.remove('moving');
+      const [x, y] = lineageState.layout.offsets[dragging.key];
+      if (!x && !y) delete lineageState.layout.offsets[dragging.key];
+      suppressClickUntil = Date.now() + 80; // the click that ends a drag is not a selection
+      drawEdges();
+      renderMinimap();
+      renderLayoutStatus();
+    }
+    dragging = null;
+  });
+  viewport.addEventListener('click', (e) => {
+    if (Date.now() < suppressClickUntil) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+  // Ctrl/Cmd+S saves the arrangement while the lineage view is open
+  window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's' || state.activeView !== 'lineage' || document.getElementById('app').hidden) return;
+    e.preventDefault();
+    if (layoutDirty()) saveLayout().catch((err) => { document.getElementById('layoutStatus').textContent = `저장 실패: ${err.message}`; });
+  });
+
   let panning = null;
   viewport.addEventListener('mousedown', (e) => {
     if (e.target.closest('.gnode, .cluster-head')) return;
@@ -1285,6 +1464,8 @@ function renderMinimap() {
     if (action === 'zoom-in') setScale(lineageState.scale * 1.2);
     else if (action === 'zoom-out') setScale(lineageState.scale / 1.2);
     else if (action === 'fit') fitGraph();
+    else if (action === 'save-layout') saveLayout().catch((err) => { document.getElementById('layoutStatus').textContent = `저장 실패: ${err.message}`; });
+    else if (action === 'reset-layout') resetLayout();
     else if (action === 'collapse') {
       for (const select of lineageState.analysis?.lineage?.selects ?? []) {
         if (select.role !== 'MAIN') lineageState.collapsed.add(select.id);

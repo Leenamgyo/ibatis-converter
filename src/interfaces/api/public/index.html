@@ -81,6 +81,10 @@
               <span class="zoom-level" id="lineageZoomLevel">100%</span>
               <button class="tool-btn" data-graph-action="zoom-in">＋</button>
               <button class="tool-btn" data-graph-action="fit">전체 보기</button>
+              <span class="tool-sep" aria-hidden="true"></span>
+              <span class="layout-status" id="layoutStatus" aria-live="polite"></span>
+              <button class="tool-btn" data-graph-action="reset-layout" title="드래그로 옮긴 위치를 모두 되돌립니다">배치 초기화</button>
+              <button class="tool-btn primary" data-graph-action="save-layout" title="옮긴 위치와 확대/이동 상태를 이 statement에 저장 (Ctrl/⌘+S)" disabled>배치 저장</button>
             </div>
           </div>
           <div class="view-pane" id="lineagePane" role="tabpanel" aria-labelledby="viewTabLineage">

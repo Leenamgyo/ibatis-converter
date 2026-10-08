@@ -51,6 +51,38 @@ pans by dragging.
 
 The breadcrumb shows where a clicked node sits (`MAIN → S1 → TABLE`).
 
+## Moving boxes and saving the arrangement
+
+- **What moves.** Drag a **table object** to move it. A drag that starts on
+  one of its condition / column chips moves the whole table: a box's own
+  clauses never leave it. Drag a **lane** (SELECT scope, the refid group,
+  a UNION group) by its header to move it with everything in it. A move
+  under 4px is still a click (select / highlight). Dragging the empty
+  background still pans.
+- **How.** The browser keeps laying the graph out. A drag only adds an
+  offset to that element (CSS `translate`, keyed `node:<id>` or
+  `cluster:<selectId>`), so containment, the minimap and the edges keep
+  working. Edges are re-measured live while dragging.
+  - Edge sides are chosen from where the boxes now are: right/left,
+    below/above, or by centres when they overlap. A box dragged above or
+    left of its target still gets a clean line.
+- **Saving.** **배치 저장** (or Ctrl/⌘+S in this view) stores the offsets and
+  the current zoom/pan for that statement on the server (`LayoutStore`,
+  `data/layouts/` or `LAYOUT_DIR`; `GET/PUT/DELETE /api/v1/layouts/:id`).
+  - Files are named by a hash of the statement id. A layout saved for a
+    same-named statement in another file is ignored.
+  - Reopening the statement restores the boxes and the saved view instead
+    of fitting.
+  - The status next to the buttons says `이동 n개 · 저장 안 됨` or
+    `배치 저장됨`.
+- **Unsaved moves** are kept per statement while the page is open, so
+  switching statements never drops them silently. They are lost on reload.
+- **배치 초기화** puts everything back. Saving after that deletes the saved
+  layout (an empty layout is not stored).
+- Only offsets are saved, never absolute positions. After the mapper
+  changes, boxes that still exist keep their nudge and new ones sit where
+  the browser puts them.
+
 ## Right — panels
 
 | Panel | What it answers |
