@@ -51,6 +51,15 @@ export class SessionManager {
     return true;
   }
 
+  /** removes it without closing it: its owner is now someone else */
+  detach(id) {
+    const entry = this.sessions.get(id);
+    if (!entry) return undefined;
+    this.sessions.delete(id);
+    if (this.lastId === id) this.lastId = null;
+    return entry.session;
+  }
+
   sweep() {
     const cutoff = this.now() - this.ttlMs;
     for (const [id, entry] of [...this.sessions]) if (entry.lastUsed < cutoff) this.close(id);

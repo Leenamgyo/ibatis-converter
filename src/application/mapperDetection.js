@@ -103,6 +103,22 @@ export const SKIP_REASONS = {
   UNREADABLE: '루트 요소를 찾을 수 없음',
 };
 
+/** How much of a file classifyHead looks at: the root element is almost always within it. */
+export const HEAD_BYTES = 8192;
+
+/**
+ * Classifies an XML file from its first bytes only, so a project's many
+ * non-mapper XML files (Spring contexts, pom.xml, ...) are never read whole.
+ * @param {Uint8Array} head the file's first bytes (HEAD_BYTES or fewer)
+ * @param {boolean} complete whether `head` is the whole file
+ * @returns {ReturnType<typeof classifyXml>|null} null: the root element is
+ *   past the head (a long license comment or DOCTYPE) — read the whole file
+ */
+export function classifyHead(head, complete) {
+  const kind = classifyXml(decodeXml(head).text);
+  return kind === 'UNREADABLE' && !complete ? null : kind;
+}
+
 /** @returns {'IBATIS_MAPPER'|'IBATIS_CONFIG'|'MYBATIS_MAPPER'|'MYBATIS_CONFIG'|'OTHER'|'UNREADABLE'} */
 export function classifyXml(text) {
   const root = rootElementName(text);

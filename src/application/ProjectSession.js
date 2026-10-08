@@ -18,7 +18,7 @@ import { MapperReport } from '../report/migration/MapperReport.js';
 import { ProjectReport } from '../report/migration/ProjectReport.js';
 import { MigrationSafetyAnalyzer } from '../report/migration/MigrationSafetyAnalyzer.js';
 import { findXmlFiles } from './ProjectLoader.js';
-import { decodeXml, classifyXml, SKIP_REASONS } from './mapperDetection.js';
+import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS } from './mapperDetection.js';
 import { LruCache } from './LruCache.js';
 
 /**
@@ -64,10 +64,26 @@ export class DirectorySource {
     });
   }
 
-  read(sourceFile) {
+  #path(sourceFile) {
     const full = path.resolve(this.root, sourceFile);
     if (full !== this.root && !full.startsWith(this.root + path.sep)) throw new Error(`outside the project: ${sourceFile}`);
-    return decodeXml(fs.readFileSync(full));
+    return full;
+  }
+
+  read(sourceFile) {
+    return decodeXml(fs.readFileSync(this.#path(sourceFile)));
+  }
+
+  /** the file's kind from its first bytes, null when they don't decide it (see classifyHead) */
+  classify(sourceFile) {
+    const fd = fs.openSync(this.#path(sourceFile), 'r');
+    try {
+      const head = Buffer.alloc(HEAD_BYTES);
+      const n = fs.readSync(fd, head, 0, HEAD_BYTES, 0);
+      return classifyHead(head.subarray(0, n), n < HEAD_BYTES);
+    } finally {
+      fs.closeSync(fd);
+    }
   }
 
   close() {
@@ -84,15 +100,23 @@ export class DirectorySource {
  * where anything is written.
  */
 export class UploadSource extends DirectorySource {
-  constructor(files) {
+  constructor(files = []) {
     super(fs.mkdtempSync(path.join(os.tmpdir(), 'ibatis-project-')), { temporary: true });
     this.diskName = new Map();
-    files.forEach(({ sourceFile, source }, i) => {
+    this.bytes = 0;
+    this.add(files);
+  }
+
+  /** more files (a folder upload arrives in batches); each is on disk once this returns */
+  add(files) {
+    for (const { sourceFile, source } of files) {
       if (this.diskName.has(sourceFile)) throw new Error(`duplicate file: ${sourceFile}`);
-      const name = `${i}.xml`;
+      const name = `${this.diskName.size}.xml`;
       fs.writeFileSync(path.join(this.root, name), source);
       this.diskName.set(sourceFile, name);
-    });
+      this.bytes += Buffer.byteLength(source);
+    }
+    return this.diskName.size;
   }
 
   list() {
@@ -105,6 +129,11 @@ export class UploadSource extends DirectorySource {
     // uploaded as text (the browser already decoded it): stored and read back as UTF-8,
     // whatever its XML declaration says
     return { text: fs.readFileSync(path.join(this.root, name), 'utf8'), encoding: 'UTF-8' };
+  }
+
+  /** uploads were classified by the browser; read whole */
+  classify() {
+    return null;
   }
 }
 
@@ -161,6 +190,12 @@ export class ProjectSession {
       let text;
       let encoding;
       try {
+        // most of a project's XML is not a mapper: decided from the file's head, never read whole
+        const early = this.source.classify?.(sourceFile) ?? null;
+        if (early && early !== 'IBATIS_MAPPER') {
+          skipped.push({ sourceFile, kind: early, reason: SKIP_REASONS[early] });
+          continue;
+        }
         ({ text, encoding } = this.source.read(sourceFile));
       } catch (e) {
         skipped.push({ sourceFile, kind: 'UNREADABLE', reason: e.message });

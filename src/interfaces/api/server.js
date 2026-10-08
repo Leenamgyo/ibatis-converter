@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import fs from 'node:fs';
-import { ProjectSession, DirectorySource, createUploadSource } from '../../application/ProjectSession.js';
+import { ProjectSession, DirectorySource, UploadSource, createUploadSource } from '../../application/ProjectSession.js';
 import { DependencyAnalyzer } from '../../analyzer/dependency/DependencyAnalyzer.js';
 import { SessionManager } from './SessionManager.js';
 import { XmlGenerator } from '../../generator/xml/XmlGenerator.js';
@@ -103,6 +103,44 @@ export function createApp({
   }
 
   const indexBody = (projectId, session) => ({ projectId, ...session.summary() });
+
+  // A big project arrives in batches: each batch is written to the upload's temp dir as it
+  // comes, so neither the browser nor the server ever holds the whole project in one body.
+  // An upload not opened within 10 minutes is deleted.
+  const uploads = new SessionManager({ ttlMs: 10 * 60 * 1000, maxSessions: 4, sweepMs: sessionOptions.sweepMs ?? 60 * 1000 });
+  app.locals.uploads = uploads;
+  const validFiles = (files) => Array.isArray(files) && files.every((f) => typeof f?.sourceFile === 'string' && typeof f.source === 'string');
+
+  app.post('/api/v1/uploads', (req, res) => {
+    res.json({ uploadId: uploads.add(new UploadSource()) });
+  });
+
+  app.post('/api/v1/uploads/:uploadId/files', (req, res) => {
+    const upload = uploads.get(req.params.uploadId);
+    if (!upload) {
+      res.status(404).json({ error: `Unknown uploadId "${req.params.uploadId}" (expired?)` });
+      return;
+    }
+    if (!validFiles(req.body?.files)) {
+      res.status(400).json({ error: 'Expected { files: [{ sourceFile, source }] }' });
+      return;
+    }
+    try {
+      res.json({ received: upload.add(req.body.files), bytes: upload.bytes });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/v1/uploads/:uploadId/open', (req, res) => {
+    const upload = uploads.detach(req.params.uploadId);
+    if (!upload) {
+      res.status(404).json({ error: `Unknown uploadId "${req.params.uploadId}" (expired?)` });
+      return;
+    }
+    const session = new ProjectSession(upload).open();
+    sendJson(req, res, indexBody(sessions.add(session), session));
+  });
 
   // Opening a project builds its index only; statements are analysed when they are asked for.
   app.post('/api/v1/projects', (req, res) => {
