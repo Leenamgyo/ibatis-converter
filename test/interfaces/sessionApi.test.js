@@ -114,3 +114,24 @@ test('POST /api/v1/projects/open reads a local folder in place; the cap closes t
     stop();
   }
 });
+
+test('a project can arrive in batches: /uploads, /uploads/:id/files, /uploads/:id/open', async () => {
+  const { call, stop } = startServer();
+  try {
+    const { body: { uploadId } } = await call('POST', '/api/v1/uploads');
+    const all = files();
+    for (const f of all) {
+      const sent = await call('POST', `/api/v1/uploads/${uploadId}/files`, { files: [f] });
+      assert.equal(sent.status, 200);
+    }
+    assert.equal((await call('POST', `/api/v1/uploads/${uploadId}/files`, { files: [all[0]] })).status, 400, 'a duplicate name is refused');
+    assert.equal((await call('POST', `/api/v1/uploads/${uploadId}/files`, { files: 'x' })).status, 400);
+    const opened = await call('POST', `/api/v1/uploads/${uploadId}/open`);
+    assert.equal(opened.status, 200);
+    assert.equal(opened.body.totals.statements, 3);
+    assert.equal((await call('POST', `/api/v1/uploads/${uploadId}/open`)).status, 404, 'an upload opens once');
+    assert.equal((await call('POST', '/api/v1/uploads/nope/files', { files: [] })).status, 404);
+  } finally {
+    stop();
+  }
+});

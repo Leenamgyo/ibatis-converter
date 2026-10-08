@@ -80,3 +80,13 @@ test('CLI argument errors', () => {
   assert.throws(() => parseArgs(['a', '--fail-on', 'x']), /manual 또는 warning/);
   assert.throws(() => migrateProject(parseArgs([project, '--out', project])), /달라야/);
 });
+
+test('classifyHead decides from a file\'s first bytes, and asks for the whole file only when it must', async () => {
+  const { classifyHead, HEAD_BYTES } = await import('../../src/application/mapperDetection.js');
+  const bytes = (t) => new TextEncoder().encode(t);
+  assert.equal(classifyHead(bytes('<sqlMap namespace="a">'), false), 'IBATIS_MAPPER');
+  assert.equal(classifyHead(bytes('<?xml version="1.0"?><beans>'), false), 'OTHER');
+  const longComment = `<!-- ${'x'.repeat(HEAD_BYTES)}`;
+  assert.equal(classifyHead(bytes(longComment).subarray(0, HEAD_BYTES), false), null, 'root past the head: read it whole');
+  assert.equal(classifyHead(bytes('<!-- only a comment -->'), true), 'UNREADABLE');
+});

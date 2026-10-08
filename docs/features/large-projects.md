@@ -46,6 +46,30 @@ The caches are `LruCache`s:
 
 `close()` drops the caches, the index and, for an upload, its temp directory.
 
+## Picking a big folder (3,800 files)
+
+The browser folder picker hands over every file in the project. Only
+mapper XML goes to the server:
+
+1. **By path, nothing read.** Non-`.xml` files and build output
+   (`target/`, `build/`, … `isInSkippedDirectory`) are dropped by name.
+2. **By head.** Each remaining `.xml` is classified from its first 8 KB
+   (`classifyHead`: `file.slice(0, 8192)`, 16 at a time). A file is read
+   whole only when its root element is further in, such as after a long
+   license comment.
+3. **In batches.** Mappers are read whole only just before their ~4 MB
+   batch is sent: `POST /api/v1/uploads` →
+   `POST /uploads/:id/files` (each batch is written to the upload's temp dir
+   at once) → `POST /uploads/:id/open` (the index). An upload not opened
+   within 10 minutes is deleted.
+
+Progress shows in the header (`XML 확인 n / N`, `업로드 n / M`). Measured on a
+synthetic 3,800-file project (250 mappers + 250 `target/` copies, 150
+Spring XML, the rest Java/JSP): 0.37 s from pick to index, 3 requests, the
+biggest 681 KB. Opening the same layout by path (`경로 열기`) takes 87 ms on
+the server, which also decides non-mappers from the file head
+(`DirectorySource#classify`).
+
 ## Server lifecycle (`interfaces/api/SessionManager.js`)
 
 A session closes in any of these cases:

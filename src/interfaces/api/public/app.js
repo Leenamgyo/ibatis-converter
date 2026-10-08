@@ -155,14 +155,118 @@ function setFiles(map) {
   analyzeBtn.disabled = map.size === 0;
 }
 
-fileInput.addEventListener('change', async () => {
-  const map = new Map();
+/* ------------------------------------------------------------------ *
+ * Uploading a project without holding it                              *
+ *                                                                      *
+ * A real project is thousands of files, most of them not mappers. Only *
+ * paths are looked at first; each remaining .xml is classified from    *
+ * its first 8 KB (classifyHead); a mapper is read whole only just      *
+ * before its batch is sent, and the batch's text is dropped once the   *
+ * server has written it to disk (POST /uploads/:id/files).             *
+ * ------------------------------------------------------------------ */
+const UPLOAD_BATCH_BYTES = 4 * 1024 * 1024;
+const READ_CONCURRENCY = 16;
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  }));
+  return out;
+}
+
+/**
+ * Picks the iBATIS mappers out of `entries` ({ sourceFile, file }) without
+ * reading anything else whole. @returns {{ mappers, skipped }}
+ */
+async function selectMappers(entries, progress) {
+  const { decodeXml, classifyHead, classifyXml, HEAD_BYTES, SKIP_REASONS } = await import('/shared/mapperDetection.js');
+  let done = 0;
+  const kinds = await mapLimit(entries, READ_CONCURRENCY, async ({ file }) => {
+    let kind;
+    try {
+      const head = new Uint8Array(await file.slice(0, HEAD_BYTES).arrayBuffer());
+      kind = classifyHead(head, file.size <= HEAD_BYTES)
+        // the root element is past the head (a long license comment): read it whole, once
+        ?? classifyXml(decodeXml(new Uint8Array(await file.arrayBuffer())).text);
+    } catch {
+      kind = 'UNREADABLE';
+    }
+    if (++done % 50 === 0 || done === entries.length) progress(`XML 확인 ${done.toLocaleString()} / ${entries.length.toLocaleString()}`);
+    return kind;
+  });
+  const mappers = [];
+  const skipped = [];
+  entries.forEach((entry, i) => {
+    if (kinds[i] === 'IBATIS_MAPPER') mappers.push(entry);
+    else skipped.push(`${entry.sourceFile} — ${SKIP_REASONS[kinds[i]] ?? kinds[i]}`);
+  });
+  return { mappers, skipped };
+}
+
+/**
+ * Sends mappers to the server in batches and opens the project.
+ * @param {{ sourceFile: string, size: number, read: () => Promise<string> }[]} items
+ */
+async function uploadProject(items, progress = () => {}) {
+  const post = async (url, body) => {
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error ?? `${res.status} ${url}`);
+    return json;
+  };
+  const { uploadId } = await post('/api/v1/uploads');
+  let batch = [];
+  let batchBytes = 0;
+  let sent = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const files = await Promise.all(batch.map(async (item) => ({ sourceFile: item.sourceFile, source: await item.read() })));
+    await post(`/api/v1/uploads/${uploadId}/files`, { files });
+    sent += batch.length;
+    progress(`업로드 ${sent.toLocaleString()} / ${items.length.toLocaleString()}`);
+    batch = [];
+    batchBytes = 0;
+  };
+  for (const item of items) {
+    batch.push(item);
+    batchBytes += item.size;
+    if (batchBytes >= UPLOAD_BATCH_BYTES) await flush();
+  }
+  await flush();
+  progress('색인 만드는 중…');
+  await openProject(await post(`/api/v1/uploads/${uploadId}/open`));
+}
+
+/** a picked File as an upload item: its text is read (and decoded) only when its batch goes */
+function fileItem(sourceFile, file, decodeXml) {
+  return { sourceFile, size: file.size, read: async () => decodeXml(new Uint8Array(await file.arrayBuffer())).text };
+}
+
+async function uploadPicked(entries, { buildCopies = 0 } = {}) {
   const { decodeXml } = await import('/shared/mapperDetection.js');
-  for (const file of fileInput.files) {
-    map.set(file.name, decodeXml(new Uint8Array(await file.arrayBuffer())).text);
+  const progress = (text) => { fileCount.textContent = text; };
+  const xmlCount = entries.length;
+  const { mappers, skipped } = await selectMappers(entries, progress);
+  fileCount.title = skipped.length ? `건너뛴 XML:\n${skipped.slice(0, 500).join('\n')}${skipped.length > 500 ? `\n… +${skipped.length - 500}` : ''}` : '';
+  if (!mappers.length) {
+    fileCount.textContent = `iBATIS 매퍼를 찾지 못했습니다 (XML ${xmlCount.toLocaleString()}개)`;
+    return;
   }
   state.sampleKind = null;
-  setFiles(map);
+  setFiles(new Map());
+  await uploadProject(mappers.map(({ sourceFile, file }) => fileItem(sourceFile, file, decodeXml)), progress);
+  fileCount.textContent = `매퍼 ${mappers.length.toLocaleString()}개 (XML ${xmlCount.toLocaleString()}개 중${buildCopies ? ` · 빌드 폴더 ${buildCopies.toLocaleString()}개 제외` : ''})`;
+}
+
+fileInput.addEventListener('change', () => {
+  const entries = [...fileInput.files].map((file) => ({ sourceFile: file.name, file }));
+  fileInput.value = '';
+  uploadPicked(entries).catch((e) => { fileCount.textContent = `업로드 실패: ${e.message}`; });
 });
 
 /**
@@ -170,38 +274,31 @@ fileInput.addEventListener('change', async () => {
  * build output (target/, build/, node_modules/ ...: Maven's target/classes
  * holds a copy of every mapper) and decode EUC-KR / MS949 when declared —
  * with the same code the CLI uses (src/application/mapperDetection.js).
+ * Non-XML files are dropped by name: they are never read.
  */
 const folderInput = document.getElementById('folderInput');
-folderInput.addEventListener('change', async () => {
-  const { decodeXml, classifyXml, isInSkippedDirectory, SKIP_REASONS } = await import('/shared/mapperDetection.js');
-  const map = new Map();
-  const skipped = [];
+folderInput.addEventListener('change', () => {
+  const files = [...folderInput.files];
+  folderInput.value = '';
+  uploadFolder(files).catch((e) => { fileCount.textContent = `업로드 실패: ${e.message}`; });
+});
+
+/** @param {File[]} files everything the folder picker returned (webkitRelativePath set) */
+async function uploadFolder(files) {
+  const { isInSkippedDirectory } = await import('/shared/mapperDetection.js');
+  const entries = [];
   let buildCopies = 0;
-  fileCount.textContent = '폴더 읽는 중…';
-  for (const file of folderInput.files) {
+  for (const file of files) {
     const relative = file.webkitRelativePath || file.name;
     if (!relative.toLowerCase().endsWith('.xml')) continue;
     // drop the picked folder's own name, keep the path inside it
     const inside = relative.split('/').slice(1).join('/') || relative;
-    if (isInSkippedDirectory(inside)) {
-      buildCopies++;
-      continue;
-    }
-    const { text } = decodeXml(new Uint8Array(await file.arrayBuffer()));
-    const kind = classifyXml(text);
-    if (kind === 'IBATIS_MAPPER') map.set(inside, text);
-    else skipped.push(`${inside} — ${SKIP_REASONS[kind]}`);
+    if (isInSkippedDirectory(inside)) buildCopies++;
+    else entries.push({ sourceFile: inside, file });
   }
-  folderInput.value = '';
-  state.sampleKind = null;
-  setFiles(map);
-  const total = map.size + skipped.length;
-  fileCount.textContent = map.size
-    ? `매퍼 ${map.size}개 (XML ${total}개 중${buildCopies ? ` · 빌드 폴더 ${buildCopies}개 제외` : ''})`
-    : `iBATIS 매퍼를 찾지 못했습니다 (XML ${total}개)`;
-  fileCount.title = skipped.length ? `건너뛴 XML:\n${skipped.join('\n')}` : '';
-  if (map.size) runAnalysis().catch((e) => alert(`Analysis failed: ${e.message}`));
-});
+  fileCount.textContent = `파일 ${files.length.toLocaleString()}개 중 XML ${entries.length.toLocaleString()}개 확인 중…`;
+  await uploadPicked(entries, { buildCopies });
+}
 
 /**
  * A folder on this machine, by path: the server indexes it in place and reads
@@ -445,15 +542,10 @@ function splitSqlClauses(sql) {
 /* ------------------------------------------------------------------ *
  * Analysis run                                                         *
  * ------------------------------------------------------------------ */
+/** The loaded sample project (its files are small and already in memory). */
 async function runAnalysis() {
-  const files = [...state.pendingFiles.entries()].map(([sourceFile, source]) => ({ sourceFile, source }));
-  const res = await fetch('/api/v1/projects', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ files }),
-  });
-  if (!res.ok) throw new Error(`open failed: ${res.status}`);
-  await openProject(await res.json());
+  const items = [...state.pendingFiles.entries()].map(([sourceFile, source]) => ({ sourceFile, size: source.length, read: async () => source }));
+  await uploadProject(items);
 }
 
 /** Shows a project from its index (POST /projects or /projects/open): nothing is analysed yet. */
