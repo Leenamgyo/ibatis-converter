@@ -339,3 +339,26 @@ test('refid 쿼리에 통합: every <include> becomes its fragment\'s text (nest
     session.close();
   }
 });
+
+test('a namespace spread over files in different folders resolves, even when one file has broken XML', () => {
+  const session = new ProjectSession(createUploadSource([
+    { sourceFile: 'mod-a/common/Common_SQL.xml', source: '<sqlMap namespace="common">\n<sql id="asdf">A < 10 AND B <= 3</sql>\n<sql id="cols">X, Y</sql>\n</sqlMap>' },
+    { sourceFile: 'mod-b/x/y/z/common/CommonPaging_SQL.xml', source: '<sqlMap namespace="common">\n<sql id="paging">LIMIT #size#</sql>\n<sql id="broken" <oops>\n</sqlMap>' },
+    { sourceFile: 'mod-c/deep/er/still/common/CommonWhere_SQL.xml', source: '<sqlMap namespace="common"><sql id="live">USE_YN = \'Y\' <isNotEmpty property="x">AND X = #x#</sql></sqlMap>' },
+    { sourceFile: 'mod-d/order/Order_SQL.xml', source: '<sqlMap namespace="order"><select id="q">SELECT <include refid="common.cols"/> FROM T WHERE <include refid="common.asdf"/> AND <include refid="common.live"/> <include refid="common.paging"/></select></sqlMap>' },
+  ])).open();
+  try {
+    const tree = session.includeTree('order.q');
+    assert.deepEqual(tree.map((n) => n.qualifiedId), ['common.cols', 'common.asdf', 'common.live', 'common.paging'], 'all four found, from three files');
+    assert.equal(tree[3].unparsed, true, 'common.paging: registered from a file that does not parse');
+    assert.equal(tree[3].file, 'mod-b/x/y/z/common/CommonPaging_SQL.xml');
+    const { errors, warnings } = session.summary();
+    assert.equal(errors.filter((e) => e.code === 'MISSING_REFERENCE').length, 0);
+    assert.deepEqual(errors.map((e) => e.code), ['XML_PARSE_ERROR'], 'only the truly broken file errs');
+    assert.ok(warnings.some((w) => w.code === 'XML_LENIENT_LT'));
+    assert.ok(warnings.some((w) => w.code === 'XML_RECOVERED_UNCLOSED'));
+    assert.match(session.analyze('order.q').sql, /SELECT X, Y FROM T WHERE A < 10 AND B <= 3 AND USE_YN = 'Y'/);
+  } finally {
+    session.close();
+  }
+});

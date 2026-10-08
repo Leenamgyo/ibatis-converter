@@ -278,6 +278,12 @@ export function createApp({
     sendJson(req, res, project.columnRemovalGuide(req.params.id, column));
   });
 
+  // the namespace registry: namespace -> the files (in any folder) that declare it, and their <sql> ids
+  app.get('/api/v1/namespaces', (req, res) => {
+    const project = resolveProject(req, res);
+    if (project) sendJson(req, res, project.namespaces());
+  });
+
   // search the project: ids, paths, and the mapper text (tables, columns, aliases, refids...)
   app.get('/api/v1/search', (req, res) => {
     const project = resolveProject(req, res);

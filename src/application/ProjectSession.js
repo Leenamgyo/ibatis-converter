@@ -32,7 +32,7 @@ import { MapperReport } from '../report/migration/MapperReport.js';
 import { ProjectReport } from '../report/migration/ProjectReport.js';
 import { MigrationSafetyAnalyzer } from '../report/migration/MigrationSafetyAnalyzer.js';
 import { findXmlFiles } from './ProjectLoader.js';
-import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS, copyScore } from './mapperDetection.js';
+import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS, copyScore, scanMapperIds } from './mapperDetection.js';
 import { LruCache } from './LruCache.js';
 import { buildColumnRemovalGuide } from './ColumnRemovalGuide.js';
 
@@ -267,7 +267,21 @@ export class ProjectSession {
       const entry = { sourceFile, size, encoding, syntax, external, lines: text.split('\n').length, namespace: sqlMap?.namespace ?? null, parsed: Boolean(sqlMap), statements: [], fragments: [], resultMaps: [] };
       const candidate = { entry, fileDiagnostics, stub: null, signature: null };
       candidates.push(candidate);
-      if (!sqlMap) continue;
+      if (!sqlMap) {
+        // Too broken to parse even leniently: its namespace and ids are still registered, from
+        // the text, so a refid into it points at the right file and line — never "not found".
+        const ids = scanMapperIds(text);
+        const ns = ids.namespace ?? '';
+        entry.namespace = ids.namespace;
+        entry.fragments = ids.fragments.map((f) => ({ id: f.id, qualifiedId: qualify(ns, f.id), line: f.line, unparsed: true }));
+        entry.unparsedStatements = ids.statements.map((s) => ({ id: s.id, qualifiedId: qualify(ns, s.id), tag: s.tag, line: s.line }));
+        candidate.signature = ['unparsed', syntax, ns, ids.statements.map((s) => s.id).sort().join(','), ids.fragments.map((f) => f.id).sort().join(',')].join('|');
+        candidate.stub = {
+          namespace: ns, sourceFile, statements: [], resultMaps: [], parameterMaps: [], cacheModels: [],
+          sqlFragments: ids.fragments.map((f) => ({ type: 'SqlFragment', id: f.id, sourceFile, sourceLine: f.line, children: [] })),
+        };
+        continue;
+      }
       // the same mapper = the same kind, namespace and ids; a second file like that is a copy
       candidate.signature = [syntax, sqlMap.namespace,
         sqlMap.statements.map((s) => s.id).sort().join(','),
@@ -371,6 +385,16 @@ export class ProjectSession {
 
   // ---------------------------------------------------------------- loading
 
+  /** a file that can't be parsed: its fragments as empty placeholders (registered from scanMapperIds) */
+  #unparsedIndex(text, sourceFile) {
+    const ids = scanMapperIds(text);
+    const sqlMap = {
+      type: 'SqlMap', namespace: ids.namespace ?? '', sourceFile, statements: [], resultMaps: [], parameterMaps: [], cacheModels: [],
+      sqlFragments: ids.fragments.map((f) => ({ type: 'SqlFragment', id: f.id, sourceFile, sourceLine: f.line, children: [], unparsed: true })),
+    };
+    return this.#indexMapper(sqlMap, null);
+  }
+
   #indexMapper(sqlMap, mybatis = null) {
     return {
       sqlMap,
@@ -393,8 +417,9 @@ export class ProjectSession {
     this.#assertOpen();
     return this.mappers.getOrLoad(sourceFile, () => {
       this.loads++;
-      const { sqlMap, mybatis } = parseMapper(this.text(sourceFile), sourceFile, this.fileEntries.get(sourceFile)?.syntax);
-      return this.#indexMapper(sqlMap, mybatis);
+      const text = this.text(sourceFile);
+      const { sqlMap, mybatis } = parseMapper(text, sourceFile, this.fileEntries.get(sourceFile)?.syntax);
+      return sqlMap ? this.#indexMapper(sqlMap, mybatis) : this.#unparsedIndex(text, sourceFile);
     });
   }
 
@@ -469,7 +494,8 @@ export class ProjectSession {
       for (const child of children ?? []) {
         if (child.type === 'ResolvedInclude') {
           const own = this.#locate(child.qualifiedId)?.namespace ?? writtenIn;
-          out.push({ refid: child.refid, qualifiedId: child.qualifiedId, rule: ruleOf(child.refid, writtenIn), children: walk(child.children, own) });
+          const unparsed = this.fileEntries.get(this.fileByQualifiedId.get(child.qualifiedId))?.parsed === false;
+          out.push({ refid: child.refid, qualifiedId: child.qualifiedId, rule: ruleOf(child.refid, writtenIn), ...(unparsed ? { unparsed: true, file: this.fileByQualifiedId.get(child.qualifiedId) } : {}), children: walk(child.children, own) });
         } else if (child.type === 'UnresolvedInclude') out.push({ refid: child.refid, unresolved: child.reason, rule: child.reason === 'MISSING' ? 'MISSING' : 'CIRCULAR' });
         else walk(child.children, writtenIn, out);
       }
@@ -574,7 +600,7 @@ export class ProjectSession {
       const fat = this.#locate(fid);
       if (!fat) continue;
       const fmeta = this.fileEntries.get(fat.sourceFile).fragments.find((f) => f.id === fat.localId);
-      fragments[fid] = { namespace: fat.namespace, sourceFile: fat.sourceFile, xml: this.#slice(fat.sourceFile, fmeta.line, 'sql') };
+      fragments[fid] = { namespace: fat.namespace, sourceFile: fat.sourceFile, xml: this.#nodeXml(fat.sourceFile, 'fragment', fat.localId) ?? this.#slice(fat.sourceFile, fmeta.line, 'sql') };
     }
     return {
       qualifiedId,
@@ -585,9 +611,27 @@ export class ProjectSession {
       resultMaps: this.#resultMapChain(meta.resultMap, at.namespace),
       // how every <include> of the statement resolved, nested ones too (the UI expands from this)
       includeTree: this.includeTree(qualifiedId),
-      xml: this.#slice(at.sourceFile, meta.line, STATEMENT_TAGS[meta.type] ?? 'select'),
+      xml: this.#nodeXml(at.sourceFile, 'statement', at.localId) ?? this.#slice(at.sourceFile, meta.line, STATEMENT_TAGS[meta.type] ?? 'select'),
       fragments,
     };
+  }
+
+  /**
+   * A statement's / fragment's XML regenerated from its parsed AST — always well-formed, so
+   * the browser's strict XML parser accepts it even when the file needed lenient parsing
+   * (an unescaped "<" in SQL, an unclosed tag). Null for a file that couldn't be parsed:
+   * the caller falls back to the raw slice.
+   */
+  #nodeXml(sourceFile, kind, localId) {
+    const entry = this.fileEntries.get(sourceFile);
+    if (!entry?.parsed) return null;
+    const m = this.mapper(sourceFile);
+    if (m.mybatis) {
+      const node = (kind === 'statement' ? m.mybatis.statements : m.mybatis.sqlFragments).find((n) => n.id === localId);
+      return node ? this.xml.generateNode(node) : null;
+    }
+    const node = kind === 'statement' ? m.statements.get(localId) : m.fragments.get(localId);
+    return node ? this.ibatisXml.generateNode(node) : null;
   }
 
   /** `<resultMap>` XML following `extends`, leaf first (resolved by the resolver's rules) */
@@ -851,6 +895,26 @@ export class ProjectSession {
     return map;
   }
 
+  /**
+   * The namespace registry built at open: every namespace, the files it is spread over
+   * (one namespace may span many files in many folders), and what each declares.
+   */
+  namespaces() {
+    const byNamespace = new Map();
+    for (const f of this.files) {
+      const ns = f.namespace ?? '';
+      if (!byNamespace.has(ns)) byNamespace.set(ns, []);
+      byNamespace.get(ns).push({
+        sourceFile: f.sourceFile,
+        parsed: f.parsed,
+        external: f.external,
+        statements: f.statements.length + (f.unparsedStatements?.length ?? 0),
+        fragments: f.fragments.map((x) => x.id),
+      });
+    }
+    return [...byNamespace].map(([namespace, files]) => ({ namespace, files })).sort((a, b) => b.files.length - a.files.length || a.namespace.localeCompare(b.namespace));
+  }
+
   // ---------------------------------------------------------------- column removal guide
 
   /** the index entry of a statement ({ id, type, line, parameterClass, resultClass, resultMap }) */
@@ -1012,6 +1076,7 @@ export class ProjectSession {
         statements: f.statements.map((s) => ({ ...s, includes: this.includedFragments(s.qualifiedId).length })),
         fragments: f.fragments,
         resultMaps: f.resultMaps,
+        ...(f.unparsedStatements ? { unparsedStatements: f.unparsedStatements } : {}),
       })),
       skipped: this.skipped,
       errors: this.diagnostics.errors,

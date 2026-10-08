@@ -57,18 +57,32 @@ test('handles self-closing tags', () => {
   assert.equal(doc.root.elementChildren().length, 2);
 });
 
-test('reports a mismatched closing tag as a recoverable ParserError instead of throwing', () => {
+test('a stray closing tag is dropped with a warning; the document is kept (one typo must not lose a mapper)', () => {
   const diagnostics = new DiagnosticBag();
-  const doc = parseXml('<root><a></b></root>', 'broken.xml', diagnostics);
-  assert.equal(doc, null);
-  assert.equal(diagnostics.errors.length, 1);
-  assert.match(diagnostics.errors[0].message, /Mismatched closing tag/);
-  assert.equal(diagnostics.errors[0].sourceFile, 'broken.xml');
+  const doc = parseXml('<root><a></b></a></root>', 'broken.xml', diagnostics);
+  assert.ok(doc);
+  assert.equal(doc.root.elementChildren('a').length, 1);
+  assert.equal(diagnostics.errors.length, 0);
+  assert.equal(diagnostics.warnings[0].code, 'XML_RECOVERED_STRAY_CLOSE');
+  assert.equal(diagnostics.warnings[0].sourceFile, 'broken.xml');
 });
 
-test('reports an unterminated element as a recoverable ParserError instead of throwing', () => {
+test('an element closed by its parent\'s closing tag, or never closed, is recovered with a warning', () => {
   const diagnostics = new DiagnosticBag();
-  const doc = parseXml('<root><a>', 'broken.xml', diagnostics);
-  assert.equal(doc, null);
-  assert.equal(diagnostics.errors.length, 1);
+  const doc = parseXml('<root><a><b>x</a><c/></root>', 'broken.xml', diagnostics);
+  assert.deepEqual(doc.root.elementChildren().map((e) => e.name), ['a', 'c'], '<b> ends at </a>; <c> is still a child of root');
+  assert.equal(diagnostics.warnings[0].code, 'XML_RECOVERED_UNCLOSED');
+  const eof = new DiagnosticBag();
+  assert.ok(parseXml('<root><a>', 'broken.xml', eof));
+  assert.equal(eof.errors.length, 0);
+  assert.ok(eof.warnings.every((w) => w.code === 'XML_RECOVERED_UNCLOSED'));
+});
+
+test('an unescaped "<" in SQL text is read as text (A < 10, <=, <>), with a warning per occurrence', () => {
+  const diagnostics = new DiagnosticBag();
+  const doc = parseXml('<root><sql>A < 10 AND B <= 3 AND C <> 2 <x/></sql></root>', 'lt.xml', diagnostics);
+  const sql = doc.root.elementChildren('sql')[0];
+  assert.equal(sql.children[0].text, 'A < 10 AND B <= 3 AND C <> 2 ');
+  assert.equal(sql.elementChildren('x').length, 1, 'a real tag after it is still a tag');
+  assert.deepEqual(diagnostics.warnings.map((w) => w.code), ['XML_LENIENT_LT', 'XML_LENIENT_LT', 'XML_LENIENT_LT']);
 });

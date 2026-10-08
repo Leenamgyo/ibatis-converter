@@ -134,6 +134,14 @@ export class ReferenceResolver {
     return target;
   }
 
+  /** " — did you mean …?" when only letter case differs (iBATIS / MyBatis ids are case-sensitive) */
+  _nearMiss(refid, namespace) {
+    const wanted = [refid, namespace ? `${namespace}.${refid}` : null].filter(Boolean).map((s) => s.toLowerCase());
+    const hits = this.symbolTable.getAllByType(SymbolType.SQL_FRAGMENT).map((s) => s.qualifiedId)
+      .filter((q) => wanted.includes(q.toLowerCase()) || (!refid.includes('.') && q.toLowerCase().endsWith(`.${refid.toLowerCase()}`)));
+    return hits.length ? ` — did you mean ${hits.slice(0, 3).map((h) => `"${h}"`).join(', ')}? (ids are case-sensitive)` : '';
+  }
+
   /** "no fragment" vs "two fragments of that name": the diagnostic says which */
   _missingMessage(kind, refid) {
     const ambiguous = this._ambiguous?.refid === refid ? this._ambiguous : null;
@@ -248,7 +256,7 @@ export class ReferenceResolver {
         this._warned.add(key);
         this.missingIncludes.push({ refid: includeNode.refid, namespace, root });
         this.diagnostics.error(
-          missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found`,
+          missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found${this._nearMiss(includeNode.refid, namespace)}`,
           includeNode.sourceFile,
           includeNode.sourceLine,
           'MISSING_REFERENCE',

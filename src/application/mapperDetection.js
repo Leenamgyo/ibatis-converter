@@ -159,3 +159,26 @@ export function copyScore(relativePath) {
   if (/\/WEB-INF\/classes\//.test(joined)) score += 1; // the deployed copy, when a source copy exists
   return score;
 }
+
+/**
+ * The namespace and the ids a mapper declares, read from its text without
+ * parsing it — for a file whose XML is too broken to parse even leniently.
+ * Its `<sql>` fragments are still registered from this (so a refid into it
+ * points at the right file and line instead of "not found"). Comments are
+ * skipped; lines are 1-based.
+ * @returns {{ namespace: string|null, statements: { id: string, tag: string, line: number }[], fragments: { id: string, line: number }[] }}
+ */
+export function scanMapperIds(text) {
+  const visible = text.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' ')); // keep offsets and lines
+  const lineAt = (index) => (visible.slice(0, index).match(/\n/g) ?? []).length + 1;
+  const namespace = /<(?:sqlMap|mapper)\b[^>]*\bnamespace\s*=\s*["']([^"']+)["']/.exec(visible)?.[1] ?? null;
+  const statements = [];
+  const fragments = [];
+  const tag = /<(select|insert|update|delete|procedure|statement|sql)\b[^>]*?\bid\s*=\s*["']([^"']+)["']/g;
+  let m;
+  while ((m = tag.exec(visible)) !== null) {
+    if (m[1] === 'sql') fragments.push({ id: m[2], line: lineAt(m.index) });
+    else statements.push({ id: m[2], tag: m[1], line: lineAt(m.index) });
+  }
+  return { namespace, statements, fragments };
+}

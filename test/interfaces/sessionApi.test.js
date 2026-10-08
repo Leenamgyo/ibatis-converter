@@ -220,3 +220,19 @@ test('GET /api/v1/statements/:id/column-guide returns a removal guide (and needs
     stop();
   }
 });
+
+test('GET /api/v1/namespaces lists each namespace with every file declaring it', async () => {
+  const { call, stop } = startServer();
+  try {
+    const { body: { projectId } } = await call('POST', '/api/v1/projects', { files: [
+      { sourceFile: 'a/x/Common_SQL.xml', source: '<sqlMap namespace="common"><sql id="asdf">A</sql></sqlMap>' },
+      { sourceFile: 'b/y/z/CommonMore_SQL.xml', source: '<sqlMap namespace="common"><sql id="more">B</sql></sqlMap>' },
+      { sourceFile: 'c/Order_SQL.xml', source: '<sqlMap namespace="order"><select id="q">SELECT 1</select></sqlMap>' },
+    ] });
+    const { body } = await call('GET', `/api/v1/namespaces?projectId=${projectId}`);
+    assert.equal(body[0].namespace, 'common');
+    assert.deepEqual(body[0].files.map((f) => [f.sourceFile, f.fragments]), [['a/x/Common_SQL.xml', ['asdf']], ['b/y/z/CommonMore_SQL.xml', ['more']]]);
+  } finally {
+    stop();
+  }
+});

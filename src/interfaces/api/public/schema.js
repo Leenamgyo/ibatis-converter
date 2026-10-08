@@ -846,6 +846,7 @@ function includeBlock(node, { fragments, depth, seen, openNested, inline = schem
       label,
       node.qualifiedId !== node.refid ? el('span', { class: 'sd-inc-target mono' }, `→ ${node.qualifiedId}`) : null,
       ruleChip(node.rule),
+      node.unparsed ? el('span', { class: 'sd-inc-rule rule-missing', title: `${node.file}: XML을 파싱할 수 없어 SQL을 펼칠 수 없습니다 (위치는 찾았습니다) — 그 파일의 오류를 먼저 고치세요` }, '파일 파싱 오류') : null,
       el('span', { class: 'sd-inc-depth' }, `depth ${level}`),
       node.children?.length ? el('span', { class: 'sd-inc-sub' }, `하위 include ${countIncludes(node.children)}`) : null,
       gradeDots(tallyEvents(entry.events)),

@@ -374,6 +374,11 @@ function renderXmlTree() {
       }
     }
 
+    // a file too broken to parse: its statements are listed (from its text), not openable
+    for (const s of !hitsByFile ? mapper.unparsedStatements ?? [] : []) {
+      tree.appendChild(el('div', { class: 'node depth-2 unparsed', title: `${mapper.sourceFile}:${s.line} — XML 파싱 오류로 분석할 수 없습니다` }, el('span', { class: 'label' }, `${s.id}`), el('span', { class: 'hit-why' }, '파싱 오류')));
+    }
+
     const byType = new Map();
     for (const stmt of mapper.statements) {
       if (!whole && !hit.statements[stmt.qualifiedId]) continue;
@@ -492,6 +497,7 @@ function buildRefidCluster(analysis) {
     body.appendChild(gnode(id, 'refid',
       el('div', { class: 'title' }, `<include refid="${treeNode?.refid ?? refid}"/>`),
       treeNode && treeNode.refid !== refid ? el('div', { class: 'meta', title: REFID_RULE[treeNode.rule]?.[1] ?? '' }, `→ ${refid} · ${REFID_RULE[treeNode.rule]?.[0] ?? treeNode.rule}`) : null,
+      treeNode?.unparsed ? el('div', { class: 'meta warn-text', title: 'XML을 파싱할 수 없는 파일입니다 (위치는 찾았습니다)' }, `${treeNode.file} — 파일 파싱 오류로 SQL 없음`) : null,
       clauses.length
         ? el('div', { class: 'sql' }, clauses.join(' · '))
         : el('div', { class: 'meta' }, '(fragment not loaded)'),

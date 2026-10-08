@@ -44,6 +44,8 @@ class Scanner {
     this.pos = 0;
     this.line = 1;
     this.len = source.length;
+    /** lenient recoveries ({ message, line, code }), reported as warnings: a file is never lost to one */
+    this.recoveries = [];
   }
 
   eof() {
@@ -168,7 +170,17 @@ function parseText(scanner) {
   return new XmlText(decodeEntities(raw), startLine);
 }
 
-function parseElement(scanner) {
+/** a `<` that starts markup: a tag name, `/`, `!` or `?` follows */
+function startsMarkup(scanner) {
+  const next = scanner.peek(1);
+  return next !== undefined && (NAME_START_CHARS.test(next) || next === '/' || next === '!' || next === '?');
+}
+
+/**
+ * @param {string[]} open the names of the elements enclosing this one, outermost first —
+ *   so a closing tag that belongs to one of them can end this one (recovery, see below)
+ */
+function parseElement(scanner, open = []) {
   const startLine = scanner.line;
   scanner.advance(); // consume '<'
   const name = parseName(scanner);
@@ -185,12 +197,21 @@ function parseElement(scanner) {
   }
   scanner.advance();
 
+  const appendText = (text, line) => {
+    const last = element.children[element.children.length - 1];
+    if (last?.kind === 'text') last.text += text;
+    else element.children.push(new XmlText(text, line));
+  };
+
   for (;;) {
     if (scanner.eof()) {
-      throw new XmlParseException(`Unterminated element <${name}> (opened at line ${startLine})`, scanner.line);
+      // recovery: an element left open at the end of the file ends there
+      scanner.recoveries.push({ code: 'XML_RECOVERED_UNCLOSED', line: startLine, message: `<${name}> (line ${startLine}) is never closed: closed at the end of the file` });
+      return element;
     }
     if (scanner.startsWith('</')) {
       const closeLine = scanner.line;
+      const mark = { pos: scanner.pos, line: scanner.line };
       scanner.advance(2);
       scanner.skipWhitespace();
       const closeName = parseName(scanner);
@@ -200,10 +221,17 @@ function parseElement(scanner) {
       }
       scanner.advance();
       if (closeName !== name) {
-        throw new XmlParseException(
-          `Mismatched closing tag: expected </${name}> but found </${closeName}>`,
-          closeLine,
-        );
+        if (open.includes(closeName)) {
+          // recovery: </sql> while an <isNotEmpty> inside it is still open — that one ends here,
+          // and the </sql> is left for the element it belongs to
+          scanner.pos = mark.pos;
+          scanner.line = mark.line;
+          scanner.recoveries.push({ code: 'XML_RECOVERED_UNCLOSED', line: closeLine, message: `<${name}> (line ${startLine}) is not closed before </${closeName}>: closed there` });
+          return element;
+        }
+        // recovery: a closing tag that matches nothing open is dropped
+        scanner.recoveries.push({ code: 'XML_RECOVERED_STRAY_CLOSE', line: closeLine, message: `</${closeName}> closes nothing that is open (inside <${name}>): ignored` });
+        continue;
       }
       return element;
     }
@@ -222,12 +250,23 @@ function parseElement(scanner) {
       skipDelimited(scanner, 2, '?>', 'processing instruction');
       continue;
     }
+    if (scanner.peek() === '<' && !startsMarkup(scanner)) {
+      // recovery: `A < 10`, `<=`, `<>` written unescaped in SQL — a real XML parser stops here;
+      // it is plainly text, so it is read as text (and reported)
+      const line = scanner.line;
+      scanner.advance();
+      scanner.recoveries.push({ code: 'XML_LENIENT_LT', line, message: 'unescaped "<" in SQL text read as text (write &lt; or use <![CDATA[ ]]>)' });
+      appendText('<', line);
+      const rest = parseText(scanner);
+      if (rest.text.length > 0) appendText(rest.text, rest.sourceLine);
+      continue;
+    }
     if (scanner.peek() === '<') {
-      element.children.push(parseElement(scanner));
+      element.children.push(parseElement(scanner, [...open, name]));
       continue;
     }
     const textNode = parseText(scanner);
-    if (textNode.text.length > 0) element.children.push(textNode);
+    if (textNode.text.length > 0) appendText(textNode.text, textNode.sourceLine);
   }
 }
 
@@ -266,6 +305,7 @@ export function parseXml(source, sourceFile, diagnostics) {
       throw new XmlParseException('Expected a root element', scanner.line);
     }
     const root = parseElement(scanner);
+    for (const r of scanner.recoveries) diagnostics.warn(r.message, sourceFile, r.line, r.code);
     return new XmlDocument(root, sourceFile);
   } catch (e) {
     if (e instanceof XmlParseException) {

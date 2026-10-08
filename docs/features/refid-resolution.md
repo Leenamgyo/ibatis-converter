@@ -57,6 +57,34 @@ Now:
 - `test/application/projectSession.test.js` keeps both, plus the MyBatis
   strict rule, under test.
 
+## A namespace spread over many files, and files with broken XML (fixed)
+
+The registry is built at open: every file's namespace and ids go into the
+symbol table, and one namespace (`common`) may span any number of files in
+any folders. `GET /api/v1/namespaces` lists namespace → files → `<sql>` ids.
+
+Before, a file entered the registry only if it parsed as strict XML. One
+unescaped `<` in SQL (`A < 10`, `<=`, `<>`) or one unclosed `<isNotEmpty>`
+dropped the WHOLE file, and every `common.xxx` into it was "not found".
+
+Now:
+- **Lenient parser** (`parser/xml/XmlParser.js`). A `<` that can't start a
+  tag is SQL text (`XML_LENIENT_LT`). An element closed by its parent's
+  closing tag, or never closed, is recovered (`XML_RECOVERED_UNCLOSED`). A
+  closing tag matching nothing open is dropped
+  (`XML_RECOVERED_STRAY_CLOSE`). Each is a warning with its line; the file
+  keeps all its ids.
+- **Registry from the text** (`scanMapperIds`). A file still too broken to
+  parse has its namespace, `<sql>` and statement ids read from its text and
+  registered anyway. A refid into it is found, flagged
+  `unparsed` with the file ("파일 파싱 오류"), never "not found"; its
+  statements are listed in the tree, greyed.
+- **Case-only mismatch.** When an id differs only in letter case, the
+  error says `did you mean "common.live"? (ids are case-sensitive)`.
+- **The browser gets XML regenerated from the parsed AST**
+  (`statementXml`), so its strict parser never rejects a file that needed
+  lenient parsing.
+
 ## Files that never reached the metadata (fixed)
 
 A refid is only as findable as the file its fragment lives in. File
