@@ -20,7 +20,11 @@
  * @param {object[]} fromArray one SELECT's `from` array
  * @param {object} whereAst the same SELECT's raw `where` AST
  * @param {(aliasOrName: string) => string} resolveAlias alias -> table name
- * @returns {{ leftTable: string, rightTable: string, condition: object }[]}
+ * An Oracle `(+)` on one side (`A.X = B.X(+)`, tagged by SqlAnalyzer as
+ * `oracleOuter`) makes it an outer join: `leftTable` is then the preserved
+ * table, `rightTable` the optional one, and `outer` is true.
+ *
+ * @returns {{ leftTable: string, rightTable: string, condition: object, outer: boolean }[]}
  */
 export function findImplicitJoins(fromArray, whereAst, resolveAlias) {
   const commaJoined = new Set(
@@ -51,7 +55,9 @@ export function findImplicitJoins(fromArray, whereAst, resolveAlias) {
     const key = [leftTable, rightTable].sort().join(' = ');
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ leftTable, rightTable, condition: node });
+    // `(+)` marks the optional side; report it as the right side of a LEFT JOIN
+    if (node.left.oracleOuter && !node.right.oracleOuter) found.push({ leftTable: rightTable, rightTable: leftTable, condition: node, outer: true });
+    else found.push({ leftTable, rightTable, condition: node, outer: Boolean(node.right.oracleOuter && !node.left.oracleOuter) });
   };
 
   walk(whereAst);

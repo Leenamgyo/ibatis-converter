@@ -99,8 +99,9 @@ iBATIS XML
                       conversion's opinions (see docs/SPEC_MAPPING.md)
 ```
 
-`application/AnalyzerPipeline.js` is the only file that wires these stages
-together end to end; every stage is otherwise independently importable and
+`application/AnalyzerPipeline.js` (everything at once) and
+`application/ProjectSession.js` (index + on-demand, what the API/UI/CLI use)
+are the only files that wire these stages together end to end; every stage is otherwise independently importable and
 independently unit-tested (`test/parser`, `test/resolver`, `test/analyzer`,
 `test/report`, `test/interfaces`).
 
@@ -211,6 +212,44 @@ else (see the `test/integration/pipeline.test.js` fixture that mixes a
 clean cross-mapper include with a missing-refid file and a circular-refid
 file in one run).
 
+## How a refid is resolved (and written for MyBatis)
+
+`ReferenceResolver#_resolveRefid` applies these rules, and the converter
+writes the result so that MyBatis resolves it to the same thing:
+
+1. **`ns.id`** exact, else **`currentNamespace.id`**.
+2. **A bare id from another mapper.** With iBATIS's default
+   `useStatementNamespaces=false`, every id is global, so
+   `<include refid="commonWhere"/>` may name any file's fragment. It is
+   matched by local id among symbols of the expected kind (fragment /
+   resultMap / parameterMap / statement). Two candidates is an
+   `ambiguous` error, never a guess. MyBatis only looks a bare id up in the
+   current namespace, so the converter writes these references qualified
+   (`REFERENCE_QUALIFIED`): `<include refid>`, `resultMap=`, `extends=`,
+   nested `resultMap=` and `select=`.
+3. **Nested includes resolve against the including statement's
+   namespace.** iBATIS (`SqlStatementParser`) and MyBatis
+   (`XMLIncludeTransformer` + `applyCurrentNamespace`) both apply the
+   *statement's* namespace to every include of a statement, including
+   includes inside a fragment from another mapper. The resolver follows the
+   runtime:
+   - `NESTED_REFID_SHADOWED`: the includer has its own fragment of that id,
+     so the runtime takes it.
+   - `NESTED_REFID_NAMESPACE`: the runtime finds nothing (an iBATIS error
+     unless ids are global). The resolver falls back to the fragment's own
+     mapper.
+
+   In the MyBatis output, a bare refid inside a fragment that other mappers
+   include is qualified when no includer shadows it. If one includer shadows
+   it and another can't resolve it, a single fragment can't serve both: it
+   is kept as written and graded MANUAL `REFID_DEPENDS_ON_INCLUDER`.
+
+The pipeline therefore resolves everything first (pass A) and converts
+afterwards (pass B), because a fragment's conversion needs every place that
+includes it. `test/fuzz/projectCorpus.test.js` checks all of this on
+generated multi-mapper projects: it expands MyBatis's own includes,
+compares fragment order, and runs a runtime differential.
+
 ## Resolution model: original vs. resolved trees
 
 `ReferenceResolver#resolve(rootNode, namespace, qualifiedId)` never mutates
@@ -282,19 +321,26 @@ throw and does **not** drop the whole statement — it returns
 parse) are still fully populated. `test/analyzer/statementAnalyzer.test.js`
 has a case asserting exactly this partial-success shape.
 
-## The analysis API's in-memory project store
+## Open projects are sessions, not stored results
 
-`GET /api/v1/statements/:id` and `GET /api/v1/tables/:tableName` need to
-look something up by an id that's only unique *within* one
-`POST /api/v1/projects/analyze` run. `interfaces/api/server.js` keeps each
-run's full pipeline result in a module-level `Map<projectId, result>`
-(returned from `analyze` as `projectId`, also accepted as a `?projectId=`
-query param on the GET routes; omitting it falls back to "the most
-recently analyzed project"). This is intentionally the simplest thing that
-works for the tool's actual usage pattern — one local user driving one
-analysis at a time — not a general multi-tenant session store; there's no
-eviction, so a long-running server process will accumulate project
-results in memory for as long as it stays up.
+The API, the UI and the CLI work through `application/ProjectSession.js`.
+Opening a project builds an **index**:
+- the files,
+- the statement / fragment / resultMap ids,
+- per node, a stub with just its `<include>`s.
+
+The reference graph is resolved on those stubs by the same
+`ReferenceResolver`. Everything else is loaded per statement or per file
+through bounded LRU caches.
+
+`interfaces/api/SessionManager.js` closes a session:
+- after 30 idle minutes,
+- when a 5th one opens,
+- on `DELETE /api/v1/projects/:id`.
+
+`?projectId=` selects one; omitting it means the most recently opened.
+`AnalyzerPipeline` remains the all-in-memory reference implementation that
+the session is tested against. See `docs/features/large-projects.md`.
 
 ## Grading every converter decision, not just the risky ones
 

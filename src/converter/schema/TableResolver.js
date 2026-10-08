@@ -182,7 +182,7 @@ export class ColumnRef {
 }
 
 export class SqlResolution {
-  constructor({ tokens, rootScope, scopes, tableRefs, columnRefs, roles, tokenScopes }) {
+  constructor({ tokens, rootScope, scopes, tableRefs, columnRefs, roles, tokenScopes, markerStates = new Map() }) {
     this.tokens = tokens;
     this.rootScope = rootScope;
     this.scopes = scopes;
@@ -192,6 +192,8 @@ export class SqlResolution {
     this.roles = roles;
     /** token index -> Scope that was current at that token (also for whitespace/markers) */
     this.tokenScopes = tokenScopes;
+    /** INCLUDE marker token -> { clause, expectTable } at that point */
+    this.markerStates = markerStates;
   }
 }
 
@@ -203,13 +205,18 @@ export class TableResolver {
    *   the scope at an `<include>` site
    * @returns {SqlResolution}
    */
-  resolve(tokens, { outerScope = null } = {}) {
-    return new Scan(tokens, outerScope).run();
+  resolve(tokens, { outerScope = null, start = null } = {}) {
+    return new Scan(tokens, outerScope, start).run();
   }
 }
 
 class Scan {
-  constructor(tokens, outerScope) {
+  /**
+   * @param {{ clause: string, expectTable: boolean }|null} start the state the SQL begins in:
+   *   a `<sql>` fragment included right after `FROM` (`FROM <include refid="tables"/>`) is a
+   *   table list, so it starts in the FROM clause expecting a table
+   */
+  constructor(tokens, outerScope, start = null) {
     this.tokens = tokens;
     this.sig = [];
     tokens.forEach((token, index) => { if (token.significant) this.sig.push(index); });
@@ -219,6 +226,12 @@ class Scan {
     this.roles = new Map();
     this.tokenScopes = new Array(tokens.length);
     this.root = this.newScope(ScopeKind.BLOCK, outerScope);
+    if (start) {
+      this.root.clause = start.clause;
+      this.root.expectTable = start.expectTable;
+    }
+    /** INCLUDE marker token -> { clause, expectTable } where it sits (what an included fragment starts in) */
+    this.markerStates = new Map();
     /** @type {Scope[]} open BLOCKs, innermost last; each may have a `current` QUERY */
     this.blocks = [this.root];
     /** one entry per open `(`: { opensBlock, cteColumns, derived, owner } */
@@ -302,6 +315,7 @@ class Scan {
       columnRefs: this.columnRefs,
       roles: this.roles,
       tokenScopes: this.tokenScopes,
+      markerStates: this.markerStates,
     });
   }
 
@@ -323,6 +337,11 @@ class Scan {
       this.lastBranch = null;
     } else if (token.value === MarkerKind.BRANCH_END) {
       this.lastBranch = this.branches.pop() ?? null;
+    } else if (token.value === MarkerKind.INCLUDE) {
+      this.markerStates.set(token, {
+        clause: scope.depth === 0 ? scope.clause : null,
+        expectTable: scope.depth === 0 && scope.expectTable,
+      });
     }
   }
 

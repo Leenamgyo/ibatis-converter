@@ -23,6 +23,14 @@
       </button>
     </nav>
     <div class="top-actions">
+      <label class="btn" title="프로젝트 폴더를 고르면 iBATIS 매퍼(&lt;sqlMap&gt;)만 찾아 불러옵니다">
+        프로젝트 폴더
+        <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+      </label>
+      <form class="path-open" id="pathForm" title="이 컴퓨터의 프로젝트 폴더 경로: 서버가 그 자리에서 읽습니다 (업로드 없음, localhost 전용)">
+        <input type="text" id="pathInput" placeholder="/path/to/project" aria-label="로컬 프로젝트 경로" spellcheck="false">
+        <button class="btn" type="submit">경로 열기</button>
+      </form>
       <label class="btn">
         Upload mapper XML
         <input type="file" id="fileInput" multiple accept=".xml" hidden>

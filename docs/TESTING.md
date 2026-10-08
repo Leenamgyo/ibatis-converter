@@ -19,7 +19,10 @@ This runs `node --test "test/**/*.test.js"`. Two traps:
 `test/fuzz/` contains seeded property tests. `schemaGrammar.test.js`
 checks random SQL against its known migration. `runtimeDifferential.test.js`
 renders random iBATIS dynamic SQL with reference iBATIS and MyBatis/OGNL
-runtimes and compares the output. Default sizes keep `npm test` fast; run
+runtimes and compares the output. `projectCorpus.test.js` generates whole
+legacy projects (`projectGen.js`) and checks the folder scan, refid
+chains, diagnostics and MyBatis output. Use `FUZZ_PROJECTS=200` for a deep
+run. Default sizes keep `npm test` fast; run
 `FUZZ_SEEDS=200000 node --test test/fuzz/schemaGrammar.test.js` for a deep
 run.
 

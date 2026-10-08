@@ -11,11 +11,15 @@
     "start": "node src/interfaces/api/server.js",
     "dev": "node --watch --watch-path=src/analyzer --watch-path=src/application --watch-path=src/ast --watch-path=src/converter --watch-path=src/generator --watch-path=src/parser --watch-path=src/report --watch-path=src/resolver --watch-path=src/interfaces/api/server.js src/interfaces/api/server.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:watch": "node --test --watch \"test/**/*.test.js\""
+    "test:watch": "node --test --watch \"test/**/*.test.js\"",
+    "migrate": "node src/interfaces/cli/migrate.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "node-sql-parser": "^4.18.0"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "bin": {
+    "ibatis-migrate": "src/interfaces/cli/migrate.js"
+  }
 }

@@ -120,7 +120,15 @@ function ibatisSpliced(nodes, ctx, suppressFirst, state) {
       out += text;
       if (text.trim()) state.emitted = true;
     } else if (node.type === 'Include') {
-      out += ibatisSpliced(ctx.fragment(node.refid).children, ctx, suppressFirst, state);
+      // iBATIS resolves every include of a statement — nested ones too — against the
+      // STATEMENT's namespace (ctx.ns never changes while descending)
+      const found = ctx.fragment(node.refid, ctx.ns);
+      const fragment = found?.node ?? found;
+      if (!fragment) continue; // missing: renders nothing
+      if (ctx.includeStack.includes(fragment)) throw new RenderError('circular include'); // iBATIS overflows here
+      ctx.includeStack.push(fragment);
+      out += ibatisSpliced(fragment.children, ctx, suppressFirst, state);
+      ctx.includeStack.pop();
     } else if (node.type === 'SelectKey') {
       continue;
     } else if (isTransparent(node)) {
@@ -169,8 +177,8 @@ function ibatisTag(node, ctx) {
   return `${node.open ?? ''}${body}${node.close ?? ''}`;
 }
 
-export function renderIbatis(statement, params, fragment) {
-  const ctx = { params, iterStack: [], out: { params: [] }, fragment };
+export function renderIbatis(statement, params, fragment, namespace = null) {
+  const ctx = { params, iterStack: [], out: { params: [] }, fragment, ns: namespace, includeStack: [] };
   const sql = ibatisChildren(statement.children, ctx, false);
   return { sql: normalize(sql), params: ctx.out.params };
 }

@@ -92,6 +92,41 @@ function leadingPrepends(children, tokens = new Set()) {
   return [...tokens];
 }
 
+/**
+ * A reference as MyBatis needs it written. MyBatis resolves a refid / resultMap /
+ * extends / select WITHOUT a dot inside the CURRENT namespace only, while iBATIS with
+ * useStatementNamespaces=false (its default) resolves a bare id project-wide. So a
+ * bare reference that the resolver found in ANOTHER mapper is written fully
+ * qualified. `context.resolveReference(ref, namespace, type)` comes from the
+ * pipeline's ReferenceResolver; without it (unit tests) references are kept.
+ */
+function qualifyReference(ref, type, context, events, node) {
+  if (!context?.resolveReference || !ref || ref.includes('.')) return ref;
+  const target = context.resolveReference(ref, context.namespace, type, { fragmentQualifiedId: context.fragmentQualifiedId });
+  if (target?.perIncluderConflict) {
+    const { shadowing, unresolved } = target.perIncluderConflict;
+    events.push(new ConversionEvent({
+      grade: MigrationGrade.MANUAL,
+      code: 'REFID_DEPENDS_ON_INCLUDER',
+      message: `<include refid="${ref}"> in fragment ${context.fragmentQualifiedId}: iBATIS and MyBatis resolve it against the including statement's namespace — ${shadowing.map((ns) => `${ns}.${ref}`).join(', ')} for ${shadowing.join(', ')}, nothing (an error) for ${unresolved.join(', ')}. Kept as written; qualify it or split the fragment`,
+      sourceFile: node?.sourceFile ?? null,
+      sourceLine: node?.sourceLine ?? null,
+    }));
+    return ref;
+  }
+  if (!target || (target.namespace === context.namespace && !target.mustQualify)) return ref;
+  events.push(new ConversionEvent({
+    grade: MigrationGrade.SAFE,
+    code: 'REFERENCE_QUALIFIED',
+    message: target.namespace === context.namespace
+      ? `"${ref}" inside a fragment that other mappers include -> "${target.qualifiedId}": iBATIS and MyBatis resolve a bare refid against the INCLUDING statement's namespace`
+      : `"${ref}" is defined in ${target.namespace} (iBATIS resolves bare ids project-wide) -> "${target.qualifiedId}", since MyBatis looks a bare id up in the current namespace only`,
+    sourceFile: node?.sourceFile ?? null,
+    sourceLine: node?.sourceLine ?? null,
+  }));
+  return target.qualifiedId;
+}
+
 export class MyBatisAstConverter {
   constructor({
     parameterConverter = new ParameterConverter(),
@@ -111,14 +146,14 @@ export class MyBatisAstConverter {
    * @param {object} statementNode original (unresolved) StatementNode
    * @returns {{ node: import('../../ast/mybatis/nodes.js').StatementNode, events: ConversionEvent[] }}
    */
-  convertStatement(statementNode) {
-    const state = { events: [], iterateCounter: 0 };
+  convertStatement(statementNode, context = {}) {
+    const state = { events: [], iterateCounter: 0, context };
     const node = new StatementNode({
       id: statementNode.id,
       statementType: statementNode.statementType,
       parameterType: statementNode.parameterClass,
       resultType: statementNode.resultClass,
-      resultMap: statementNode.resultMap,
+      resultMap: statementNode.resultMap ? qualifyReference(statementNode.resultMap, 'RESULT_MAP', context, state.events, statementNode) : null,
     });
     node.children = this._convertList(statementNode.children, [], state);
 
@@ -159,8 +194,8 @@ export class MyBatisAstConverter {
    * @param {object} sqlFragmentNode original (unresolved) SqlFragmentNode
    * @returns {{ node: import('../../ast/mybatis/nodes.js').SqlFragmentNode, events: ConversionEvent[] }}
    */
-  convertSqlFragment(sqlFragmentNode) {
-    const state = { events: [], iterateCounter: 0 };
+  convertSqlFragment(sqlFragmentNode, context = {}) {
+    const state = { events: [], iterateCounter: 0, context };
     const node = new MyBatisSqlFragmentNode({ id: sqlFragmentNode.id });
     node.children = this._convertList(sqlFragmentNode.children, [], state);
     return { node, events: state.events };
@@ -170,8 +205,11 @@ export class MyBatisAstConverter {
    * @param {object} resultMapNode
    * @returns {{ node: import('../../ast/mybatis/nodes.js').ResultMapNode, events: ConversionEvent[] }}
    */
-  convertResultMap(resultMapNode) {
-    return this.resultMapConverter.convert(resultMapNode);
+  convertResultMap(resultMapNode, context = {}) {
+    const events = [];
+    const qualify = (ref, type) => (ref ? qualifyReference(ref, type, context, events, resultMapNode) : ref);
+    const converted = this.resultMapConverter.convert(resultMapNode, { qualify });
+    return { node: converted.node, events: [...events, ...converted.events] };
   }
 
   _nextItemName(state) {
@@ -194,7 +232,7 @@ export class MyBatisAstConverter {
           break;
         }
         case 'Include': {
-          result.push(new IncludeNode({ refid: node.refid }));
+          result.push(new IncludeNode({ refid: qualifyReference(node.refid, 'SQL_FRAGMENT', state.context, state.events, node) }));
           state.events.push(new ConversionEvent({
             grade: MigrationGrade.SAFE,
             code: 'INCLUDE_KEPT',

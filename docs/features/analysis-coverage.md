@@ -20,6 +20,12 @@ reading the code. Section-by-section spec status is in
 | `include refid`, cross-mapper and nested | expanded to the fragment's SQL; circular references are a diagnostic |
 | `resultMap extends` chains | flattened, with the chain shown in the JAVA 매핑 panel |
 
+| Comma join `FROM A a, B b WHERE a.X = b.X` | recovered from WHERE as `IMPLICIT_JOIN` |
+| Oracle `(+)`: `WHERE c.X(+) = h.X` | parses: the marker is taken out before parsing (`SqlAnalyzer#stripOracleOuterJoins`) and the join is reported as `LEFT_JOIN`, with the `(+)` side as the optional table. The WHERE box shows the condition without the marker |
+| FROM from an include (`FROM <include refid="tables"/>`, the whole FROM in a fragment, or `FROM a A, <include .../>`) | tables, aliases and joins come through the include |
+| CTE (`WITH r AS (...)`) | the CTE body's tables are counted; `r` in FROM is a derived table, like a subquery |
+| Subquery / CTE names in reports | never reported as tables: the project table report, the table dependency graph and the dashboard's table count skip `derived` entries |
+
 ## The one shape it cannot do
 
 **Two mutually exclusive branches supplying the same FROM table.**

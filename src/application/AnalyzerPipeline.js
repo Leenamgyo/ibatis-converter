@@ -73,11 +73,11 @@ export class AnalyzerPipeline {
     const mybatisMappers = [];
     const fragmentConversions = new Map();
 
-    for (const { sourceFile, sqlMap } of parsedMappers) {
+    // Pass A: resolve every statement and resultMap first. Converting a <sql> fragment
+    // needs to know which mappers include it, which is only known once all are resolved.
+    for (const { sqlMap } of parsedMappers) {
       if (!sqlMap) continue;
       const namespace = sqlMap.namespace;
-      const mapperNode = new MapperNode({ namespace });
-
       for (const stmt of sqlMap.statements) {
         const qualifiedId = namespace ? `${namespace}.${stmt.id}` : stmt.id;
         const resolved = resolver.resolve(stmt, namespace, qualifiedId);
@@ -87,8 +87,23 @@ export class AnalyzerPipeline {
           qualifiedId,
           this.statementAnalyzer.analyze(resolved.originalTree, resolved.resolvedTree, qualifiedId, this.dialect),
         );
+      }
+      for (const resultMap of sqlMap.resultMaps) resolver.resolveResultMapExtends(resultMap, namespace);
+    }
 
-        const { node: mybatisNode, events } = this.mybatisAstConverter.convertStatement(resolved.originalTree);
+    // Pass B: convert
+    for (const { sourceFile, sqlMap } of parsedMappers) {
+      if (!sqlMap) continue;
+      const namespace = sqlMap.namespace;
+      const mapperNode = new MapperNode({ namespace });
+      // references MyBatis couldn't resolve as written get qualified (see qualifyReference)
+      const resolveReference = (ref, ns, type, options) => resolver.qualifiedIdOf(ref, ns, type, options);
+      const context = { namespace, resolveReference };
+
+      for (const stmt of sqlMap.statements) {
+        const qualifiedId = namespace ? `${namespace}.${stmt.id}` : stmt.id;
+        const resolved = resolvedStatements.get(qualifiedId);
+        const { node: mybatisNode, events } = this.mybatisAstConverter.convertStatement(resolved.originalTree, context);
         mapperNode.statements.push(mybatisNode);
 
         const previewMapper = new MapperNode({ namespace });
@@ -101,16 +116,16 @@ export class AnalyzerPipeline {
         });
       }
       for (const fragment of sqlMap.sqlFragments) {
-        const { node, events } = this.mybatisAstConverter.convertSqlFragment(fragment);
+        const fragmentQualifiedId = namespace ? `${namespace}.${fragment.id}` : fragment.id;
+        const { node, events } = this.mybatisAstConverter.convertSqlFragment(fragment, { ...context, fragmentQualifiedId });
         mapperNode.sqlFragments.push(node);
-        fragmentConversions.set(namespace ? `${namespace}.${fragment.id}` : fragment.id, {
+        fragmentConversions.set(fragmentQualifiedId, {
           events,
           safetySummary: this.migrationSafetyAnalyzer.summarize(events),
         });
       }
       for (const resultMap of sqlMap.resultMaps) {
-        resolver.resolveResultMapExtends(resultMap, namespace);
-        mapperNode.resultMaps.push(this.mybatisAstConverter.convertResultMap(resultMap).node);
+        mapperNode.resultMaps.push(this.mybatisAstConverter.convertResultMap(resultMap, context).node);
       }
 
       generatedMapperXml.set(sourceFile, this.xmlGenerator.generate(mapperNode));

@@ -26,7 +26,7 @@ export class MapperReport {
 
     for (const analysis of statementAnalyses) {
       byType[analysis.type] = (byType[analysis.type] ?? 0) + 1;
-      for (const t of analysis.tables) tableNames.add(t.name);
+      for (const t of analysis.tables) if (!t.derived) tableNames.add(t.name);
       statementWarningCount += analysis.warnings.length;
     }
 

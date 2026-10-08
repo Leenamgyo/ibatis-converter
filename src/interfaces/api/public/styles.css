@@ -84,6 +84,13 @@ header.top {
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:disabled { opacity: 0.45; cursor: not-allowed; }
 .file-count { font-size: 0.78rem; color: var(--text-faint); }
+.path-open { display: inline-flex; }
+.path-open input {
+  width: 13rem; padding: 0.4rem 0.55rem; font: 0.78rem var(--mono, ui-monospace, monospace);
+  border: 1px solid var(--border-strong); border-right: none; border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--bg); color: var(--text);
+}
+.path-open .btn { border-radius: 0 var(--radius) var(--radius) 0; }
 
 main#app { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .empty-state { margin: auto; padding: 3rem; text-align: center; color: var(--text-faint); font-size: 0.9rem; }

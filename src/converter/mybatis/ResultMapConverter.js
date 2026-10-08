@@ -38,12 +38,16 @@ export class ResultMapConverter {
    * @param {import('../../ast/ibatis/nodes.js').ResultMapNode} resultMapNode
    * @returns {{ node: ResultMapNode, events: ConversionEvent[] }}
    */
-  convert(resultMapNode) {
+  /**
+   * @param {{ qualify?: (ref: string, type: string) => string }} [options] rewrites a
+   *   reference the way MyBatis needs it (see MyBatisAstConverter's qualifyReference)
+   */
+  convert(resultMapNode, { qualify = (ref) => ref } = {}) {
     const events = [];
     const node = new ResultMapNode({
       id: resultMapNode.id,
       resultType: resultMapNode.class,
-      extendsId: resultMapNode.extends,
+      extendsId: resultMapNode.extends ? qualify(resultMapNode.extends, 'RESULT_MAP') : null,
     });
     const at = (r) => ({ sourceFile: r.sourceFile, sourceLine: r.sourceLine });
     const groupBy = (resultMapNode.groupBy ?? '').split(',').map((p) => p.trim()).filter(Boolean);
@@ -53,7 +57,7 @@ export class ResultMapConverter {
       if (result.resultMap) {
         const Nested = groupBy.length ? CollectionNode : AssociationNode;
         const tag = groupBy.length ? 'collection' : 'association';
-        node.results.push(new Nested({ property: result.property, javaType: groupBy.length ? null : result.javaType, resultMap: result.resultMap }));
+        node.results.push(new Nested({ property: result.property, javaType: groupBy.length ? null : result.javaType, resultMap: qualify(result.resultMap, 'RESULT_MAP') }));
         events.push(new ConversionEvent({
           grade: MigrationGrade.WARNING,
           code: 'NESTED_RESULT_MAP',
@@ -63,7 +67,7 @@ export class ResultMapConverter {
       } else if (result.select) {
         const many = isListType(result.javaType);
         const Nested = many ? CollectionNode : AssociationNode;
-        node.results.push(new Nested({ property: result.property, column: result.column, javaType: result.javaType, select: result.select }));
+        node.results.push(new Nested({ property: result.property, column: result.column, javaType: result.javaType, select: qualify(result.select, 'STATEMENT') }));
         events.push(new ConversionEvent({
           grade: MigrationGrade.WARNING,
           code: 'NESTED_SELECT',

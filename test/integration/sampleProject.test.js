@@ -44,7 +44,6 @@ const EXPECTED_SQL_PARSE_FAILURES = new Set([
   'edge.rawSubstitutionOrderBy',        // ORDER BY $a$ $b$ -> "ORDER BY ? ?"
   'edge.dynamicTableName',              // FROM $tableName$ -> "FROM ?" is not a table
   'edge.mutuallyExclusiveFromBranches', // both branches kept -> two FROM tables
-  'edge.oracleOuterJoinOperator',       // Oracle (+) - no supported dialect parses it
   'frag.missingRefid',                  // the fragment never resolved, so nothing to parse
   'frag.circularRefid',                 // ditto, chain broken at the cycle
 ]);
@@ -432,8 +431,17 @@ test('scenario 9: every $...$ is flagged as an injection risk, per parameter', (
   assert.ok(dynamicTable.warnings.some((w) => w.code === 'RAW_SQL_SUBSTITUTION' && w.parameter === 'tableName'));
 });
 
+test('scenario 9: an Oracle (+) comma join is analysed as the outer join it is', () => {
+  // `WHERE C.CUSTOMER_ID = O.CUSTOMER_ID(+)`: C is kept, O is the optional side
+  const a = analysis('edge.oracleOuterJoinOperator');
+  assert.ok(!warningCodes(a.id).includes('SQL_PARSE_FAILED'));
+  assert.deepEqual(a.tables.map((t) => t.name).sort(), ['CUSTOMER', 'ORDERS']);
+  assert.deepEqual(a.joins.map((j) => [j.type, j.leftTable, j.rightTable]), [['LEFT_JOIN', 'CUSTOMER', 'ORDERS']]);
+  assert.equal(a.lineage.selects[0].joins[0].type, 'LEFT_JOIN');
+});
+
 test('scenario 9: unparseable SQL degrades to an empty analysis + a warning, and still converts', () => {
-  for (const id of ['edge.mutuallyExclusiveFromBranches', 'edge.oracleOuterJoinOperator']) {
+  for (const id of ['edge.mutuallyExclusiveFromBranches']) {
     const a = analysis(id);
     assert.ok(warningCodes(id).includes('SQL_PARSE_FAILED'));
     assert.deepEqual(a.tables, []);

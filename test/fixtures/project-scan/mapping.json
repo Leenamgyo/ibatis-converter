@@ -1,0 +1,7 @@
+{
+  "name": "legacy-app v2",
+  "mapping": {
+    "TB_ORD_H": { "targetTable": "ORDERS", "columns": { "ORD_NO": "ORDER_ID", "CUST_NO": "CUSTOMER_ID", "TOT_AMT": "TOTAL_AMOUNT", "ORD_STAT_CD": "STATUS" } },
+    "TB_CUST_M": { "targetTable": "CUSTOMER", "columns": { "CUST_NO": "CUSTOMER_ID", "CUST_NM": "CUSTOMER_NAME", "USE_YN": "IS_ACTIVE" } }
+  }
+}

@@ -1,12 +1,14 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { AnalyzerPipeline } from '../../application/AnalyzerPipeline.js';
+import fs from 'node:fs';
+import { ProjectSession, DirectorySource, createUploadSource } from '../../application/ProjectSession.js';
+import { DependencyAnalyzer } from '../../analyzer/dependency/DependencyAnalyzer.js';
+import { SessionManager } from './SessionManager.js';
 import { XmlGenerator } from '../../generator/xml/XmlGenerator.js';
 import { IbatisXmlGenerator } from '../../generator/xml/IbatisXmlGenerator.js';
-import { SqlSchemaMigrationConverter, validateMappingDefinition } from '../../converter/schema/index.js';
+import { validateMappingDefinition } from '../../converter/schema/index.js';
 import { DatasetStore } from './DatasetStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +47,8 @@ const DEFAULT_DATASET_DIR = path.resolve(__dirname, '..', '..', '..', 'data', 'd
  * schema-migration responses of a large project are tens of MB of XML text,
  * which compresses ~10x. Done with node:zlib: no compression dependency.
  */
+const isLoopback = (address = '') => address === '::1' || address.startsWith('127.') || address === '::ffff:127.0.0.1';
+
 function sendJson(req, res, body) {
   const json = JSON.stringify(body);
   if (json.length < 64 * 1024 || !/\bgzip\b/.test(req.headers['accept-encoding'] ?? '')) {
@@ -55,66 +59,139 @@ function sendJson(req, res, body) {
   res.send(gzipSync(json));
 }
 
-export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATASET_DIR } = {}) {
+export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATASET_DIR, sessionOptions = {} } = {}) {
   const app = express();
-  app.use(express.json({ limit: '20mb' }));
+  app.use(express.json({ limit: '100mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
+  // the folder upload decides "is this XML an iBATIS mapper?" with the same code as the CLI
+  app.get('/shared/mapperDetection.js', (req, res) => {
+    res.type('application/javascript').sendFile(path.resolve(__dirname, '..', '..', 'application', 'mapperDetection.js'));
+  });
 
-  const projects = new Map();
-  let lastProjectId = null;
+  const sessions = new SessionManager(sessionOptions);
+  app.locals.sessions = sessions;
 
   function resolveProject(req, res) {
-    const projectId = req.query.projectId ?? lastProjectId;
-    const project = projectId ? projects.get(projectId) : undefined;
+    const projectId = req.query.projectId ?? sessions.lastId;
+    const project = projectId ? sessions.get(projectId) : undefined;
     if (!project) {
-      res.status(404).json({ error: projectId ? `Unknown projectId "${projectId}"` : 'No project has been analyzed yet — POST /api/v1/projects/analyze first' });
+      res.status(404).json({ error: projectId ? `Unknown projectId "${projectId}" (closed or expired — open the project again)` : 'No project has been analyzed yet — POST /api/v1/projects/analyze first' });
       return null;
     }
     return project;
   }
 
-  app.post('/api/v1/projects/analyze', (req, res) => {
+  /** a session over uploaded `{ files }`: written to a temp dir, read back lazily */
+  function openUpload(req, res) {
     const files = req.body?.files;
     if (!Array.isArray(files) || files.some((f) => typeof f.sourceFile !== 'string' || typeof f.source !== 'string')) {
       res.status(400).json({ error: 'Expected { files: [{ sourceFile, source }] }' });
+      return null;
+    }
+    try {
+      return new ProjectSession(createUploadSource(files)).open();
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+      return null;
+    }
+  }
+
+  const indexBody = (projectId, session) => ({ projectId, ...session.summary() });
+
+  // Opening a project builds its index only; statements are analysed when they are asked for.
+  app.post('/api/v1/projects', (req, res) => {
+    const session = openUpload(req, res);
+    if (session) sendJson(req, res, indexBody(sessions.add(session), session));
+  });
+
+  // A folder on this machine, read in place (nothing is uploaded or copied). Local requests only:
+  // it reads the server's file system.
+  app.post('/api/v1/projects/open', (req, res) => {
+    if (!isLoopback(req.socket.remoteAddress)) {
+      res.status(403).json({ error: 'opening a server-side folder is allowed from this machine only' });
       return;
     }
+    const dir = req.body?.path;
+    if (typeof dir !== 'string' || !dir.trim() || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+      res.status(400).json({ error: 'Expected { path } naming an existing folder' });
+      return;
+    }
+    const session = new ProjectSession(new DirectorySource(dir)).open();
+    sendJson(req, res, indexBody(sessions.add(session), session));
+  });
 
-    const pipeline = new AnalyzerPipeline();
-    const result = pipeline.run(files);
+  app.get('/api/v1/projects/:projectId', (req, res) => {
+    const session = sessions.get(req.params.projectId);
+    if (!session) {
+      res.status(404).json({ error: `Unknown projectId "${req.params.projectId}"` });
+      return;
+    }
+    sendJson(req, res, indexBody(req.params.projectId, session));
+  });
 
-    const projectId = randomUUID();
-    projects.set(projectId, result);
-    lastProjectId = projectId;
+  app.get('/api/v1/projects/:projectId/stats', (req, res) => {
+    const session = sessions.get(req.params.projectId);
+    if (!session) {
+      res.status(404).json({ error: `Unknown projectId "${req.params.projectId}"` });
+      return;
+    }
+    res.json(session.stats());
+  });
 
+  app.delete('/api/v1/projects/:projectId', (req, res) => {
+    if (!sessions.close(req.params.projectId)) {
+      res.status(404).json({ error: `Unknown projectId "${req.params.projectId}"` });
+      return;
+    }
+    res.status(204).end();
+  });
+
+  // The whole-project analysis in one response (the original API). Computed from a session file
+  // by file; the session stays open for the follow-up GETs, the full result is not kept.
+  app.post('/api/v1/projects/analyze', (req, res) => {
+    const session = openUpload(req, res);
+    if (!session) return;
+    const projectId = sessions.add(session);
+    const report = session.report();
+    const summary = session.summary();
+    const generatedMapperXml = {};
+    for (const f of session.files) if (f.parsed) generatedMapperXml[f.sourceFile] = session.convertFile(f.sourceFile).xml;
     sendJson(req, res, {
       projectId,
-      mappers: result.mapperReports,
-      dependencies: result.dependencyGraph.toJSON(),
-      circularReferences: result.circularReferences.map((c) => c.path),
-      warnings: result.diagnostics.warnings,
-      errors: result.diagnostics.errors,
-      tables: result.tableUsageReport,
-      tableDependencyGraph: result.tableDependencyGraph,
-      generatedMapperXml: Object.fromEntries(result.generatedMapperXml),
+      mappers: report.mappers,
+      dependencies: session.graph.dependencyGraph.toJSON(),
+      circularReferences: summary.circularReferences,
+      warnings: summary.warnings,
+      errors: summary.errors,
+      tables: report.tables,
+      tableDependencyGraph: report.tableDependencyGraph,
+      generatedMapperXml,
     });
   });
 
+  const knownStatement = (session, id, res) => {
+    if (session.hasStatement(id)) return true;
+    res.status(404).json({ error: `Unknown statement id "${id}"` });
+    return false;
+  };
+
   app.get('/api/v1/statements/:id', (req, res) => {
     const project = resolveProject(req, res);
-    if (!project) return;
-    const analysis = project.statementAnalyses.get(req.params.id);
-    if (!analysis) {
-      res.status(404).json({ error: `Unknown statement id "${req.params.id}"` });
-      return;
-    }
-    res.json(analysis);
+    if (!project || !knownStatement(project, req.params.id, res)) return;
+    sendJson(req, res, project.analyze(req.params.id));
+  });
+
+  // the statement's original XML and the XML of every fragment it includes (sliced from the files)
+  app.get('/api/v1/statements/:id/xml', (req, res) => {
+    const project = resolveProject(req, res);
+    if (!project || !knownStatement(project, req.params.id, res)) return;
+    sendJson(req, res, project.statementXml(req.params.id));
   });
 
   app.get('/api/v1/tables/:tableName', (req, res) => {
     const project = resolveProject(req, res);
     if (!project) return;
-    const table = project.tableUsageReport[req.params.tableName];
+    const table = project.report().tables[req.params.tableName];
     if (!table) {
       res.status(404).json({ error: `Unknown table "${req.params.tableName}"` });
       return;
@@ -124,22 +201,14 @@ export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATA
 
   app.get('/api/v1/statements/:id/dependencies', (req, res) => {
     const project = resolveProject(req, res);
-    if (!project) return;
-    if (!project.statementAnalyses.has(req.params.id)) {
-      res.status(404).json({ error: `Unknown statement id "${req.params.id}"` });
-      return;
-    }
-    res.json(project.dependencyAnalyzer.buildStatementDependencyTree(req.params.id));
+    if (!project || !knownStatement(project, req.params.id, res)) return;
+    res.json(new DependencyAnalyzer(project.graph.dependencyGraph).buildStatementDependencyTree(req.params.id));
   });
 
   app.get('/api/v1/statements/:id/mybatis-preview', (req, res) => {
     const project = resolveProject(req, res);
-    if (!project) return;
-    const conversion = project.mybatisConversions.get(req.params.id);
-    if (!conversion) {
-      res.status(404).json({ error: `Unknown statement id "${req.params.id}"` });
-      return;
-    }
+    if (!project || !knownStatement(project, req.params.id, res)) return;
+    const conversion = project.convertStatement(req.params.id);
     res.json({ id: req.params.id, xml: conversion.xml, safetySummary: conversion.safetySummary, events: conversion.events });
   });
 
@@ -192,26 +261,64 @@ export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATA
   });
 
   // ---- run a schema migration over an analyzed project ------------------
-  app.post('/api/v1/schema-migration', (req, res) => {
-    const project = resolveProject(req, res);
-    if (!project) return;
-    const { datasetId, preserveResultColumnNames = false } = req.body ?? {};
+  /** the mapping of a request: { datasetId } or an inline { mapping }; null after answering an error */
+  function requestMapping(req, res) {
+    const { datasetId } = req.body ?? {};
     let mapping = req.body?.mapping ?? {};
     if (datasetId !== undefined) {
       const dataset = datasets.get(datasetId);
       if (!dataset) {
         res.status(404).json({ error: `Unknown dataset "${datasetId}"` });
-        return;
+        return null;
       }
       mapping = dataset.mapping;
     }
     const validation = validateMappingDefinition(mapping);
     if (!validation.valid) {
       res.status(400).json({ error: 'mapping is not valid', validation });
+      return null;
+    }
+    return mapping;
+  }
+  const migrationOptions = (req) => ({ preserveResultColumnNames: Boolean(req.body?.preserveResultColumnNames) });
+
+  // One statement: only its file, its fragments' files and (capped) their includers' are loaded.
+  app.post('/api/v1/statements/:id/schema-migration', (req, res) => {
+    const project = resolveProject(req, res);
+    if (!project || !knownStatement(project, req.params.id, res)) return;
+    const mapping = requestMapping(req, res);
+    if (mapping) sendJson(req, res, project.schemaMigration(req.params.id, mapping, migrationOptions(req)));
+  });
+
+  // Counts per statement (tree badges, totals), computed file by file.
+  app.post('/api/v1/schema-summary', (req, res) => {
+    const project = resolveProject(req, res);
+    if (!project) return;
+    const mapping = requestMapping(req, res);
+    if (mapping) sendJson(req, res, project.schemaSummary(mapping, migrationOptions(req)));
+  });
+
+  // The whole project in one response (export / the original API). Loads every file for the
+  // duration of this request only.
+  app.post('/api/v1/schema-migration', (req, res) => {
+    const project = resolveProject(req, res);
+    if (!project) return;
+    const mapping = requestMapping(req, res);
+    if (!mapping) return;
+    // `?file=` scopes it to one file (what the 변환 view asks for): that file's statements and
+    // fragments plus the fragments they include; only the files involved are loaded
+    const file = req.query.file;
+    if (file !== undefined) {
+      const scoped = project.migrateForFile(file, mapping, migrationOptions(req));
+      if (!scoped) {
+        res.status(404).json({ error: `Unknown mapper file "${file}"` });
+        return;
+      }
+      sendJson(req, res, shapeSchemaMigration(scoped.results, { files: new Set([file]), fragments: new Set(scoped.fragmentIds), sampled: scoped.sampled, project }));
       return;
     }
     // no dataset yet is fine: the view still shows the iBATIS -> MyBatis conversion
-    sendJson(req, res, runSchemaMigration(project, mapping, { preserveResultColumnNames: Boolean(preserveResultColumnNames) }));
+    sendJson(req, res, shapeSchemaMigration(project.migrateFiles(project.files.filter((f) => f.parsed).map((f) => f.sourceFile), mapping, migrationOptions(req))));
   });
 
   // The API answers in JSON even when the request never reached a route:
@@ -234,7 +341,7 @@ export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATA
 }
 
 /**
- * Re-runs `converter/schema` over a project and shapes the result for the
+ * Shapes a schema migration (`ProjectSession#migrateFiles`) for the
  * 변환 view. The migration runs twice — over the converted MyBatis ASTs and
  * over the original iBATIS ASTs — so the UI can show the column renames
  * with or without the iBATIS -> MyBatis syntax conversion. Per statement and
@@ -249,14 +356,9 @@ export function createApp({ datasetDir = process.env.DATASET_DIR ?? DEFAULT_DATA
  * a missing after as "unchanged"). Per file: its statement / fragment ids and
  * a summary.
  */
-function runSchemaMigration(project, mapping, options) {
+function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onlyFragments = null, sampled = new Map(), project = null } = {}) {
   const mybatisXml = new XmlGenerator();
   const ibatisXml = new IbatisXmlGenerator();
-  const converter = new SqlSchemaMigrationConverter(mapping, options);
-  const mybatisMappers = project.mybatisMappers;
-  const ibatisMappers = project.parsedMappers.filter((p) => p.sqlMap);
-  const mybatisResults = converter.convertMappers(mybatisMappers.map((m) => m.mapperNode));
-  const ibatisResults = converter.convertMappers(ibatisMappers.map((p) => p.sqlMap));
   const qualify = (namespace, id) => (namespace ? `${namespace}.${id}` : id);
   const tally = (events) => {
     const counts = { SAFE: 0, WARNING: 0, MANUAL: 0, ERROR: 0 };
@@ -286,22 +388,23 @@ function runSchemaMigration(project, mapping, options) {
   const statements = {};
   const fragments = {};
   const files = {};
-  mybatisResults.forEach(({ mapper: migrated, events }, m) => {
-    const { sourceFile, mapperNode: converted } = mybatisMappers[m];
-    const ibatisIndex = ibatisMappers.findIndex((p) => p.sourceFile === sourceFile);
-    const sqlMap = ibatisMappers[ibatisIndex].sqlMap;
-    const ibatisMigrated = ibatisResults[ibatisIndex].mapper;
+  for (const [sourceFile, result] of results) {
+    const { mapper: migrated, events, original: converted } = result.mybatis;
+    const { mapper: ibatisMigrated, original: sqlMap } = result.ibatis;
     const namespace = converted.namespace;
     const eventsOf = (id) => events.filter((e) => e.statementId === id).map(strip);
 
+    const outputFile = !onlyFiles || onlyFiles.has(sourceFile);
     converted.statements.forEach((statement, i) => {
+      if (!outputFile) return; // loaded only for a fragment's context
       const qualifiedId = qualify(namespace, statement.id);
       const own = eventsOf(statement.id);
-      const conversion = project.mybatisConversions.get(qualifiedId);
+      const conversion = result.conversion.statements.get(qualifiedId);
       statements[qualifiedId] = {
         sourceFile,
         ...texts(sqlMap.statements[i], ibatisMigrated.statements[i], statement, migrated.statements[i]),
-        includes: collectIncludes(statement, namespace),
+        // scoped: every fragment it includes, transitively, as resolved; whole project: as written
+        includes: project ? project.includedFragments(qualifiedId) : collectIncludes(statement, namespace),
         events: own,
         summary: tally(own),
         conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null,
@@ -309,8 +412,12 @@ function runSchemaMigration(project, mapping, options) {
     });
     converted.sqlFragments.forEach((fragment, i) => {
       const qualifiedId = qualify(namespace, fragment.id);
+      if (onlyFragments && !onlyFragments.has(qualifiedId)) return;
       const own = eventsOf(fragment.id);
-      const conversion = project.fragmentConversions.get(qualifiedId);
+      if (sampled.has(qualifiedId)) {
+        own.push({ grade: 'WARNING', code: 'FRAGMENT_CONTEXT_SAMPLED', statementId: fragment.id, message: `context inferred from ${project.schemaSiteFiles} of the ${sampled.get(qualifiedId)} files that include this fragment` });
+      }
+      const conversion = result.conversion.fragments.get(qualifiedId);
       fragments[qualifiedId] = {
         sourceFile,
         id: fragment.id,
@@ -320,13 +427,16 @@ function runSchemaMigration(project, mapping, options) {
         conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null,
       };
     });
+    if (!outputFile) continue;
     files[sourceFile] = {
       statements: converted.statements.map((s) => qualify(namespace, s.id)),
       fragments: converted.sqlFragments.map((f) => qualify(namespace, f.id)),
       summary: tally(events),
     };
-  });
-  const all = mybatisResults.flatMap((r) => r.events);
+  }
+  const all = onlyFiles
+    ? [...Object.values(statements), ...Object.values(fragments)].flatMap((e) => e.events)
+    : [...results.values()].flatMap((r) => r.mybatis.events);
   return { statements, fragments, files, summary: tally(all) };
 }
 

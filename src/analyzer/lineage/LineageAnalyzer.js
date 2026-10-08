@@ -259,7 +259,7 @@ export class LineageAnalyzer {
     // from the WHERE clause (see `analyzer/table/implicitJoins.js`).
     for (const implicit of findImplicitJoins(node.from, node.where, (alias) => this.#resolveAlias(select, alias))) {
       select.joins.push({
-        type: JoinType.IMPLICIT_JOIN,
+        type: implicit.outer ? JoinType.LEFT_JOIN : JoinType.IMPLICIT_JOIN, // Oracle (+): an outer join
         table: implicit.rightTable,
         alias: null,
         derived: false,

@@ -61,31 +61,54 @@ function renderLineageDashboard() {
   renderIncludeUsage();
   renderLegend();
 
-  const stillThere = lineageState.statementId && state.analysisById.has(lineageState.statementId);
+  const stillThere = lineageState.statementId && state.statementMeta.has(lineageState.statementId);
   const first = stillThere
     ? lineageState.statementId
-    : [...state.analysisById.values()].find((a) => a.type === 'SELECT')?.id ?? [...state.analysisById.keys()][0];
+    : [...state.statementMeta.values()].find((s) => s.type === 'SELECT')?.qualifiedId ?? [...state.statementMeta.keys()][0];
+  lineageState.statementId = null;
   if (first) selectLineageStatement(first);
 }
 
-function selectLineageStatement(qualifiedId) {
-  const analysis = state.analysisById.get(qualifiedId);
-  if (!analysis) return;
+let lineageLoadSeq = 0;
+
+/** Opens one statement: its analysis and XML are fetched now (see loadStatement), not at project load. */
+async function selectLineageStatement(qualifiedId) {
+  if (!state.statementMeta.has(qualifiedId)) return;
+  const seq = ++lineageLoadSeq;
+  for (const node of document.querySelectorAll('#lineageTree .node')) {
+    node.classList.toggle('loading', node.dataset.statementId === qualifiedId);
+  }
+  let doc;
+  try {
+    try {
+      doc = await loadStatement(qualifiedId);
+    } catch (e) {
+      if (e.status !== 404 || !(await reopenProject())) throw e;
+      doc = await loadStatement(qualifiedId); // the session had expired: reopened, retried once
+    }
+  } catch (e) {
+    if (seq !== lineageLoadSeq) return;
+    const message = e.status === 404
+      ? '프로젝트가 서버에서 닫혔습니다 (30분 미사용 또는 서버 재시작). 프로젝트를 다시 열어 주세요.'
+      : `${qualifiedId}: ${e.message}`;
+    document.getElementById('dashStats').replaceChildren(el('div', { class: 'sm-callout error' }, message));
+    return;
+  } finally {
+    if (seq === lineageLoadSeq) for (const node of document.querySelectorAll('#lineageTree .node.loading')) node.classList.remove('loading');
+  }
+  if (seq !== lineageLoadSeq) return; // a later click won
 
   lineageState.statementId = qualifiedId;
-  lineageState.analysis = analysis;
-  lineageState.sourceFile = state.statementFile.get(qualifiedId) ?? null;
+  lineageState.doc = doc;
+  lineageState.analysis = doc.analysis;
+  lineageState.sourceFile = doc.sourceFile;
   lineageState.collapsed = new Set();
   lineageState.selectedNodeId = null;
   lineageState.selectedColumn = null;
-
-  const source = state.files.get(lineageState.sourceFile);
-  const parsed = source ? parseMapperSource(source) : null;
-  lineageState.namespace = parsed?.namespace ?? null;
-  const localId = qualifiedId.split('.').pop();
-  lineageState.stmtEl = parsed
-    ? [...parsed.sqlMapEl.children].find((e) => STATEMENT_TAGS.has(e.tagName) && e.getAttribute('id') === localId) ?? null
-    : null;
+  lineageState.namespace = doc.namespace ?? null;
+  lineageState.stmtEl = parseSlice(doc.xml, doc.namespace);
+  lineageState.fragments = fragmentElements(doc);
+  if (lineageState.collapsedTree.delete(`file:${doc.sourceFile}`)) renderXmlTree(); // reveal it in a folded tree
 
   for (const node of document.querySelectorAll('#lineageTree .node')) {
     const selected = node.dataset.statementId === qualifiedId;
@@ -120,8 +143,7 @@ function renderDashStats() {
     host.replaceChildren();
     return;
   }
-  const source = state.files.get(sourceFile) ?? '';
-  const lines = source ? source.split('\n').length : 0;
+  const lines = lineageState.doc?.lines ?? 0;
   const counts = analysis.lineage?.counts ?? { selects: 0, subqueries: 0, unions: 0, joins: 0 };
 
   host.replaceChildren(
@@ -138,7 +160,7 @@ function renderDashStats() {
     statBox('XML 라인 수', lines.toLocaleString()),
     statBox('SELECT 구문', counts.selects),
     statBox('Include/Refid', analysis.includes.length),
-    statBox('테이블', analysis.tables.length),
+    statBox('테이블', analysis.tables.filter((t) => !t.derived).length), // subqueries / CTEs aren't tables
     // Joins come from the lineage tree, which also sees the joins inside
     // subqueries and onto derived tables that the flat table analysis
     // reports against no named table.
@@ -184,24 +206,23 @@ function renderXmlTree() {
   const host = document.getElementById('lineageTree');
   const tree = el('div', { class: 'xml-tree' });
 
-  for (const mapper of state.mappers) {
-    const source = state.files.get(mapper.sourceFile) ?? '';
-    const parsed = source ? parseMapperSource(source) : null;
+  // built from the index alone: no file is read or parsed to draw the tree
+  for (const mapper of state.index?.files ?? []) {
     const fileKey = `file:${mapper.sourceFile}`;
     tree.appendChild(treeRow({
       depth: 0,
-      label: `${mapper.sourceFile} (${source ? source.split('\n').length.toLocaleString() : 0})`,
+      label: `${mapper.sourceFile} (${mapper.lines.toLocaleString()})`,
       toggleKey: fileKey,
     }));
     if (lineageState.collapsedTree.has(fileKey)) continue;
 
-    const fragments = parsed ? [...parsed.sqlMapEl.children].filter((c) => c.tagName === 'sql') : [];
+    const fragments = mapper.fragments;
     if (fragments.length) {
       const key = `${fileKey}:sql`;
       tree.appendChild(treeRow({ depth: 1, kind: 'sql', label: 'sql', count: fragments.length, toggleKey: key }));
       if (!lineageState.collapsedTree.has(key)) {
         for (const fragment of fragments) {
-          tree.appendChild(treeRow({ depth: 2, label: fragment.getAttribute('id') ?? '(no id)' }));
+          tree.appendChild(treeRow({ depth: 2, label: fragment.id }));
         }
       }
     }
@@ -216,7 +237,7 @@ function renderXmlTree() {
       tree.appendChild(treeRow({ depth: 1, kind: type, label: type.toLowerCase(), count: statements.length, toggleKey: key }));
       if (lineageState.collapsedTree.has(key)) continue;
       for (const stmt of statements) {
-        tree.appendChild(treeRow({ depth: 2, label: stmt.id.split('.').pop(), statementId: stmt.id }));
+        tree.appendChild(treeRow({ depth: 2, label: stmt.id, statementId: stmt.qualifiedId }));
       }
     }
   }
@@ -228,10 +249,8 @@ function renderXmlTree() {
 
 function renderIncludeUsage() {
   const host = document.getElementById('lineageIncludeUsage');
-  const counts = new Map();
-  for (const analysis of state.analysisById.values()) {
-    for (const refid of analysis.includes) counts.set(refid, (counts.get(refid) ?? 0) + 1);
-  }
+  // statements that include each fragment (directly or through another fragment), from the index
+  const counts = new Map(Object.entries(state.index?.includeUsage ?? {}));
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
   if (!ranked.length) {
     host.replaceChildren(el('div', { class: 'side-empty' }, 'no <include refid> in this project'));
@@ -305,7 +324,7 @@ function columnList(columns, limit = 8) {
 /** The `<sql>` fragments this statement splices in, with their real query text (never just the name). */
 function buildRefidCluster(analysis) {
   if (!analysis.includes.length) return null;
-  const fragments = collectSqlFragmentElements();
+  const fragments = lineageState.fragments ?? new Map();
   const body = el('div', { class: 'cluster-body' });
 
   for (const refid of analysis.includes) {
@@ -955,28 +974,12 @@ function sideCard(title, count, ...body) {
 
 /** resultMap (following `extends`) or resultClass — how the aliases land in Java. */
 function resultMapChain(name) {
-  const chain = [];
-  const seen = new Set();
-  let current = name;
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    let found = null;
-    for (const [file, source] of state.files) {
-      const parsed = parseMapperSource(source);
-      if (!parsed) continue;
-      const local = current.includes('.') ? current.split('.').pop() : current;
-      const qualifies = !current.includes('.') || current.startsWith(`${parsed.namespace}.`);
-      const match = [...parsed.sqlMapEl.children].find((c) => c.tagName === 'resultMap' && c.getAttribute('id') === local);
-      if (match && qualifies) {
-        found = { element: match, file };
-        break;
-      }
-    }
-    if (!found) break;
-    chain.push(found.element);
-    current = found.element.getAttribute('extends');
-  }
-  return chain;
+  // resolved by the server with the resolver's rules and sent with the statement, leaf first
+  if (!name) return [];
+  return (lineageState.doc?.resultMaps ?? []).map((entry) => {
+    const dot = entry.qualifiedId.lastIndexOf('.');
+    return parseSlice(entry.xml, dot === -1 ? null : entry.qualifiedId.slice(0, dot));
+  }).filter(Boolean);
 }
 
 function renderRightPanel() {

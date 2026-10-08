@@ -54,10 +54,15 @@ check this first.
 
 ## Recovering from a dead project
 
-Analyzed projects live in the server's memory, so a server restart
-invalidates the `projectId` the page holds. `selectStatement()` catches
-the failed fetch, re-runs the analysis from the files still held
-client-side, and retries once — rather than sitting on "Loading…" forever.
+Projects are server sessions (see large-projects.md). A session closes
+after 30 idle minutes, and a server restart loses all of them, so the
+`projectId` the page holds can die. When opening a statement gets a 404,
+`selectLineageStatement()` reacts by how the project was opened:
+
+- **Opened by path:** it reopens the folder in place (`reopenProject()`)
+  and retries once.
+- **Uploaded:** it says the project was closed and has to be opened again,
+  because the browser deliberately keeps no copy of uploaded files.
 
 ## Removed screens
 

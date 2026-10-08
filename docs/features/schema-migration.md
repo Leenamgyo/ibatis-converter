@@ -63,7 +63,11 @@ FROM counts for the includer) and converted on its own, using
 see (`fragmentContexts` can also be given to the `SqlSchemaMigrationConverter`
 constructor, which is how it reaches a pipeline run). A fragment nothing
 includes has no context: its legacy columns are left as is and reported
-(`NO_TABLE_CONTEXT` / `UNRESOLVED_QUALIFIER`). If two include sites would convert it differently, it is left alone and
+(`NO_TABLE_CONTEXT` / `UNRESOLVED_QUALIFIER`). A fragment
+included in a FROM clause (`FROM <include refid="tables"/>`,
+`FROM a A, <include .../>`) is read as the continuation of that FROM: its
+`TB_X X, TB_Y Y` is a table list and gets renamed (the scanner records the
+clause state at each include marker). If two include sites would convert it differently, it is left alone and
 flagged as MANUAL. Consecutive `<if>`s
 at a table position are treated as alternatives (`FROM <if>A</if><if>B</if>`).
 

@@ -36,8 +36,9 @@
     WHERE O.STATUS = #status#
   </select>
 
-  <!-- Oracle's (+) outer join operator: not supported by any dialect
-       node-sql-parser offers (see docs/SPEC_MAPPING.md). -->
+  <!-- Oracle's (+) outer join operator: no SQL parser dialect accepts it, so the
+       analyzer takes it out before parsing and reports the join as a LEFT JOIN
+       (C kept, O optional). See SqlAnalyzer#stripOracleOuterJoins. -->
   <select id="oracleOuterJoinOperator" parameterClass="map" resultClass="map">
     SELECT O.ORDER_ID, C.CUSTOMER_NAME
     FROM ORDERS O, CUSTOMER C

@@ -50,6 +50,13 @@ Plain Node.js (ESM, `"type": "module"`), no TypeScript, no bundler.
   uses no diagram library: containment is nested DOM and edges are one
   measured SVG layer (see `docs/ARCHITECTURE.md`). Run `npm start` and open
   `http://localhost:3000`.
+- Whole-project input: `application/ProjectLoader.scanProject` and the
+  CLI `interfaces/cli/migrate.js` (`npm run migrate -- <dir>`) find iBATIS
+  mappers by root element `<sqlMap>`. They skip build output
+  (`target/`, `build/` …: copies) and decode a declared EUC-KR/MS949.
+  `application/mapperDetection.js` holds that logic, has no Node built-ins,
+  and is served to the browser at `/shared/mapperDetection.js` for the
+  **프로젝트 폴더** upload, so the CLI and the UI pick the same files.
 - The "Load sample" project is real files under
   `src/interfaces/api/public/samples/` (fetched at click time, listed in
   `manifest.json`) — one mapper per scenario, and the same files
@@ -116,7 +123,12 @@ silent.
   namespace) — see `resolver/symbol/ProjectScanner.js#qualify`.
 - **Package boundaries are real boundaries.** `parser` never imports
   `converter`; `analyzer` never imports `generator`; only
-  `application/AnalyzerPipeline.js` is allowed to wire stages together.
+  `application/AnalyzerPipeline.js` and `application/ProjectSession.js`
+  are allowed to wire stages together.
+- **Never load a whole project.** The API, UI and CLI go through
+  `ProjectSession`: an index on open, then per statement / per file through
+  bounded caches (see `docs/features/large-projects.md`). Don't add an
+  endpoint or UI state that holds every file's text, AST or analysis.
   Keep it that way so each package stays independently unit-testable.
 
 ## Current status (see docs/SPEC_MAPPING.md for detail)

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE sqlMap PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN" "http://ibatis.apache.org/dtd/sql-map-2.dtd">
+<!-- order mapper -->
+<sqlMap namespace="order">
+  <select id="findOrders" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT O.ORD_NO, O.CUST_NO, O.TOT_AMT
+      FROM TB_ORD_H O
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="custNo" prepend="AND">O.CUST_NO = #custNo#</isNotEmpty>
+      <isEqual property="bigOnly" compareValue="Y" prepend="AND">O.TOT_AMT &gt; 100000</isEqual>
+    </dynamic>
+  </select>
+  <update id="updateStatus" parameterClass="map">
+    UPDATE TB_ORD_H SET ORD_STAT_CD = #stat# WHERE ORD_NO = #ordNo#
+  </update>
+</sqlMap>

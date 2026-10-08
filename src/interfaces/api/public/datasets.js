@@ -427,7 +427,7 @@ async function saveDataset({ thenShow = false } = {}) {
   }
   schemaState.datasetId = e.id;
   writeStored('schema.datasetId', e.id);
-  schemaState.result = null;
+  invalidateSchemaResult();
   renderDatasetList();
   if (thenShow) {
     showScreen('analysis');

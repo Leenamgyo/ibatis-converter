@@ -107,6 +107,7 @@
 .xml-tree { font-size: 0.78rem; padding: 0.35rem 0; }
 .xml-tree .node { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.6rem; cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: var(--text); font: inherit; }
 .xml-tree .node:hover { background: var(--bg-sunken); }
+.xml-tree .node.loading { opacity: 0.6; cursor: progress; }
 .xml-tree .node.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .xml-tree .node.search-hit { box-shadow: inset 2px 0 0 var(--warning); }
 .xml-tree .twisty { width: 0.7rem; flex: none; color: var(--text-faint); font-size: 0.6rem; }

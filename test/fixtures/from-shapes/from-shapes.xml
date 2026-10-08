@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="fromShapes">
+
+  <sql id="itemTable">TB_ORD_D D</sql>
+
+  <!-- 1. plain comma join -->
+  <select id="commaJoin" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO, C.CUST_NM, D.PRD_CD
+      FROM TB_ORD_H H, TB_CUST_M C, TB_ORD_D D
+     WHERE C.CUST_NO = H.CUST_NO
+       AND D.ORD_NO = H.ORD_NO
+       AND H.ORD_NO = #ordNo#
+  </select>
+
+  <!-- 2. comma join with Oracle (+) outer join -->
+  <select id="commaOuterJoin" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO, C.CUST_NM
+      FROM TB_ORD_H H, TB_CUST_M C
+     WHERE C.CUST_NO(+) = H.CUST_NO
+       AND H.ORD_STAT_CD = #stat#
+  </select>
+
+  <!-- 3. FROM <include>: the fragment is the table list (cross-file) -->
+  <select id="fromIncludeTables" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO, C.CUST_NM
+      FROM <include refid="fromCommon.orderTables"/>
+     WHERE 1 = 1
+     <include refid="fromCommon.orderJoinCond"/>
+     <isNotEmpty property="custNo" prepend="AND">C.CUST_NO = #custNo#</isNotEmpty>
+  </select>
+
+  <!-- 4. <include> carries the whole FROM, keyword included -->
+  <select id="includeWholeFrom" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO, C.CUST_NM
+    <include refid="fromCommon.orderFromJoin"/>
+     WHERE H.TOT_AMT &gt; 0
+  </select>
+
+  <!-- 5. mixed: one table written, the next one from an include -->
+  <select id="fromMixed" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT H.ORD_NO, D.PRD_CD
+      FROM TB_ORD_H H, <include refid="itemTable"/>
+     WHERE D.ORD_NO = H.ORD_NO
+  </select>
+
+  <!-- 6. unqualified columns, single table supplied by an include -->
+  <select id="fromIncludeUnqualified" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT ORD_NO, ITEM_SEQ FROM <include refid="itemTable"/> WHERE ORD_NO = #ordNo#
+  </select>
+
+  <!-- 7. comma join inside a subquery, and in a dynamic block -->
+  <select id="commaInSubquery" parameterClass="map" resultClass="java.util.HashMap">
+    SELECT X.ORD_NO, X.CUST_NM
+      FROM (SELECT H.ORD_NO, C.CUST_NM FROM TB_ORD_H H, TB_CUST_M C WHERE C.CUST_NO = H.CUST_NO) X
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="ordNo" prepend="AND">X.ORD_NO = #ordNo#</isNotEmpty>
+    </dynamic>
+  </select>
+
+</sqlMap>

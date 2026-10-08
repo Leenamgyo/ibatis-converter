@@ -127,7 +127,9 @@ function walkFrom(fromArray, ctx) {
 
     const tableName = entry.table;
     const alias = entry.as ?? null;
-    ctx.tables.push(new TableUsage({ name: tableName, alias, operation: TableOperation.READ }));
+    // a CTE referenced in FROM is a derived table too, not a table of the schema
+    const cte = ctx.cteNames.has(String(tableName).toUpperCase());
+    ctx.tables.push(new TableUsage({ name: tableName, alias, operation: TableOperation.READ, derived: cte }));
     if (alias) ctx.aliasMap.set(alias, tableName);
     ctx.aliasMap.set(tableName, tableName);
 
@@ -141,6 +143,13 @@ function walkFrom(fromArray, ctx) {
 }
 
 function analyzeSelect(node, ctx) {
+  // WITH name AS (...): the CTE bodies read real tables — analyse them, and remember the
+  // names so a FROM that references one is reported as derived, not as a table
+  for (const cte of node.with ?? []) {
+    const name = cte.name?.value ?? cte.name;
+    if (name) ctx.cteNames.add(String(name).toUpperCase());
+    analyzeNode(cte.stmt?.ast ?? cte.stmt, ctx);
+  }
   if (node.from) walkFrom(node.from, ctx);
 
   for (const col of node.columns ?? []) {
@@ -158,7 +167,7 @@ function analyzeSelect(node, ctx) {
       ctx.joins.push(new JoinRelation({
         leftTable: implicit.leftTable,
         rightTable: implicit.rightTable,
-        type: JoinType.IMPLICIT_JOIN,
+        type: implicit.outer ? JoinType.LEFT_JOIN : JoinType.IMPLICIT_JOIN, // Oracle (+): an outer join
         conditions: extractJoinConditions(implicit.condition, ctx),
       }));
     }
@@ -231,7 +240,7 @@ function analyzeNode(node, ctx) {
 function dedupeTables(tables) {
   const seen = new Map();
   for (const t of tables) {
-    const key = `${t.name} ${t.alias ?? ''} ${t.operation}`;
+    const key = `${t.name}\u0000${t.alias ?? ''}\u0000${t.operation}`;
     if (!seen.has(key)) seen.set(key, t);
   }
   return [...seen.values()];
@@ -243,7 +252,7 @@ export class TableAnalyzer {
    * @returns {{ tables: TableUsage[], columns: ColumnUsage[], joins: JoinRelation[], where: object|null, whereTrees: object[] }}
    */
   analyze(sqlAst) {
-    const ctx = { tables: [], joins: [], columns: [], whereTrees: [], aliasMap: new Map() };
+    const ctx = { tables: [], joins: [], columns: [], whereTrees: [], aliasMap: new Map(), cteNames: new Set() };
     const nodes = Array.isArray(sqlAst) ? sqlAst : [sqlAst];
     for (const node of nodes) analyzeNode(node, ctx);
     return {

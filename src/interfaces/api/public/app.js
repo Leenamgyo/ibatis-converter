@@ -32,14 +32,15 @@ async function loadSampleProject(kind = 'basic') {
  * State                                                                *
  * ------------------------------------------------------------------ */
 const state = {
-  files: new Map(), // sourceFile -> raw text
+  // picked files' text, only until they are uploaded (then dropped: the server reads them from disk)
+  pendingFiles: new Map(),
   projectId: null,
-  mappers: [], // MapperReport[]
+  // the project index (GET /projects/:id): files, statement / fragment ids, include usage — no text
+  index: null,
   statementFile: new Map(), // qualifiedId -> sourceFile
-  tableUsageReport: {},
-  tableDependencyGraph: {},
-  analysisById: new Map(), // qualifiedId -> StatementAnalysis (incl. its lineage)
-  generatedMapperXml: {}, // sourceFile -> converted MyBatis 3.x XML (MyBatis tab)
+  statementMeta: new Map(), // qualifiedId -> index entry ({ type, line, parameterClass, ... })
+  // a few recently opened statements (analysis + XML slices); older ones are dropped
+  docs: new Map(),
   activeView: 'lineage',
   sampleKind: null, // 'basic' | 'advanced' when a demo project is loaded (picks its sample dataset)
   currentOriginal: null, // { text, localId } for the statement currently shown in the diff panes
@@ -63,7 +64,11 @@ async function api(path, opts) {
   const url = new URL(path, window.location.origin);
   if (state.projectId && !url.searchParams.has('projectId')) url.searchParams.set('projectId', state.projectId);
   const res = await fetch(url, opts);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${path}`);
+  if (!res.ok) {
+    const error = new Error(`${res.status} ${res.statusText} for ${path}`);
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 }
 
@@ -74,20 +79,159 @@ const fileInput = document.getElementById('fileInput');
 const analyzeBtn = document.getElementById('analyzeBtn');
 const fileCount = document.getElementById('fileCount');
 
+const DOC_CACHE = 24;
+const LARGE_TREE = 1500; // statements; above this the tree opens folded
+
+/**
+ * One statement's analysis and XML (its own element, its fragments', its
+ * resultMap chain), fetched when it is opened. Kept in a small LRU so going
+ * back and forth is instant, but a project is never held whole.
+ */
+async function loadStatement(qualifiedId) {
+  const cached = state.docs.get(qualifiedId);
+  if (cached) {
+    state.docs.delete(qualifiedId);
+    state.docs.set(qualifiedId, cached);
+    return cached;
+  }
+  const projectId = state.projectId;
+  const id = encodeURIComponent(qualifiedId);
+  const [analysis, xml] = await Promise.all([api(`/api/v1/statements/${id}`), api(`/api/v1/statements/${id}/xml`)]);
+  const doc = { analysis, ...xml };
+  if (projectId !== state.projectId) return doc; // another project was opened meanwhile
+  state.docs.set(qualifiedId, doc);
+  while (state.docs.size > DOC_CACHE) state.docs.delete(state.docs.keys().next().value);
+  return doc;
+}
+
+/** an XML slice from the server, parsed as the child of a <sqlMap> of its namespace */
+function parseSlice(xml, namespace) {
+  const attr = namespace ? ` namespace="${namespace.replace(/[&"<]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;' })[c])}"` : '';
+  return parseMapperSource(`<sqlMap${attr}>${xml}</sqlMap>`)?.sqlMapEl.firstElementChild ?? null;
+}
+
+/** the fragments a loaded statement includes, as elements keyed by qualified id */
+function fragmentElements(doc) {
+  const map = new Map();
+  for (const [qualifiedId, fragment] of Object.entries(doc?.fragments ?? {})) {
+    const element = parseSlice(fragment.xml, fragment.namespace);
+    if (element) map.set(qualifiedId, element);
+  }
+  return map;
+}
+
+/**
+ * The server closes idle projects (30 min) and forgets them on restart. A
+ * folder opened by path is reopened in place; an upload has to be picked
+ * again — the browser deliberately kept no copy of it.
+ */
+async function reopenProject() {
+  if (!state.openedPath) return false;
+  const res = await fetch('/api/v1/projects/open', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: state.openedPath }),
+  });
+  if (!res.ok) return false;
+  const index = await res.json();
+  state.projectId = index.projectId;
+  state.index = index;
+  state.docs = new Map();
+  invalidateSchemaResult();
+  return true;
+}
+
+/** Closes the open project on the server (its caches and any uploaded copy go with it). */
+function closeProject() {
+  if (!state.projectId) return;
+  fetch(`/api/v1/projects/${state.projectId}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+  state.projectId = null;
+}
+window.addEventListener('pagehide', closeProject);
+
 function setFiles(map) {
-  state.files = map;
+  state.pendingFiles = map;
   fileCount.textContent = map.size ? `${map.size} file${map.size === 1 ? '' : 's'} ready` : '';
   analyzeBtn.disabled = map.size === 0;
 }
 
 fileInput.addEventListener('change', async () => {
   const map = new Map();
+  const { decodeXml } = await import('/shared/mapperDetection.js');
   for (const file of fileInput.files) {
-    map.set(file.name, await file.text());
+    map.set(file.name, decodeXml(new Uint8Array(await file.arrayBuffer())).text);
   }
   state.sampleKind = null;
   setFiles(map);
 });
+
+/**
+ * A whole project folder: keep only iBATIS mappers (root <sqlMap>), skip
+ * build output (target/, build/, node_modules/ ...: Maven's target/classes
+ * holds a copy of every mapper) and decode EUC-KR / MS949 when declared —
+ * with the same code the CLI uses (src/application/mapperDetection.js).
+ */
+const folderInput = document.getElementById('folderInput');
+folderInput.addEventListener('change', async () => {
+  const { decodeXml, classifyXml, isInSkippedDirectory, SKIP_REASONS } = await import('/shared/mapperDetection.js');
+  const map = new Map();
+  const skipped = [];
+  let buildCopies = 0;
+  fileCount.textContent = '폴더 읽는 중…';
+  for (const file of folderInput.files) {
+    const relative = file.webkitRelativePath || file.name;
+    if (!relative.toLowerCase().endsWith('.xml')) continue;
+    // drop the picked folder's own name, keep the path inside it
+    const inside = relative.split('/').slice(1).join('/') || relative;
+    if (isInSkippedDirectory(inside)) {
+      buildCopies++;
+      continue;
+    }
+    const { text } = decodeXml(new Uint8Array(await file.arrayBuffer()));
+    const kind = classifyXml(text);
+    if (kind === 'IBATIS_MAPPER') map.set(inside, text);
+    else skipped.push(`${inside} — ${SKIP_REASONS[kind]}`);
+  }
+  folderInput.value = '';
+  state.sampleKind = null;
+  setFiles(map);
+  const total = map.size + skipped.length;
+  fileCount.textContent = map.size
+    ? `매퍼 ${map.size}개 (XML ${total}개 중${buildCopies ? ` · 빌드 폴더 ${buildCopies}개 제외` : ''})`
+    : `iBATIS 매퍼를 찾지 못했습니다 (XML ${total}개)`;
+  fileCount.title = skipped.length ? `건너뛴 XML:\n${skipped.join('\n')}` : '';
+  if (map.size) runAnalysis().catch((e) => alert(`Analysis failed: ${e.message}`));
+});
+
+/**
+ * A folder on this machine, by path: the server indexes it in place and reads
+ * each file only when a statement in it is opened — nothing is uploaded, and
+ * the browser never holds the files.
+ */
+document.getElementById('pathForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const dir = document.getElementById('pathInput').value.trim();
+  if (!dir) return;
+  fileCount.textContent = '여는 중…';
+  try {
+    const res = await fetch('/api/v1/projects/open', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: dir }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? res.status);
+    state.sampleKind = null;
+    await openProject(body);
+    state.openedPath = dir; // a closed session (idle timeout, restart) can be reopened from it
+    fileCount.textContent = `매퍼 ${body.totals.files}개 · statement ${body.totals.statements.toLocaleString()}개${body.skipped.length ? ` · XML ${body.skipped.length}개 제외` : ''}`;
+    fileCount.title = body.skipped.length ? `건너뛴 XML:\n${body.skipped.map((x) => `${x.sourceFile} — ${x.reason}`).join('\n')}` : '';
+    try { localStorage.setItem('project.path', dir); } catch { /* not remembered */ }
+  } catch (err) {
+    fileCount.textContent = `열기 실패: ${err.message}`;
+  }
+});
+try { document.getElementById('pathInput').value = localStorage.getItem('project.path') ?? ''; } catch { /* storage unavailable */ }
 
 document.getElementById('sampleBtn').addEventListener('click', () => {
   loadSampleProject('basic').catch((e) => alert(`Could not load the sample project: ${e.message}`));
@@ -217,37 +361,16 @@ function parseMapperSource(source) {
 }
 
 /**
- * Every `<sql id="...">` fragment in every currently loaded file, keyed by
- * namespace-qualified id (`ProjectScanner#qualify`'s rule), so an
- * `<include refid>` can be expanded inline in the flow diagram instead of
- * being a dead-end node naming a fragment you'd have to go look up.
+ * Resolves an `<include refid>` the way the ReferenceResolver does: an
+ * already-qualified id, then the including mapper's own namespace, then — a
+ * bare id under iBATIS's default useStatementNamespaces=false — the one
+ * fragment of that id in any mapper (none if two mappers define it).
  */
-function collectSqlFragmentElements() {
-  const byQualifiedId = new Map();
-  for (const source of state.files.values()) {
-    let doc;
-    try {
-      doc = new DOMParser().parseFromString(source, 'application/xml');
-    } catch {
-      continue;
-    }
-    if (doc.querySelector('parsererror')) continue;
-    const sqlMapEl = doc.querySelector('sqlMap');
-    if (!sqlMapEl) continue;
-    const namespace = sqlMapEl.getAttribute('namespace');
-    for (const child of sqlMapEl.children) {
-      if (child.tagName !== 'sql') continue;
-      const id = child.getAttribute('id');
-      if (!id) continue;
-      byQualifiedId.set(namespace ? `${namespace}.${id}` : id, child);
-    }
-  }
-  return byQualifiedId;
-}
-
-/** Resolves an `<include refid>` the way `ProjectScanner#qualify` does: an already-qualified id first, then the including mapper's own namespace. */
 function resolveFragmentElement(refid, fragments, namespace) {
-  return fragments.get(refid) ?? (namespace ? fragments.get(`${namespace}.${refid}`) : undefined);
+  const direct = fragments.get(refid) ?? (namespace ? fragments.get(`${namespace}.${refid}`) : undefined);
+  if (direct || refid.includes('.')) return direct;
+  const matches = [...fragments].filter(([qualifiedId]) => qualifiedId.endsWith(`.${refid}`) || qualifiedId === refid);
+  return matches.length === 1 ? matches[0][1] : undefined;
 }
 
 /**
@@ -323,29 +446,36 @@ function splitSqlClauses(sql) {
  * Analysis run                                                         *
  * ------------------------------------------------------------------ */
 async function runAnalysis() {
-  const files = [...state.files.entries()].map(([sourceFile, source]) => ({ sourceFile, source }));
-  const res = await fetch('/api/v1/projects/analyze', {
+  const files = [...state.pendingFiles.entries()].map(([sourceFile, source]) => ({ sourceFile, source }));
+  const res = await fetch('/api/v1/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ files }),
   });
-  if (!res.ok) throw new Error(`analyze failed: ${res.status}`);
-  const body = await res.json();
+  if (!res.ok) throw new Error(`open failed: ${res.status}`);
+  await openProject(await res.json());
+}
 
-  state.projectId = body.projectId;
-  state.mappers = body.mappers;
-  state.tableUsageReport = body.tables;
-  state.tableDependencyGraph = body.tableDependencyGraph;
-  state.generatedMapperXml = body.generatedMapperXml ?? {};
-  schemaState.result = null; // a new project invalidates the last migration run
+/** Shows a project from its index (POST /projects or /projects/open): nothing is analysed yet. */
+async function openProject(index) {
+  closeProject();
+  state.openedPath = null;
+  // the server has the files now; the browser keeps no copy of their text
+  state.pendingFiles = new Map();
+  state.projectId = index.projectId;
+  state.index = index;
+  state.docs = new Map();
   state.statementFile = new Map();
-  state.analysisById = new Map();
-  for (const mapper of body.mappers) {
-    for (const stmt of mapper.statements) {
-      state.statementFile.set(stmt.id, mapper.sourceFile);
-      state.analysisById.set(stmt.id, stmt);
+  state.statementMeta = new Map();
+  for (const file of index.files) {
+    for (const stmt of file.statements) {
+      state.statementFile.set(stmt.qualifiedId, file.sourceFile);
+      state.statementMeta.set(stmt.qualifiedId, stmt);
     }
   }
+  invalidateSchemaResult(); // a new project invalidates the last migration run
+  // a big project starts with its files folded: only the open statement's file is expanded
+  lineageState.collapsedTree = new Set(index.totals.statements > LARGE_TREE ? index.files.map((f) => `file:${f.sourceFile}`) : []);
 
   showScreen('analysis');
   document.getElementById('emptyState').hidden = true;
@@ -353,4 +483,3 @@ async function runAnalysis() {
   renderLineageDashboard();
   showView(state.activeView);
 }
-

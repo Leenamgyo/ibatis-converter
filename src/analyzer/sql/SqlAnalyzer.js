@@ -12,9 +12,10 @@ const parser = new Parser();
  * `mysql` is both permissive enough to accept `?` and permissive enough to
  * parse portable ANSI JOIN/subquery/UNION SQL that also happens to be
  * valid Oracle SQL, so it's used as the closest available stand-in.
- * Oracle-only extensions (ROWNUM, DUAL, the `(+)` outer-join operator,
- * MERGE) are NOT supported by any available dialect and will fail to
- * parse — see docs/SPEC_MAPPING.md.
+ * Oracle-only extensions (CONNECT BY, MERGE ...) are NOT supported by any
+ * available dialect and fail to parse — see docs/SPEC_MAPPING.md. The one
+ * exception is the `(+)` outer-join marker, which legacy comma joins are
+ * full of: see `stripOracleOuterJoins`.
  */
 const DIALECT_ALIASES = Object.freeze({ oracle: 'mysql' });
 
@@ -25,6 +26,65 @@ const DIALECT_ALIASES = Object.freeze({ oracle: 'mysql' });
  * parse (unsupported dialect feature, or a flattening edge case) so one
  * unparseable statement never aborts analysis of the rest of a project.
  */
+/**
+ * Oracle's `(+)` marks the optional side of an outer join written as a comma
+ * join: `FROM A, B WHERE A.X = B.X(+)` is `A LEFT JOIN B ON A.X = B.X`. No
+ * parser dialect accepts it, so for ANALYSIS (never for conversion output)
+ * the marker is taken out of the flattened SQL, outside string literals and
+ * comments, and the column it was attached to is remembered. After parsing,
+ * those column references are tagged `oracleOuter: true`, which is how
+ * `implicitJoins` reports the join as a LEFT JOIN instead of an inner one.
+ *
+ * @returns {{ sql: string, outerColumns: Set<string> }} columns as upper-case `TABLE.COLUMN` / `COLUMN`
+ */
+export function stripOracleOuterJoins(sql) {
+  const outerColumns = new Set();
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (ch === "'") {
+      let j = i + 1;
+      while (j < sql.length && !(sql[j] === "'" && sql[j + 1] !== "'")) j += sql[j] === "'" ? 2 : 1;
+      out += sql.slice(i, j + 1);
+      i = j + 1;
+    } else if (ch === '-' && sql[i + 1] === '-') {
+      const end = sql.indexOf('\n', i);
+      const stop = end === -1 ? sql.length : end;
+      out += sql.slice(i, stop);
+      i = stop;
+    } else if (ch === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      const stop = end === -1 ? sql.length : end + 2;
+      out += sql.slice(i, stop);
+      i = stop;
+    } else {
+      const marker = /^\(\s*\+\s*\)/.exec(sql.slice(i, i + 12));
+      if (marker) {
+        const column = /([A-Za-z0-9_$#".]+)\s*$/.exec(out)?.[1];
+        if (column) outerColumns.add(column.replace(/"/g, '').toUpperCase());
+        i += marker[0].length;
+      } else {
+        out += ch;
+        i++;
+      }
+    }
+  }
+  return { sql: out, outerColumns };
+}
+
+/** Tags the column references a `(+)` was attached to (see stripOracleOuterJoins). */
+function tagOuterColumns(node, outerColumns, seen = new Set()) {
+  if (!node || typeof node !== 'object' || seen.has(node)) return;
+  seen.add(node);
+  if (node.type === 'column_ref') {
+    const column = typeof node.column === 'string' ? node.column : node.column?.expr?.value;
+    const qualified = `${node.table ? `${node.table}.` : ''}${column}`.toUpperCase();
+    if (outerColumns.has(qualified) || (!node.table && outerColumns.has(String(column).toUpperCase()))) node.oracleOuter = true;
+  }
+  for (const value of Object.values(node)) tagOuterColumns(value, outerColumns, seen);
+}
+
 export class SqlAnalyzer {
   /**
    * @param {string} sql
@@ -35,8 +95,11 @@ export class SqlAnalyzer {
   parse(sql, dialect = 'mysql') {
     const database = DIALECT_ALIASES[dialect] ?? dialect;
     try {
-      const ast = parser.astify(sql, { database });
-      return { ast: Array.isArray(ast) ? ast : [ast], error: null };
+      const { sql: parseable, outerColumns } = stripOracleOuterJoins(sql);
+      const ast = parser.astify(parseable, { database });
+      const list = Array.isArray(ast) ? ast : [ast];
+      if (outerColumns.size) tagOuterColumns(list, outerColumns);
+      return { ast: list, error: null };
     } catch (e) {
       return { ast: null, error: e.message };
     }

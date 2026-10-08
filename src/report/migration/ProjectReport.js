@@ -29,12 +29,16 @@ export class ProjectReport {
 
     for (const mapperReport of mapperReports) {
       for (const statement of mapperReport.statements ?? []) {
+        // subqueries and CTEs are reported per statement, not as tables of the project
+        const derived = new Set(statement.tables.filter((t) => t.derived).map((t) => t.name));
         for (const t of statement.tables) {
+          if (t.derived) continue;
           const entry = ensureTable(t.name);
           if (!entry.operations[t.operation].includes(statement.id)) entry.operations[t.operation].push(statement.id);
         }
         for (const c of statement.columns) {
           if (c.table === 'UNKNOWN') continue; // unresolved columns aren't attributable to a specific table
+          if (derived.has(c.table)) continue; // a subquery's / CTE's output column
           const entry = ensureTable(c.table);
           const columnUsage = ensureColumn(entry, c.column);
           columnUsage[c.usedIn] = (columnUsage[c.usedIn] ?? 0) + 1;

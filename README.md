@@ -44,32 +44,49 @@ hand-rolled, how dynamic-tag prepend suppression works, how nested
 
 ```bash
 npm install
-npm test                 # 100+ tests, backend only (see docs/TESTING.md)
+npm test                 # node --test "test/**/*.test.js" (see docs/TESTING.md)
 npm start                # serves the API + UI on http://localhost:3000
 npm run dev              # same, but restarts on any src/ change
 ```
 
-`npm run dev` uses Node's built-in `--watch` (no nodemon, no extra
-dependency). It restarts the server when backend code under `src/`
-changes; the static UI (`src/interfaces/api/public/*`) is read from disk
-per request, so an edit there just needs a browser refresh. `npm run
-test:watch` re-runs the suite the same way.
+### A whole project folder, from the command line
 
-Open `http://localhost:3000`, click **Load sample** (or upload your own
-`.xml` mapper files), then **Analyze**. From there:
+```bash
+npm run migrate -- /path/to/legacy-project --out migration-output \
+                   [--mapping schema-mapping.json] [--preserve-result-columns] \
+                   [--fail-on manual|warning]
+```
 
-- **Statements** tab — a mapper tree on the left; select a statement to see
-  its tables/parameters/joins/dynamic conditions, its include/resultMap
-  dependency tree, a **table/column lineage diagram** (which tables JOIN to
-  which, and which columns flow into the result), a **dynamic SQL flow
-  diagram** (`<if>`/`<where>`/`<set>`/`<foreach>` as a flowchart, each
-  `<if test="...">` a decision node), the original iBATIS XML side-by-side
-  with the generated MyBatis XML, and the graded list of conversion
-  decisions.
-- **Tables** tab — a project-wide table lineage diagram by default; pick a
-  table to see every statement that reads, creates, updates, or deletes it,
-  per-column usage counts, and which other tables it's actually JOINed to
-  in the SQL.
+It finds every iBATIS mapper under the folder by its root element
+(`<sqlMap>`). It skips `pom.xml`, Spring/log4j/web.xml, `sqlMapConfig.xml`
+and mappers that are already MyBatis. It never descends into `target/`,
+`build/`, `node_modules/`, `.git/` …, because Maven's `target/classes` holds
+a copy of every mapper. It decodes EUC-KR / MS949 when the XML declares it.
+It writes:
+
+- `mybatis/<same path>`: the MyBatis 3 mappers
+- `mybatis-schema/<same path>`: the same mappers with the old -> new
+  table/column renames from `--mapping` (a mapping or an exported dataset
+  JSON)
+- `report.md` / `report.json`: what a human has to review, per file, and
+  every XML file that was skipped and why
+
+`--fail-on` exits with code 2 when that grade occurs, for CI. The source
+tree is never written to.
+
+### In the browser
+
+Open `http://localhost:3000`. Click **프로젝트 폴더** and pick a project
+folder (same mapper detection as the CLI, running in the browser), or use
+**Upload mapper XML**, **Load sample** or **Load advanced**. Then:
+
+- **리니지**: the SQL lineage graph of the selected statement.
+- **변환**: the statement's old -> new table/column renames. The **MyBatis
+  문법 변환** switch adds the iBATIS -> MyBatis syntax conversion. Renames
+  are marked red/green and syntax is marked violet, with the review list and
+  graded decisions alongside.
+- **데이터셋** (header): old -> new schema mappings, edited as JSON with
+  live validation.
 
 ## Using the API directly
 
@@ -81,16 +98,22 @@ curl -X POST http://localhost:3000/api/v1/projects/analyze \
 
 | Method & path | Returns |
 |---|---|
-| `POST /api/v1/projects/analyze` | mapper reports, project-wide table usage report, table dependency graph, generated MyBatis XML per file, and a `projectId` for the routes below |
-| `GET /api/v1/statements/:id` | full `StatementAnalysis` (tables, columns, joins, parameters, dynamic conditions, WHERE tree) |
+| `POST /api/v1/projects` `{files}` | the project **index** (files, statement / fragment ids, include usage, diagnostics) and a `projectId`; nothing is analysed yet |
+| `POST /api/v1/projects/open` `{path}` | the same for a folder on this machine, read in place (loopback requests only) |
+| `GET /api/v1/projects/:id` · `DELETE /api/v1/projects/:id` | the index again · close the project (caches and uploaded copy dropped) |
+| `POST /api/v1/projects/analyze` `{files}` | the original all-in-one response: mapper reports, table usage, table dependency graph, MyBatis XML per file |
+| `GET /api/v1/statements/:id` | full `StatementAnalysis` (tables, columns, joins, parameters, dynamic conditions, WHERE tree, lineage) |
+| `GET /api/v1/statements/:id/xml` | the statement's original XML, its included fragments' and its resultMap chain |
 | `GET /api/v1/statements/:id/dependencies` | include/extends/resultMap/parameterMap dependency tree |
 | `GET /api/v1/statements/:id/mybatis-preview` | converted MyBatis XML for that one statement + its migration-safety summary |
 | `GET /api/v1/tables/:tableName` | operations (with statement ids), column usage, related tables |
+| `POST /api/v1/schema-migration[?file=]` `{datasetId \| mapping}` | old -> new renames, before/after per statement and fragment: one file (`?file=`) or the whole project |
+| `POST /api/v1/statements/:id/schema-migration` · `POST /api/v1/schema-summary` | the same for one statement · per-statement counts and the project total |
 
-All four `GET` routes accept `?projectId=...` from the `analyze` response;
-omitting it means "the most recently analyzed project" (this is a
-single-user local tool, not a multi-tenant service — see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+Project routes accept `?projectId=...`; omitting it means the most recently
+opened project. Projects are sessions: an index plus bounded caches, closed
+after 30 idle minutes (see
+[docs/features/large-projects.md](docs/features/large-projects.md)).
 
 ## Project layout
 
@@ -104,7 +127,8 @@ src/
   converter/     iBATIS AST → MyBatis AST, graded SAFE/WARNING/MANUAL
   generator/     MyBatis AST → XML text
   report/        per-mapper report, project table-usage report, safety summary
-  application/   AnalyzerPipeline — the one place every stage is wired together
+  application/   ProjectSession (index + on-demand, used by API/UI/CLI) and
+                 AnalyzerPipeline (everything at once, the reference)
   interfaces/
     api/         Express JSON API
     api/public/  the static web UI (no build step) served from the same app

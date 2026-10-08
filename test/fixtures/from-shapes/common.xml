@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sqlMap namespace="fromCommon">
+  <!-- a shared table list, used right after a FROM written in the statement -->
+  <sql id="orderTables">
+    TB_ORD_H H, TB_CUST_M C
+  </sql>
+  <!-- the whole FROM clause, keyword included, with an ANSI join -->
+  <sql id="orderFromJoin">
+    FROM TB_ORD_H H
+    INNER JOIN TB_CUST_M C ON C.CUST_NO = H.CUST_NO
+  </sql>
+  <!-- the comma-join condition that goes with orderTables -->
+  <sql id="orderJoinCond">
+    AND C.CUST_NO = H.CUST_NO
+  </sql>
+</sqlMap>

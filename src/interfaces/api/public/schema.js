@@ -26,8 +26,10 @@
  * ------------------------------------------------------------------ */
 
 const schemaState = {
-  result: null, // POST /schema-migration response for (projectId, datasetId, options)
-  resultKey: null,
+  result: null, // POST /schema-migration?file= response for the selected statement's file
+  results: new Map(), // `${key}|${file}` -> that response; the last few files only
+  summary: null, // POST /schema-summary: per-statement counts (tree badges) + project total
+  summaryKey: null,
   datasets: [], // GET /datasets summaries
   datasetsLoaded: false,
   datasetId: readStored('schema.datasetId'),
@@ -105,24 +107,66 @@ async function loadDatasetList() {
 /** Called after a dataset is saved/deleted on the 데이터셋 screen. */
 function invalidateSchemaResult() {
   schemaState.result = null;
-  schemaState.resultKey = null;
+  schemaState.results = new Map();
+  schemaState.summary = null;
+  schemaState.summaryKey = null;
   schemaState.datasetsLoaded = false;
 }
 
-async function ensureSchemaResult() {
-  if (!schemaState.datasetsLoaded) await loadDatasetList();
-  if (!state.projectId) return null;
-  const key = `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}`;
-  if (schemaState.resultKey === key && schemaState.result) return schemaState.result;
+const SCHEMA_RESULT_CACHE = 6;
+
+function schemaKey() {
+  return `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}`;
+}
+
+function schemaRequest() {
   // no dataset: an empty mapping still returns the iBATIS -> MyBatis conversion
   const body = schemaState.datasetId ? { datasetId: schemaState.datasetId } : { mapping: {} };
-  schemaState.result = await api('/api/v1/schema-migration', {
+  return {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...body, preserveResultColumnNames: schemaState.preserveResultColumnNames }),
-  });
-  schemaState.resultKey = key;
-  return schemaState.result;
+  };
+}
+
+/**
+ * The migration of the selected statement's file only (its statements, its
+ * fragments, the fragments they include): the server loads just those files.
+ * The last few files are kept, so going back and forth doesn't refetch.
+ */
+async function ensureSchemaResult() {
+  if (!schemaState.datasetsLoaded) await loadDatasetList();
+  const sourceFile = state.statementFile.get(lineageState.statementId);
+  if (!state.projectId || !sourceFile) return null;
+  const key = `${schemaKey()}|${sourceFile}`;
+  let result = schemaState.results.get(key);
+  if (result) {
+    schemaState.results.delete(key);
+  } else {
+    result = await api(`/api/v1/schema-migration?file=${encodeURIComponent(sourceFile)}`, schemaRequest());
+  }
+  schemaState.results.set(key, result);
+  while (schemaState.results.size > SCHEMA_RESULT_CACHE) schemaState.results.delete(schemaState.results.keys().next().value);
+  schemaState.result = result;
+  ensureSchemaSummary()
+    .then((fresh) => {
+      decorateSchemaTree();
+      if (fresh) renderSchemaView(); // the strip's project total just arrived
+    })
+    .catch(() => {});
+  return result;
+}
+
+/** Counts per statement for the tree badges and the project total: small, computed file by file on the server. */
+async function ensureSchemaSummary() {
+  const key = schemaKey();
+  if (schemaState.summaryKey === key) return false;
+  schemaState.summaryKey = key;
+  schemaState.summary = null;
+  const summary = await api('/api/v1/schema-summary', schemaRequest());
+  if (schemaState.summaryKey !== key) return false; // the dataset changed meanwhile
+  schemaState.summary = summary;
+  return true;
 }
 
 /* ------------------------------------------------------------------ *
@@ -178,7 +222,7 @@ function drawSchemaView(pane, result) {
   pane.replaceChildren(...[
     schemaToolbar(),
     noDatasetCallout(),
-    summaryStrip(qualifiedId, schemaEvents, conversionEvents, result.summary),
+    summaryStrip(qualifiedId, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
     legend(),
     pairView(statement),
@@ -212,7 +256,7 @@ function drawFile(pane, result, sourceFile) {
   pane.replaceChildren(...[
     schemaToolbar(),
     noDatasetCallout(),
-    summaryStrip(`${sourceFile} 전체`, schemaEvents, conversionEvents, result.summary),
+    summaryStrip(`${sourceFile} 전체`, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
     legend(),
     el('section', { class: 'sm-section' },
@@ -356,10 +400,12 @@ function summaryStrip(title, schemaEvents, conversionEvents, projectSummary) {
   return el('div', { class: 'sm-summary' },
     el('div', { class: 'sm-title' },
       el('h2', {}, title),
-      el('div', { class: 'sub' },
-        `프로젝트 전체: 테이블 ${projectSummary.tables} · 컬럼 ${projectSummary.columns} · `,
-        el('span', { class: 'warn-text' }, `WARNING ${projectSummary.WARNING}`), ' · ',
-        el('span', { class: 'manual-text' }, `MANUAL ${projectSummary.MANUAL}`)),
+      projectSummary
+        ? el('div', { class: 'sub' },
+          `프로젝트 전체: 테이블 ${projectSummary.tables} · 컬럼 ${projectSummary.columns} · `,
+          el('span', { class: 'warn-text' }, `WARNING ${projectSummary.WARNING}`), ' · ',
+          el('span', { class: 'manual-text' }, `MANUAL ${projectSummary.MANUAL}`))
+        : el('div', { class: 'sub' }, '프로젝트 전체: 집계 중…'),
     ),
     stat('테이블명 변경', s.tables, 'table'),
     stat('컬럼명 변경', s.columns, 'column'),
@@ -732,17 +778,14 @@ function lcsTable(a, b) {
  * Tree badges (this view only)                                         *
  * ------------------------------------------------------------------ */
 function decorateSchemaTree() {
-  const show = state.activeView === 'schema' && schemaState.result;
+  const show = state.activeView === 'schema' && schemaState.summary && schemaState.summaryKey === schemaKey();
   for (const node of document.querySelectorAll('#lineageTree .node[data-statement-id]')) {
     node.querySelector('.schema-badge')?.remove();
     if (!show) continue;
-    const entry = schemaState.result.statements[node.dataset.statementId];
-    if (!entry) continue;
-    const fragments = entry.includes.map((id) => schemaState.result.fragments[id]).filter(Boolean);
-    const s = tallyEvents([...entry.events, ...fragments.flatMap((f) => f.events)]);
-    const c = schemaState.mybatis
-      ? tallyEvents([...(entry.conversion?.events ?? []), ...fragments.flatMap((f) => f.conversion?.events ?? [])])
-      : { WARNING: 0, MANUAL: 0, ERROR: 0 };
+    const counts = schemaState.summary.statements[node.dataset.statementId];
+    if (!counts) continue;
+    const s = counts.schema;
+    const c = schemaState.mybatis ? counts.conversion : { WARNING: 0, MANUAL: 0, ERROR: 0 };
     const changes = s.tables + s.columns;
     const manual = s.MANUAL + s.ERROR + c.MANUAL + c.ERROR;
     const warning = s.WARNING + c.WARNING;

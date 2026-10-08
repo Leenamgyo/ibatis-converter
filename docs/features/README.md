@@ -13,6 +13,7 @@ feature changes, edit its file rather than appending to it.
 | [analysis-coverage.md](analysis-coverage.md) | What the analyzer handles and the one shape it can't |
 | [dev-loop.md](dev-loop.md) | `npm run dev`, watch paths, and why the UI is excluded |
 | [schema-view.md](schema-view.md) | The 변환 view (column renames first, MyBatis syntax as a toggle, every change marked) and the 데이터셋 JSON editor |
+| [large-projects.md](large-projects.md) | Index first, load on demand: `ProjectSession`, sessions on the server, what the browser keeps, measurements |
 | [schema-migration.md](schema-migration.md) | Old -> new table/column renames in mapper SQL (`converter/schema`), its grading and limits |
 
 Backend architecture and the spec-section status live in

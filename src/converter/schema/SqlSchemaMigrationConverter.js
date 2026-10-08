@@ -95,9 +95,23 @@ export class SqlSchemaMigrationConverter {
     for (const mapper of mapperNodes) {
       for (const fragment of mapper.sqlFragments) fragments.set(qualify(mapper.namespace, fragment.id), fragment);
     }
+    // a bare refid may name a fragment in another mapper (iBATIS useStatementNamespaces=false)
+    const byLocalId = new Map();
+    for (const mapper of mapperNodes) {
+      for (const fragment of mapper.sqlFragments) {
+        if (!byLocalId.has(fragment.id)) byLocalId.set(fragment.id, []);
+        byLocalId.get(fragment.id).push(qualify(mapper.namespace, fragment.id));
+      }
+    }
+    const resolveRefid = (refid, namespace) => {
+      if (fragments.has(refid)) return refid;
+      if (fragments.has(qualify(namespace, refid))) return qualify(namespace, refid);
+      const global = refid.includes('.') ? [] : byLocalId.get(refid) ?? [];
+      return global.length === 1 ? global[0] : qualify(namespace, refid);
+    };
     const project = {
-      lookup: (refid, namespace) => fragments.get(refid.includes('.') ? refid : qualify(namespace, refid)) ?? fragments.get(refid) ?? null,
-      qualifiedIdOf: (refid, namespace) => (refid.includes('.') ? refid : qualify(namespace, refid)),
+      lookup: (refid, namespace) => fragments.get(resolveRefid(refid, namespace)) ?? null,
+      qualifiedIdOf: resolveRefid,
       /** fragment qualified id -> scopes seen at its include sites */
       includeSites: new Map(),
     };
@@ -136,23 +150,29 @@ export class SqlSchemaMigrationConverter {
     if (explicit) return this.#convertTree(fragment, namespace, project, this.#contextScope(explicit), [qualifiedId], { record: false });
 
     const standalone = this.#convertTree(fragment, namespace, project, null, [qualifiedId], { record: false });
-    const sites = [...new Set(project.includeSites.get(qualifiedId) ?? [])];
+    const sites = [];
+    for (const site of project.includeSites.get(qualifiedId) ?? []) {
+      if (!sites.some((s) => s.scope === site.scope && JSON.stringify(s.start) === JSON.stringify(site.start))) sites.push(site);
+    }
     if (!sites.length) return standalone;
 
-    const candidates = sites.map((scope) => this.#convertTree(fragment, namespace, project, scope, [qualifiedId], { record: false }));
+    const candidates = sites.map(({ scope, start }) => this.#convertTree(fragment, namespace, project, scope, [qualifiedId], { record: false, start }));
     const signature = (result) => JSON.stringify([...result.overrides].map(([, value]) => value));
     const distinct = new Set(candidates.map(signature));
     if (distinct.size === 1) {
       const [chosen] = candidates;
       if (signature(chosen) === signature(standalone)) return standalone;
-      const tables = [...new Set(sites.flatMap((scope) => visibleTables(scope)))];
+      const tables = [...new Set(sites.flatMap(({ scope }) => visibleTables(scope)))];
+      const asFromList = sites.every(({ start }) => start);
       return {
         overrides: chosen.overrides,
         events: [
           new SchemaMigrationEvent({
             grade: SchemaMigrationGrade.SAFE,
             code: SchemaMigrationCode.FRAGMENT_CONTEXT_INFERRED,
-            message: `<sql id="${fragment.id}"> has no table of its own; resolved against ${tables.join(', ')} from its ${sites.length} include site(s)`,
+            message: asFromList
+              ? `<sql id="${fragment.id}"> is included in a FROM clause at all ${sites.length} site(s): read as its table list`
+              : `<sql id="${fragment.id}"> has no table of its own; resolved against ${tables.join(', ')} from its ${sites.length} include site(s)`,
           }),
           ...chosen.events,
         ],
@@ -176,7 +196,7 @@ export class SqlSchemaMigrationConverter {
    * which is its own SQL statement).
    * @returns {{ overrides: Map<object, object>, events: SchemaMigrationEvent[] }}
    */
-  #convertTree(root, namespace, project, outerScope, includeStack, { record = true } = {}) {
+  #convertTree(root, namespace, project, outerScope, includeStack, { record = true, start = null } = {}) {
     const overrides = new Map();
     const events = [];
     const runs = [{ nodes: root.children ?? [] }];
@@ -193,7 +213,7 @@ export class SqlSchemaMigrationConverter {
     runs.forEach(({ nodes }) => {
       const markers = [];
       const segments = this.#segmentsOf(nodes, namespace, project, true, includeStack, markers);
-      const { texts, events: runEvents, resolution } = this.#run(segments, outerScope);
+      const { texts, events: runEvents, resolution } = this.#run(segments, outerScope, start);
       segments.forEach((segment, i) => {
         if (!segment.writable || texts[i] === segment.original) return;
         const entry = overrides.get(segment.node) ?? {};
@@ -204,8 +224,11 @@ export class SqlSchemaMigrationConverter {
       if (record) {
         for (const { marker, qualifiedId } of markers) {
           const scope = resolution.tokenScopes[resolution.tokens.indexOf(marker)];
+          // a fragment included in a FROM clause continues it: `FROM <include/>` is a table list
+          const at = resolution.markerStates.get(marker);
+          const start = at?.clause === 'FROM' ? { clause: 'FROM', expectTable: at.expectTable } : null;
           if (!project.includeSites.has(qualifiedId)) project.includeSites.set(qualifiedId, []);
-          project.includeSites.get(qualifiedId).push(scope);
+          project.includeSites.get(qualifiedId).push({ scope, start });
         }
       }
     });
@@ -313,7 +336,7 @@ export class SqlSchemaMigrationConverter {
    * token stream made of `segments`. Returns each segment's new text
    * (null for read-only segments) and the events raised on writable ones.
    */
-  #run(segments, outerScope) {
+  #run(segments, outerScope, start = null) {
     const tokens = [];
     const owners = [];
     segments.forEach((segment, s) => {
@@ -323,7 +346,7 @@ export class SqlSchemaMigrationConverter {
       }
     });
 
-    const resolution = this.tableResolver.resolve(tokens, { outerScope });
+    const resolution = this.tableResolver.resolve(tokens, { outerScope, start });
     const columns = this.columnConverter.convert(resolution, this.mapping);
     const tables = this.tableConverter.convert(resolution, this.mapping, columns.bindings);
     const edits = new Map([...columns.edits, ...tables.edits]);
