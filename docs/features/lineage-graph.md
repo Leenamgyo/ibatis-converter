@@ -91,12 +91,16 @@ A UNION is **one box around its branches** (`UNION ALL · 3개 브랜치가 하�
 ## Arrows are for relationships between objects
 
 Nothing inside an object is drawn with an arrow. The clause columns say
-what the object contains; a line would only restate it. Only three kinds
+what the object contains; a line would only restate it. Only two kinds
 of edge exist:
 
 - table → JOIN table, for a join (rule 2)
 - subquery lane → the slot / condition / column / HAVING that reads it (rule 4)
-- refid → the statement that includes it
+
+There is no refid box or edge: the graph is drawn from the statement **with
+its refids spliced in** (see [lineage-dashboard.md](lineage-dashboard.md),
+"refid: the inlined statement"), so a fragment's SQL is simply part of the
+query it lands in.
 
 ## Edge layering — the trap
 

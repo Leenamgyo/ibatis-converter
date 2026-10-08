@@ -12,10 +12,11 @@
  * browser does the layout, and the only thing this file computes is    *
  * the edge geometry, measured from the laid-out boxes afterwards.      *
  *                                                                      *
- * Everything drawn comes from the ORIGINAL iBATIS mapper: the SELECT   *
- * hierarchy from `analysis.lineage` (analyzer/lineage), the dynamic    *
- * blocks and <include> bodies from the mapper XML itself. The MyBatis  *
- * side lives in the 변환 view (schema.js) and never feeds this screen.  *
+ * Everything drawn comes from the ORIGINAL iBATIS mapper with its      *
+ * refids spliced in (the statement as it runs, no <include> left): the *
+ * SELECT hierarchy from `analysis.lineage` (analyzer/lineage), the     *
+ * dynamic blocks from the server's `inlinedXml`. The MyBatis side      *
+ * lives in the 변환 view (schema.js) and never feeds this screen.       *
  * ------------------------------------------------------------------ */
 
 const lineageState = {
@@ -109,8 +110,9 @@ async function selectLineageStatement(qualifiedId) {
   lineageState.selectedColumn = null;
   lineageState.selectedEdge = null;
   lineageState.namespace = doc.namespace ?? null;
-  lineageState.stmtEl = parseSlice(doc.xml, doc.namespace);
-  lineageState.fragments = fragmentElements(doc);
+  // the statement as it runs: every refid replaced by its fragment, so a dynamic tag written
+  // inside a fragment guards its own SQL here (no <include> boxes in this view)
+  lineageState.stmtEl = parseSlice(doc.inlinedXml ?? doc.xml, doc.namespace);
   await loadLayout(qualifiedId, doc.sourceFile);
   if (seq !== lineageLoadSeq) return;
   if (lineageState.collapsedTree.delete(`file:${doc.sourceFile}`)) renderXmlTree(); // reveal it in a folded tree
@@ -277,7 +279,6 @@ function renderDashStats() {
     ),
     statBox('XML 라인 수', lines.toLocaleString()),
     statBox('SELECT 구문', counts.selects),
-    statBox('Include/Refid', analysis.includes.length),
     statBox('테이블', analysis.tables.filter((t) => !t.derived).length), // subqueries / CTEs aren't tables
     // Joins come from the lineage tree, which also sees the joins inside
     // subqueries and onto derived tables that the flat table analysis
@@ -482,36 +483,6 @@ function columnList(columns, limit = 8) {
   const shown = columns.slice(0, limit);
   return el('div', { class: 'sql' },
     shown.join(', ') + (columns.length > limit ? `, … (+${columns.length - limit})` : ''));
-}
-
-/** The `<sql>` fragments this statement splices in, with their real query text (never just the name). */
-function buildRefidCluster(analysis) {
-  if (!analysis.includes.length) return null;
-  const fragments = lineageState.fragments ?? new Map();
-  const body = el('div', { class: 'cluster-body' });
-
-  // analysis.includes: every fragment the resolver spliced in (qualified ids, any depth)
-  for (const refid of analysis.includes) {
-    const target = fragments.get(refid);
-    const treeNode = findIncludeNode(lineageState.doc?.includeTree, refid);
-    const sql = target ? expandFragmentSql(target, fragments, treeNode) : '';
-    const clauses = sql ? splitSqlClauses(sql) : [];
-    const id = `refid:${refid}`;
-    body.appendChild(gnode(id, 'refid',
-      el('div', { class: 'title' }, `<include refid="${treeNode?.refid ?? refid}"/>`),
-      treeNode && treeNode.refid !== refid ? el('div', { class: 'meta', title: REFID_RULE[treeNode.rule]?.[1] ?? '' }, `→ ${refid} · ${REFID_RULE[treeNode.rule]?.[0] ?? treeNode.rule}`) : null,
-      treeNode?.unparsed ? el('div', { class: 'meta warn-text', title: 'XML을 파싱할 수 없는 파일입니다 (위치는 찾았습니다)' }, `${treeNode.file} — 파일 파싱 오류로 SQL 없음`) : null,
-      clauses.length
-        ? el('div', { class: 'sql' }, clauses.join(' · '))
-        : el('div', { class: 'meta' }, '(fragment not loaded)'),
-    ));
-    edge(id, 'select:MAIN', 'ref');
-  }
-
-  return el('div', { class: 'cluster refid', 'data-layout-key': 'cluster:refid' },
-    el('div', { class: 'cluster-head' }, el('span', { class: 'badge' }, 'refid'), 'Include / Refid'),
-    body,
-  );
 }
 
 /** `<dynamic>` / `<isXxx>` / `<iterate>` blocks, read straight from the mapper XML. */
@@ -858,9 +829,6 @@ function renderGraph() {
   const analysis = lineageState.analysis;
   const lineage = analysis?.lineage;
   if (!lineage || !lineage.selects.length) {
-    // the refids are known even when the SQL can't be parsed: still show what the statement includes
-    const refids = analysis ? buildRefidCluster(analysis) : null;
-    if (refids) host.appendChild(refids);
     host.appendChild(el('div', { class: 'side-empty' },
       analysis?.warnings?.some((w) => w.code === 'SQL_PARSE_FAILED')
         ? '이 statement는 flatten된 SQL이 파싱되지 않아 (SQL_PARSE_FAILED) 리니지를 그릴 수 없습니다 — Statements 탭의 경고를 확인하세요.'
@@ -875,9 +843,6 @@ function renderGraph() {
     if (!byParent.has(select.parentId)) byParent.set(select.parentId, []);
     byParent.get(select.parentId).push(select);
   }
-
-  const refidCluster = buildRefidCluster(analysis);
-  if (refidCluster) host.appendChild(refidCluster);
 
   // Subquery scopes are queued while their parent is built and drawn out
   // here, after it - never inside it.
@@ -1106,12 +1071,12 @@ function breadcrumbFor(nodeId) {
   const [kind, selectId] = nodeId.split(':');
   const byId = new Map(lineage.selects.map((s) => [s.id, s]));
   const chain = [];
-  let current = byId.get(kind === 'refid' ? 'MAIN' : selectId);
+  let current = byId.get(selectId);
   while (current) {
     chain.unshift(current.role === 'MAIN' ? 'Main SELECT' : `${current.id} · ${ORIGIN_LABEL[current.origin] ?? current.origin}`);
     current = current.parentId ? byId.get(current.parentId) : null;
   }
-  const tail = { tbl: 'TABLE', jointbl: 'JOIN 테이블', out: 'COLUMN', join: 'JOIN', dyn: 'DYNAMIC', dynjoin: 'DYNAMIC', refid: 'REFID', where: 'WHERE', group: 'GROUP BY', having: 'HAVING' }[kind];
+  const tail = { tbl: 'TABLE', jointbl: 'JOIN 테이블', out: 'COLUMN', join: 'JOIN', dyn: 'DYNAMIC', dynjoin: 'DYNAMIC', where: 'WHERE', group: 'GROUP BY', having: 'HAVING' }[kind];
   const node = lineageState.nodeById.get(nodeId);
   if (tail && node) chain.push(`${tail} ${node.querySelector('.title')?.textContent ?? ''}`.trim());
   return chain;
@@ -1404,14 +1369,13 @@ function renderLegend() {
   const swatch = (varName) => el('span', { class: 'legend-swatch', style: `background:var(${varName})` });
   host.replaceChildren(
     el('span', { class: 'legend-item' }, swatch('--node-table-bg'), '테이블'),
-    el('span', { class: 'legend-item' }, swatch('--node-refid-bg'), 'include/refid'),
     el('span', { class: 'legend-item' }, swatch('--node-sub-bg'), '서브쿼리 / inline view'),
     el('span', { class: 'legend-item' }, swatch('--node-union-bg'), 'UNION / CTE'),
     el('span', { class: 'legend-item' }, swatch('--node-col-bg'), '최종 SELECT 컬럼'),
     el('span', { class: 'legend-item' }, swatch('--node-join-bg'), 'JOIN 테이블 / WHERE 조건'),
     el('span', { class: 'legend-item' }, el('span', { class: 'legend-swatch', style: 'border-style:dashed;background:transparent' }), '동적 조건'),
     el('span', { class: 'legend-item' }, el('span', { class: 'legend-line' }), '데이터 흐름'),
-    el('span', { class: 'legend-item' }, el('span', { class: 'legend-line ref' }), '참조 (refid/dynamic)'),
+    el('span', { class: 'legend-item' }, el('span', { class: 'legend-line ref' }), '참조 (dynamic)'),
     el('span', { class: 'legend-item' }, el('span', { class: 'legend-line join' }), '조인'),
   );
 }

@@ -547,6 +547,9 @@ export class ProjectSession {
       // how every <include> of the statement resolved, nested ones too (the UI expands from this)
       includeTree: this.includeTree(qualifiedId),
       xml: this.#nodeXml(at.sourceFile, 'statement', at.localId) ?? this.#slice(at.sourceFile, meta.line, STATEMENT_TAGS[meta.type] ?? 'select'),
+      // the same statement with every <include> replaced by its fragment, to the last depth
+      // (what the lineage view reads its dynamic tags from); null when the file can't be parsed
+      inlinedXml: this.#inlinedXml(qualifiedId, at),
       fragments,
     };
   }
@@ -557,6 +560,29 @@ export class ProjectSession {
    * (an unescaped "<" in SQL, an unclosed tag). Null for a file that couldn't be parsed:
    * the caller falls back to the raw slice.
    */
+  /** a statement's XML with its refids spliced in (ProjectSession#inlineIncludes), in its file's own syntax */
+  #inlinedXml(qualifiedId, at) {
+    if (!this.meta.file(at.sourceFile)?.parsed) return null;
+    const ownNode = (sourceFile, kind, localId) => {
+      const m = this.mapper(sourceFile);
+      if (m.mybatis) return (kind === 'statement' ? m.mybatis.statements : m.mybatis.sqlFragments).find((n) => n.id === localId) ?? null;
+      return (kind === 'statement' ? m.statements.get(localId) : m.fragments.get(localId)) ?? null;
+    };
+    const mybatis = this.meta.file(at.sourceFile).syntax === 'mybatis';
+    const fragments = new Map();
+    for (const fid of this.includedFragments(qualifiedId)) {
+      const loc = this.meta.locate(fid);
+      const file = loc && this.meta.file(loc.sourceFile);
+      // an iBATIS statement can't hold a MyBatis fragment's nodes (or the reverse): that include stays
+      if (!file?.parsed || (file.syntax === 'mybatis') !== mybatis) continue;
+      const node = ownNode(loc.sourceFile, 'fragment', loc.localId);
+      if (node) fragments.set(fid, node);
+    }
+    const statement = ownNode(at.sourceFile, 'statement', at.localId);
+    if (!statement) return null;
+    return (mybatis ? this.xml : this.ibatisXml).generateNode(this.inlineIncludes(statement, at.namespace, fragments, qualifiedId));
+  }
+
   #nodeXml(sourceFile, kind, localId) {
     const entry = this.meta.file(sourceFile);
     if (!entry?.parsed) return null;

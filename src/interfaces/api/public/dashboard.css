@@ -198,9 +198,6 @@
 .cluster > .cluster-head .origin { font-weight: 500; color: var(--text-faint); }
 .cluster > .cluster-body { padding: 0.5rem; display: flex; gap: 2.6rem; align-items: flex-start; }
 
-.cluster.refid { background: var(--node-refid-bg); border-color: var(--node-refid-bd); }
-.cluster.refid > .cluster-head { color: var(--node-refid-fg); border-bottom-color: var(--node-refid-bd); }
-.cluster.refid > .cluster-body { flex-wrap: wrap; gap: 0.5rem; }
 /* A SELECT scope is NOT a box. Drawing a border around it makes one box
    look like it contains several tables, which is exactly what the objects
    must never do. So a scope is a lane: a header chip, then the objects,
@@ -293,8 +290,6 @@
 .gnode.subref > .tobj-head { color: var(--node-sub-fg); }
 /* Nested clause/column objects must not inherit the parent's tint. */
 .tobj .gnode { background: var(--bg-raised); max-width: 100%; }
-.gnode.refid { background: var(--bg-raised); border-color: var(--node-refid-bd); }
-.gnode.refid .title { color: var(--node-refid-fg); }
 .gnode.join { background: var(--node-join-bg); border-color: var(--node-join-bd); }
 /* Each WHERE condition is its own object; the dynamic tag that guards it
    is another object, one depth below it. */

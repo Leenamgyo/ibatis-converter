@@ -110,16 +110,6 @@ function parseSlice(xml, namespace) {
   return parseMapperSource(`<sqlMap${attr}>${xml}</sqlMap>`)?.sqlMapEl.firstElementChild ?? null;
 }
 
-/** the fragments a loaded statement includes, as elements keyed by qualified id */
-function fragmentElements(doc) {
-  const map = new Map();
-  for (const [qualifiedId, fragment] of Object.entries(doc?.fragments ?? {})) {
-    const element = parseSlice(fragment.xml, fragment.namespace);
-    if (element) map.set(qualifiedId, element);
-  }
-  return map;
-}
-
 /**
  * The server closes idle projects (30 min) and forgets them on restart. A
  * folder opened by path is reopened in place; an upload has to be picked
@@ -605,95 +595,6 @@ function parseMapperSource(source) {
   const sqlMapEl = doc.querySelector('sqlMap');
   if (!sqlMapEl) return null;
   return { sqlMapEl, namespace: sqlMapEl.getAttribute('namespace') };
-}
-
-/**
- * The fragment's real SQL text, with every `<include refid>` inside it — at
- * any depth, also inside its dynamic tags — spliced in. Which fragment an
- * include means is NOT guessed by name here: it comes from the server's
- * resolved include tree (`GET /statements/:id/xml` -> includeTree, the
- * ReferenceResolver's own answer, nested bare refids included). `treeNode`
- * is this fragment's node in that tree; its children are the fragment's
- * includes in document order.
- */
-function expandFragmentSql(element, fragments, treeNode) {
-  const includes = treeNode?.children ?? [];
-  let k = 0;
-  const walk = (parent) => {
-    let out = '';
-    for (const node of parent.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE) {
-        out += node.nodeValue;
-      } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'include') {
-        const refid = node.getAttribute('refid') ?? 'include';
-        const resolved = includes[k++];
-        const target = resolved?.qualifiedId ? fragments.get(resolved.qualifiedId) : undefined;
-        if (target) out += ` ${expandFragmentSql(target, fragments, resolved)} `;
-        else if (resolved?.unresolved === 'CIRCULAR') out += ` ${refid} (circular) `;
-        else if (resolved?.unresolved === 'MISSING') out += ` ${refid} (not found) `;
-        else out += ` ${refid} (not loaded) `;
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        out += ` ${walk(node)} `; // a dynamic tag: its text, and the includes inside it
-      }
-    }
-    return out;
-  };
-  return walk(element).replace(/\s+/g, ' ').trim();
-}
-
-/** the include-tree node of `qualifiedId` (first in document order), for expanding it */
-function findIncludeNode(tree, qualifiedId) {
-  for (const node of tree ?? []) {
-    if (node.qualifiedId === qualifiedId) return node;
-    const inner = findIncludeNode(node.children, qualifiedId);
-    if (inner) return inner;
-  }
-  return null;
-}
-
-/** Longest first, so `LEFT OUTER JOIN` wins over `JOIN` and `UNION ALL` over `UNION`. */
-const SQL_CLAUSE_KEYWORDS = [
-  'SELECT DISTINCT', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN',
-  'INNER JOIN', 'CROSS JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'UNION ALL',
-  'GROUP BY', 'ORDER BY', 'SELECT', 'FROM', 'WHERE', 'HAVING', 'LIMIT', 'OFFSET',
-  'UNION', 'JOIN', 'START WITH', 'CONNECT BY', 'FOR UPDATE',
-];
-
-/**
- * Splits SQL into one string per top-level clause, so a fragment holding
- * `FROM ... JOIN ... WHERE ...` draws as one box per clause instead of a
- * wall of text. A keyword only cuts when it sits at paren depth 0 and
- * outside a `#binding#` / `$substitution$` token, so a subquery's own
- * FROM stays with its parent clause and `LIMIT #offset#, #limit#` is
- * never split down the middle.
- */
-function splitSqlClauses(sql) {
-  const text = String(sql).replace(/\s+/g, ' ').trim();
-  if (!text) return [];
-  const upper = text.toUpperCase();
-  const cuts = [];
-  let depth = 0;
-  let token = null;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (token) {
-      if (ch === token) token = null;
-      continue;
-    }
-    if (ch === '#' || ch === '$') { token = ch; continue; }
-    if (ch === '(') { depth++; continue; }
-    if (ch === ')') { depth = Math.max(0, depth - 1); continue; }
-    if (depth > 0 || (i > 0 && text[i - 1] !== ' ')) continue;
-    const keyword = SQL_CLAUSE_KEYWORDS.find((k) => upper.startsWith(k, i)
-      && (i + k.length === upper.length || upper[i + k.length] === ' ' || upper[i + k.length] === '('));
-    if (!keyword) continue;
-    if (i > 0) cuts.push(i);
-    i += keyword.length - 1;
-  }
-  const bounds = [0, ...cuts, text.length];
-  return bounds.slice(0, -1)
-    .map((start, n) => text.slice(start, bounds[n + 1]).trim())
-    .filter(Boolean);
 }
 
 /* ------------------------------------------------------------------ *

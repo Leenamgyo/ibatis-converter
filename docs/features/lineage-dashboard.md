@@ -11,7 +11,7 @@ the subquery hierarchy explicit rather than inferred from indentation.
 
 ```
 ┌──────────────────────── stat strip ────────────────────────┐
-│ XML 라인 수 · SELECT 구문 · INCLUDE/REFID · 테이블 ·        │
+│ XML 라인 수 · SELECT 구문 · 테이블 ·                       │
 │ 조인 · 서브쿼리 · UNION · 분석 상태                          │
 ├───────────┬────────────────────────────────┬───────────────┤
 │ view      │  breadcrumb + graph controls   │  SELECT 컬럼   │
@@ -25,6 +25,31 @@ the subquery hierarchy explicit rather than inferred from indentation.
 │ 사용 현황 │                                │               │
 └───────────┴────────────────────────────────┴───────────────┘
 ```
+
+## refid: the inlined statement
+
+The screen shows a statement as it runs, with every `<include refid>`
+replaced by its fragment at every depth. There is no Include/Refid box
+group, no refid edge and no INCLUDE/REFID count.
+
+- **SQL.** The SELECT hierarchy comes from `analysis.lineage`, which the
+  analyzer already builds from the resolved (spliced) tree.
+- **Dynamic tags.** The tags drawn as DYNAMIC objects are read from
+  `GET /statements/:id/xml` → `inlinedXml`
+  (`ProjectSession#inlineIncludes`, the same splice as the 변환 view's
+  "refid 쿼리에 통합"). So a `<isNotEmpty>` written inside a fragment
+  guards its own WHERE term here.
+- **Fallback.** `xml` (as written) is used only if the file can't be
+  parsed.
+- **Mixed syntax.** An include between an iBATIS statement and a MyBatis
+  fragment (or the reverse) is left as an `<include>`.
+
+Where the refids are still visible:
+- the left tree's search hints and **Include 사용 현황**, which are
+  project-level;
+- the 변환 view, which lists or inlines them;
+- the column-removal guide, which edits the real files and so names the
+  `<include>` to remove.
 
 ## Left — XML tree
 
@@ -73,7 +98,7 @@ The breadcrumb shows where a clicked node sits (`MAIN → S1 → TABLE`).
 
 - **What moves.** Drag a **table object** to move it. A drag that starts on
   one of its condition / column chips moves the whole table: a box's own
-  clauses never leave it. Drag a **lane** (SELECT scope, the refid group,
+  clauses never leave it. Drag a **lane** (SELECT scope,
   a UNION group) by its header to move it with everything in it. A move
   under 4px is still a click (select / highlight). Dragging the empty
   background still pans.

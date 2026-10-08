@@ -362,3 +362,35 @@ test('a namespace spread over files in different folders resolves, even when one
     session.close();
   }
 });
+
+test('statementXml carries the statement with its refids spliced in, to every depth (the lineage view reads it)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inlined-xml-'));
+  try {
+    fs.mkdirSync(path.join(root, 'common'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'app'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'common', 'C.xml'), `<sqlMap namespace="c">
+  <sql id="cond"><isNotEmpty property="name" prepend="AND">U.NAME = #name#</isNotEmpty> <include refid="inner"/></sql>
+  <sql id="inner">AND U.USE_YN = 'Y'</sql>
+</sqlMap>`);
+    fs.writeFileSync(path.join(root, 'app', 'A.xml'), `<sqlMap namespace="a">
+  <select id="q" resultClass="map">SELECT U.ID FROM TB_USER U WHERE 1 = 1 <include refid="c.cond"/></select>
+</sqlMap>`);
+    fs.writeFileSync(path.join(root, 'app', 'M.xml'), `<mapper namespace="m">
+  <sql id="f"><if test="id != null">AND ID = #{id}</if></sql>
+  <select id="q">SELECT ID FROM T WHERE 1 = 1 <include refid="f"/></select>
+</mapper>`);
+    const session = new ProjectSession(new DirectorySource(root)).open();
+    const doc = session.statementXml('a.q');
+    assert.match(doc.xml, /<include refid="c\.cond"\/>/, 'xml stays as written');
+    assert.doesNotMatch(doc.inlinedXml, /<include/);
+    assert.match(doc.inlinedXml, /<isNotEmpty[^>]*property="name"[^>]*>\s*U\.NAME = #name#\s*<\/isNotEmpty>/);
+    assert.match(doc.inlinedXml, /U\.USE_YN = 'Y'/, 'a bare refid nested in another mapper\'s fragment is spliced too');
+    assert.match(doc.inlinedXml, /^<select id="q" resultClass="map">/);
+    const mybatis = session.statementXml('m.q').inlinedXml;
+    assert.doesNotMatch(mybatis, /<include/);
+    assert.match(mybatis, /<if test="id != null">\s*AND ID = #\{id\}\s*<\/if>/);
+    session.close();
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
