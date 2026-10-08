@@ -45,7 +45,7 @@ hand-rolled, how dynamic-tag prepend suppression works, how nested
 ```bash
 npm install
 npm test                 # node --test "test/**/*.test.js" (see docs/TESTING.md)
-npm start                # serves the API + UI on http://localhost:3000
+npm start                # serves the API + UI on http://localhost:4000
 npm run dev              # same, but restarts on any src/ change
 ```
 
@@ -76,7 +76,7 @@ tree is never written to.
 
 ### In the browser
 
-Open `http://localhost:3000`. Click **프로젝트 폴더** and pick a project
+Open `http://localhost:4000`. Click **프로젝트 폴더** and pick a project
 folder (same mapper detection as the CLI, running in the browser), or use
 **Upload mapper XML**, **Load sample** or **Load advanced**. Then:
 
@@ -91,7 +91,7 @@ folder (same mapper detection as the CLI, running in the browser), or use
 ## Using the API directly
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/projects/analyze \
+curl -X POST http://localhost:4000/api/v1/projects/analyze \
   -H 'content-type: application/json' \
   -d '{"files":[{"sourceFile":"user.xml","source":"<sqlMap namespace=\"user\">...</sqlMap>"}]}'
 ```

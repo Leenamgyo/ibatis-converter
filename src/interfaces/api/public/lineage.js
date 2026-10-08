@@ -27,7 +27,6 @@ const lineageState = {
   scale: 1,
   tx: 0,
   ty: 0,
-  collapsed: new Set(),
   collapsedTree: new Set(),
   selectedNodeId: null,
   selectedColumn: null,
@@ -106,7 +105,6 @@ async function selectLineageStatement(qualifiedId) {
   lineageState.doc = doc;
   lineageState.analysis = doc.analysis;
   lineageState.sourceFile = doc.sourceFile;
-  lineageState.collapsed = new Set();
   lineageState.selectedNodeId = null;
   lineageState.selectedColumn = null;
   lineageState.selectedEdge = null;
@@ -508,7 +506,6 @@ function collectGuards() {
 
 function buildSelectCluster(select, byParent, analysis, isMain) {
   const id = `select:${select.id}`;
-  const collapsed = lineageState.collapsed.has(select.id);
 
   const isWrite = select.role === 'WRITE';
   // The cluster is a *scope frame*, not an object: the objects are the
@@ -520,16 +517,6 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
       : isMain ? 'MAIN 쿼리' : `${select.id} · ${ORIGIN_LABEL[select.origin] ?? select.origin}`),
     select.alias ? el('span', { class: 'origin' }, `AS ${select.alias}`) : null,
     select.setOperator ? el('span', { class: 'origin' }, select.setOperator) : null,
-    el('button', {
-      class: 'collapse',
-      title: collapsed ? '펼치기' : '접기',
-      onclick: (e) => {
-        e.stopPropagation();
-        if (collapsed) lineageState.collapsed.delete(select.id);
-        else lineageState.collapsed.add(select.id);
-        renderGraph();
-      },
-    }, collapsed ? '＋' : '−'),
   );
   head.addEventListener('mouseenter', () => highlightNeighbours(id));
   head.addEventListener('mouseleave', clearHighlight);
@@ -537,7 +524,7 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   lineageState.nodeById.set(id, head);
 
   const cluster = el('div', {
-    class: `cluster ${isWrite ? 'select-write' : isMain ? 'select-main' : select.role === 'UNION_BRANCH' ? 'select-union' : select.role === 'CTE' ? 'select-cte' : 'select-sub'}${collapsed ? ' collapsed' : ''}`,
+    class: `cluster ${isWrite ? 'select-write' : isMain ? 'select-main' : select.role === 'UNION_BRANCH' ? 'select-union' : select.role === 'CTE' ? 'select-cte' : 'select-sub'}`,
     'data-select-id': select.id,
     'data-layout-key': `cluster:${select.id}`,
   }, head);
@@ -890,15 +877,10 @@ function redrawEdgesWhenVisible(attempts = 20) {
   renderMinimap();
 }
 
-/** The box actually on screen for a node id: a node inside a collapsed cluster is represented by that cluster. */
+/** The box on screen for a node id (null when it isn't laid out). */
 function visibleAnchor(nodeId) {
   const node = lineageState.nodeById.get(nodeId);
-  if (!node) return null;
-  if (node.offsetParent === null) {
-    const cluster = node.closest('.cluster.collapsed');
-    return cluster ?? null;
-  }
-  return node;
+  return node && node.offsetParent !== null ? node : null;
 }
 
 /** One arrowhead per edge kind; markers don't inherit `stroke`, so each needs its own fill. */
@@ -1521,15 +1503,6 @@ function renderMinimap() {
     else if (action === 'fit') fitGraph();
     else if (action === 'save-layout') saveLayout().catch((err) => { document.getElementById('layoutStatus').textContent = `저장 실패: ${err.message}`; });
     else if (action === 'reset-layout') resetLayout();
-    else if (action === 'collapse') {
-      for (const select of lineageState.analysis?.lineage?.selects ?? []) {
-        if (select.role !== 'MAIN') lineageState.collapsed.add(select.id);
-      }
-      renderGraph();
-    } else if (action === 'expand') {
-      lineageState.collapsed.clear();
-      renderGraph();
-    }
   });
 
   document.getElementById('lineageSearch').addEventListener('input', (e) => {

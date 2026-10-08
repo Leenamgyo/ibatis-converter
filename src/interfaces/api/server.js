@@ -549,7 +549,7 @@ function collectIncludes(node, namespace, into = []) {
 
 const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMainModule) {
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 4000;
   createApp().listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`ibatis-migration-analyzer API listening on :${port}`);

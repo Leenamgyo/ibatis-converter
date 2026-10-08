@@ -43,7 +43,8 @@ change would blast-radius into.
 
 ## Centre — graph controls
 
-`전체 펼치기` / `서브쿼리 접기` expand or collapse every nested cluster;
+Collapsing SELECT scopes (the per-lane `−` and `전체 펼치기` / `서브쿼리 접기`)
+was removed at the user's request; every scope is always drawn open.
 `−` / `＋` / `전체 보기` zoom, with the current scale shown between them.
 A new statement starts on "fit", because a wide statement at 100% is
 cropped and looks broken until you find the zoom control. The viewport

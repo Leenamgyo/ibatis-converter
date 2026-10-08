@@ -49,7 +49,7 @@ Plain Node.js (ESM, `"type": "module"`), no TypeScript, no bundler.
   one before changing that feature, and edit it when the feature changes. The lineage graph
   uses no diagram library: containment is nested DOM and edges are one
   measured SVG layer (see `docs/ARCHITECTURE.md`). Run `npm start` and open
-  `http://localhost:3000`.
+  `http://localhost:4000`.
 - Whole-project input: `application/ProjectLoader.scanProject` and the
   CLI `interfaces/cli/migrate.js` (`npm run migrate -- <dir>`) find iBATIS
   mappers by root element `<sqlMap>`. They skip build output

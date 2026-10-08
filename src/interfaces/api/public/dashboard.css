@@ -191,12 +191,7 @@
   background: var(--bg-sunken); color: var(--text-muted);
 }
 .cluster > .cluster-head .origin { font-weight: 500; color: var(--text-faint); }
-.cluster > .cluster-head .collapse {
-  margin-left: auto; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text-muted);
-  border-radius: 2px; font-size: 0.62rem; line-height: 1; padding: 0.15rem 0.3rem; cursor: pointer;
-}
 .cluster > .cluster-body { padding: 0.5rem; display: flex; gap: 2.6rem; align-items: flex-start; }
-.cluster.collapsed > .cluster-body { display: none; }
 
 .cluster.refid { background: var(--node-refid-bg); border-color: var(--node-refid-bd); }
 .cluster.refid > .cluster-head { color: var(--node-refid-fg); border-bottom-color: var(--node-refid-bd); }

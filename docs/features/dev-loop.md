@@ -1,7 +1,7 @@
 # Dev loop
 
 ```
-npm start        # serve on :3000
+npm start        # serve on :4000
 npm run dev      # same, restarting on backend changes
 npm test         # the whole suite (bare `node --test`)
 npm run test:watch

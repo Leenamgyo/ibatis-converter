@@ -34,7 +34,7 @@ runner in this project — and was instead verified by hand in a real Chrome
 tab; see docs/SPEC_MAPPING.md's "Manual verification of the section 24-26
 UI" note for exactly what was clicked through and the one real bug it
 caught. If you change `public/*`, re-verify the same way (`npm start`,
-open `http://localhost:3000`, click through Load sample -> Analyze -> a
+open `http://localhost:4000`, click through Load sample -> Analyze -> a
 statement in the lineage tree -> the MyBatis tab) rather than trusting
 `npm test` alone.
 
