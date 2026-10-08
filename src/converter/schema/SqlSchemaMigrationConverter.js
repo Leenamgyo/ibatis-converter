@@ -267,6 +267,8 @@ export class SqlSchemaMigrationConverter {
             text(node, 'text');
             break;
           case 'If':
+          case 'When':
+          case 'Otherwise':
             marker(MarkerKind.BRANCH_START);
             walk(node.children);
             marker(MarkerKind.BRANCH_END);

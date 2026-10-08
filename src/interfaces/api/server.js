@@ -466,9 +466,11 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
   const strip = ({ tokenIndex, ...event }) => event;
   // an "after" identical to its "before" is omitted (most nodes of a big project don't change):
   // a 10k-statement project's response shrinks several-fold
-  const texts = (ibatisNode, ibatisMigrated, mybatisNode, mybatisMigrated) => {
-    const ibatisBefore = ibatisXml.generateNode(ibatisNode);
-    const ibatisAfter = ibatisXml.generateNode(ibatisMigrated);
+  // the left side is the file's own syntax: iBATIS, or MyBatis for a MyBatis input mapper
+  const texts = (ibatisNode, ibatisMigrated, mybatisNode, mybatisMigrated, syntax = 'ibatis') => {
+    const sourceXml = syntax === 'mybatis' ? mybatisXml : ibatisXml;
+    const ibatisBefore = sourceXml.generateNode(ibatisNode);
+    const ibatisAfter = sourceXml.generateNode(ibatisMigrated);
     const mybatisBefore = mybatisXml.generateNode(mybatisNode);
     const mybatisAfter = mybatisXml.generateNode(mybatisMigrated);
     return {
@@ -496,7 +498,8 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
       const conversion = result.conversion.statements.get(qualifiedId);
       statements[qualifiedId] = {
         sourceFile,
-        ...texts(sqlMap.statements[i], ibatisMigrated.statements[i], statement, migrated.statements[i]),
+        ...texts(sqlMap.statements[i], ibatisMigrated.statements[i], statement, migrated.statements[i], result.syntax),
+        syntax: result.syntax ?? 'ibatis',
         // scoped: every fragment it includes, transitively, as resolved; whole project: as written
         includes: project ? project.includedFragments(qualifiedId) : collectIncludes(statement, namespace),
         ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
@@ -517,7 +520,8 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
         sourceFile,
         id: fragment.id,
         ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
-        ...texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i]),
+        ...texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i], result.syntax),
+        syntax: result.syntax ?? 'ibatis',
         events: own,
         summary: tally(own),
         conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null,

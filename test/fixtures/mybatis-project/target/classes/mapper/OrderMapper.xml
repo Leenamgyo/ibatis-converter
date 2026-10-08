@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="shop.OrderMapper">
+  <cache/>
+  <resultMap id="orderMap" type="shop.Order">
+    <id property="ordNo" column="ORD_NO"/>
+    <result property="custNm" column="CUST_NM"/>
+  </resultMap>
+  <select id="search" parameterType="map" resultMap="orderMap" fetchSize="100">
+    SELECT <include refid="shop.Common.orderCols"/>
+      FROM TB_ORD_H O
+      JOIN TB_CUST_M C ON C.CUST_NO = O.CUST_NO
+    <where>
+      <if test="ordNo != null">AND O.ORD_NO = #{ordNo}</if>
+      <choose>
+        <when test="stat == 'A'">AND O.ORD_STAT_CD = 'A'</when>
+        <otherwise>AND O.ORD_STAT_CD = #{stat,jdbcType=VARCHAR}</otherwise>
+      </choose>
+      <if test="ids != null">AND O.CUST_NO IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach></if>
+    </where>
+    <bind name="sortCol" value="'ORD_NO'"/>
+    ORDER BY O.ORD_DT DESC
+  </select>
+  <update id="updateStatus" useGeneratedKeys="false">
+    UPDATE TB_ORD_H
+    <set>
+      <if test="amt != null">TOT_AMT = #{amt},</if>
+      <if test="stat != null">ORD_STAT_CD = #{stat},</if>
+    </set>
+    WHERE ORD_NO = #{ordNo}
+  </update>
+</mapper>

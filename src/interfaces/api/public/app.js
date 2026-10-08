@@ -202,7 +202,8 @@ async function selectMappers(entries, progress) {
   const mappers = [];
   const skipped = [];
   entries.forEach((entry, i) => {
-    if (kinds[i] === 'IBATIS_MAPPER') mappers.push(entry);
+    // any mapper with SQL in it: iBATIS <sqlMap> or MyBatis <mapper>
+    if (kinds[i] === 'IBATIS_MAPPER' || kinds[i] === 'MYBATIS_MAPPER') mappers.push(entry);
     else skipped.push(`${entry.sourceFile} — ${SKIP_REASONS[kinds[i]] ?? kinds[i]}`);
   });
   return { mappers, skipped };
@@ -247,20 +248,21 @@ function fileItem(sourceFile, file, decodeXml) {
   return { sourceFile, size: file.size, read: async () => decodeXml(new Uint8Array(await file.arrayBuffer())).text };
 }
 
-async function uploadPicked(entries, { buildCopies = 0 } = {}) {
+async function uploadPicked(entries, { buildCopies = 0, skippedDirs = 0 } = {}) {
   const { decodeXml } = await import('/shared/mapperDetection.js');
   const progress = (text) => { fileCount.textContent = text; };
   const xmlCount = entries.length;
   const { mappers, skipped } = await selectMappers(entries, progress);
   fileCount.title = skipped.length ? `건너뛴 XML:\n${skipped.slice(0, 500).join('\n')}${skipped.length > 500 ? `\n… +${skipped.length - 500}` : ''}` : '';
   if (!mappers.length) {
-    fileCount.textContent = `iBATIS 매퍼를 찾지 못했습니다 (XML ${xmlCount.toLocaleString()}개)`;
+    fileCount.textContent = `SQL 매퍼(iBATIS <sqlMap> / MyBatis <mapper>)를 찾지 못했습니다 (XML ${xmlCount.toLocaleString()}개)`;
     return;
   }
   state.sampleKind = null;
   setFiles(new Map());
   await uploadProject(mappers.map(({ sourceFile, file }) => fileItem(sourceFile, file, decodeXml)), progress);
-  fileCount.textContent = `매퍼 ${mappers.length.toLocaleString()}개 (XML ${xmlCount.toLocaleString()}개 중${buildCopies ? ` · 빌드 폴더 ${buildCopies.toLocaleString()}개 제외` : ''})`;
+  const mybatisCount = state.index?.files.filter((f) => f.syntax === 'mybatis').length ?? 0;
+  fileCount.textContent = `매퍼 ${mappers.length.toLocaleString()}개${mybatisCount ? ` (MyBatis ${mybatisCount.toLocaleString()})` : ''} · XML ${xmlCount.toLocaleString()}개 중${buildCopies ? ` · 빌드 폴더 XML ${buildCopies.toLocaleString()}개 제외` : ''}${skippedDirs ? ` · 빌드/도구 폴더 ${skippedDirs.toLocaleString()}개 건너뜀` : ''}`;
 }
 
 fileInput.addEventListener('change', () => {
@@ -277,6 +279,57 @@ fileInput.addEventListener('change', () => {
  * Non-XML files are dropped by name: they are never read.
  */
 const folderInput = document.getElementById('folderInput');
+
+/**
+ * Walks a picked directory (File System Access API) and returns only its
+ * `.xml` files, never descending into build output / tool directories —
+ * so a 3,800-file project is not handed to the page at all, and the
+ * browser never asks to "upload" every file. Paths are relative to the
+ * picked folder.
+ */
+async function collectXmlFromDirectory(dirHandle, isInSkippedDirectory, onProgress) {
+  const out = [];
+  let skippedDirs = 0;
+  const walk = async (handle, prefix) => {
+    for await (const [name, child] of handle.entries()) {
+      const relative = prefix ? `${prefix}/${name}` : name;
+      if (child.kind === 'directory') {
+        if (isInSkippedDirectory(`${relative}/x`)) skippedDirs++;
+        else await walk(child, relative);
+      } else if (name.toLowerCase().endsWith('.xml')) {
+        out.push({ sourceFile: relative, file: await child.getFile() });
+        if (out.length % 100 === 0) onProgress(out.length);
+      }
+    }
+  };
+  await walk(dirHandle, '');
+  return { entries: out, skippedDirs };
+}
+
+document.getElementById('folderBtn').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) {
+    folderInput.click(); // no directory API (Firefox / Safari): the classic folder input
+    return;
+  }
+  let handle;
+  try {
+    handle = await window.showDirectoryPicker({ mode: 'read' });
+  } catch (e) {
+    if (e.name !== 'AbortError') fileCount.textContent = `폴더를 열 수 없습니다: ${e.message}`;
+    return;
+  }
+  try {
+    const { isInSkippedDirectory } = await import('/shared/mapperDetection.js');
+    fileCount.textContent = `${handle.name}: XML 찾는 중…`;
+    const { entries, skippedDirs } = await collectXmlFromDirectory(handle, isInSkippedDirectory, (n) => {
+      fileCount.textContent = `${handle.name}: XML ${n.toLocaleString()}개 찾는 중…`;
+    });
+    await uploadPicked(entries, { buildCopies: 0, skippedDirs });
+  } catch (e) {
+    fileCount.textContent = `업로드 실패: ${e.message}`;
+  }
+});
+
 folderInput.addEventListener('change', () => {
   const files = [...folderInput.files];
   folderInput.value = '';
@@ -435,6 +488,9 @@ function showScreen(screen) {
 }
 
 /** The 12 standardized iBATIS `isXxx` conditional tags (see docs/AST_REFERENCE.md's ConditionType). */
+/** MyBatis 3 tags that guard SQL (a MyBatis input mapper; see parser/mybatis). */
+const MYBATIS_GUARD_TAGS = new Set(['if', 'when', 'otherwise', 'foreach']);
+
 const IBATIS_CONDITION_TAGS = new Set([
   'isNull', 'isNotNull', 'isEmpty', 'isNotEmpty', 'isEqual', 'isNotEqual',
   'isGreaterThan', 'isGreaterEqual', 'isLessThan', 'isLessEqual',

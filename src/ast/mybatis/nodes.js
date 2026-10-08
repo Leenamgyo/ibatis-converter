@@ -1,8 +1,7 @@
 /**
- * Semantic AST for MyBatis 3.x Mapper XML — the target side of the
- * conversion pipeline. Populated by `converter/mybatis` and rendered to XML
- * by `generator/xml`. Skeleton for now; filled in alongside the converter
- * (spec sections 12-17).
+ * Semantic AST for MyBatis 3.x Mapper XML. Two producers: the conversion
+ * target (`converter/mybatis`), and a project's own MyBatis mappers read
+ * as input (`parser/mybatis`). Rendered to XML by `generator/xml`.
  */
 
 class AstNode {
@@ -34,6 +33,12 @@ export class StatementNode extends AstNode {
     this.resultMap = resultMap;
     /** a stored-procedure call: rendered with statementType="CALLABLE" */
     this.callable = false;
+    /**
+     * Attributes read from a MyBatis input mapper that the model has no field
+     * for (useGeneratedKeys, keyProperty, fetchSize, flushCache, ...): kept as
+     * `[name, value]` pairs and written back unchanged.
+     */
+    this.otherAttributes = [];
     /** @type {AstNode[]} */
     this.children = [];
   }
@@ -61,6 +66,41 @@ export class IfNode extends AstNode {
     this.test = test;
     /** @type {AstNode[]} */
     this.children = [];
+  }
+}
+
+/** `<choose>`: its `<when>` branches in order, then an optional `<otherwise>`. */
+export class ChooseNode extends AstNode {
+  constructor() {
+    super('Choose');
+    /** @type {(WhenNode|OtherwiseNode)[]} */
+    this.children = [];
+  }
+}
+
+export class WhenNode extends AstNode {
+  constructor({ test }) {
+    super('When');
+    this.test = test;
+    /** @type {AstNode[]} */
+    this.children = [];
+  }
+}
+
+export class OtherwiseNode extends AstNode {
+  constructor() {
+    super('Otherwise');
+    /** @type {AstNode[]} */
+    this.children = [];
+  }
+}
+
+/** `<bind name="..." value="..."/>`: an OGNL variable, no SQL of its own. */
+export class BindNode extends AstNode {
+  constructor({ name, value }) {
+    super('Bind');
+    this.name = name;
+    this.value = value;
   }
 }
 

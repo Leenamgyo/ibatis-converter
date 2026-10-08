@@ -27,6 +27,13 @@ export const ConditionType = Object.freeze({
   NOT_PROPERTY_AVAILABLE: 'NOT_PROPERTY_AVAILABLE',
   PARAMETER_PRESENT: 'PARAMETER_PRESENT',
   NOT_PARAMETER_PRESENT: 'NOT_PARAMETER_PRESENT',
+  // MyBatis 3 input (parser/mybatis), analysed with the same model:
+  /** `<if test>` */
+  TEST: 'TEST',
+  /** `<choose>`: exactly one of its WHEN / OTHERWISE children applies */
+  CHOOSE: 'CHOOSE',
+  WHEN: 'WHEN',
+  OTHERWISE: 'OTHERWISE',
 });
 
 /** Maps an iBATIS `isXxx` tag name to its standardized ConditionType. */

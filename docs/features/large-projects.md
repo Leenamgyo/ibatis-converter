@@ -48,6 +48,13 @@ The caches are `LruCache`s:
 
 ## Picking a big folder (3,800 files)
 
+**프로젝트 폴더** uses `showDirectoryPicker()` where the browser has it
+(Chrome / Edge). The page walks the folder itself
+(`collectXmlFromDirectory`) and never descends into build or tool
+directories. It sees only `.xml` files, and the browser doesn't ask to
+"upload N files". Elsewhere it falls back to `<input webkitdirectory>`,
+which hands every file over, and the path filter below drops them.
+
 The browser folder picker hands over every file in the project. Only
 mapper XML goes to the server:
 

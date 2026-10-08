@@ -32,7 +32,15 @@ const KEYWORD_TO_CLAUSE = {
   SET: ParameterUsedIn.UPDATE_SET,
 };
 
-const TOKEN_RE = /(#([^#]+)#)|(\$([^$]+)\$)|\b(SELECT|FROM|WHERE|ORDER\s+BY|GROUP\s+BY|HAVING|VALUES|SET|JOIN)\b/gi;
+// MyBatis `#{x}` / `${x}` (groups 6-9) before iBATIS `#x#` / `$x$`: `#{a}, #{b}` must not read as one `#...#`
+const TOKEN_RE = /(#\{([^}]*)\})|(\$\{([^}]*)\})|(#([^#{]+)#)|(\$([^${]+)\$)|\b(SELECT|FROM|WHERE|ORDER\s+BY|GROUP\s+BY|HAVING|VALUES|SET|JOIN)\b/gi;
+
+/** `#{prop,jdbcType=VARCHAR,javaType=...}` -> its property and jdbcType */
+function parseMyBatisParameter(expression) {
+  const [property, ...options] = expression.split(',').map((s) => s.trim());
+  const jdbcType = options.map((o) => /^jdbcType\s*=\s*(\w+)$/i.exec(o)?.[1]).find(Boolean) ?? null;
+  return { property, jdbcType, nullValue: null };
+}
 
 function deriveName(property) {
   return property.endsWith('[]') ? property.slice(0, -2) : property;
@@ -45,12 +53,14 @@ function mapPrependToClause(prepend, fallback) {
   return fallback;
 }
 
-function makeParameterUsage(expression, bindingType, clause, conditionStack, textNode) {
+function makeParameterUsage(expression, bindingType, clause, conditionStack, textNode, mybatis = false) {
   // `#prop:jdbcType:nullValue#` is one parameter with two extra fields,
   // not a property literally called "prop:jdbcType:nullValue".
-  const inline = bindingType === ParameterBindingType.HASH
-    ? parseInlineParameter(expression)
-    : { property: expression, jdbcType: null, nullValue: null };
+  const inline = mybatis
+    ? parseMyBatisParameter(expression)
+    : bindingType === ParameterBindingType.HASH
+      ? parseInlineParameter(expression)
+      : { property: expression, jdbcType: null, nullValue: null };
   return new ParameterUsage({
     name: deriveName(inline.property),
     expression,
@@ -86,13 +96,19 @@ function scanText(textNode, clause, conditionStack) {
   TOKEN_RE.lastIndex = 0;
   while ((match = TOKEN_RE.exec(textNode.text)) !== null) {
     if (match[1] !== undefined) {
-      parameters.push(makeParameterUsage(match[2], ParameterBindingType.HASH, currentClause, conditionStack, textNode));
+      parameters.push(makeParameterUsage(match[2], ParameterBindingType.HASH, currentClause, conditionStack, textNode, true));
     } else if (match[3] !== undefined) {
-      const usage = makeParameterUsage(match[4], ParameterBindingType.DOLLAR, currentClause, conditionStack, textNode);
+      const usage = makeParameterUsage(match[4], ParameterBindingType.DOLLAR, currentClause, conditionStack, textNode, true);
       parameters.push(usage);
       warnings.push(makeRawSubstitutionWarning(usage, textNode));
     } else if (match[5] !== undefined) {
-      const keyword = match[5].replace(/\s+/g, ' ').toUpperCase();
+      parameters.push(makeParameterUsage(match[6], ParameterBindingType.HASH, currentClause, conditionStack, textNode));
+    } else if (match[7] !== undefined) {
+      const usage = makeParameterUsage(match[8], ParameterBindingType.DOLLAR, currentClause, conditionStack, textNode);
+      parameters.push(usage);
+      warnings.push(makeRawSubstitutionWarning(usage, textNode));
+    } else if (match[9] !== undefined) {
+      const keyword = match[9].replace(/\s+/g, ' ').toUpperCase();
       currentClause = KEYWORD_TO_CLAUSE[keyword] ?? currentClause;
     }
   }
@@ -115,7 +131,7 @@ function analyzeList(nodes, clause, conditionStack) {
       }
       case 'Dynamic':
       case 'ResolvedInclude': {
-        const clauseForChildren = node.type === 'Dynamic' ? mapPrependToClause(node.prepend, currentClause) : currentClause;
+        const clauseForChildren = node.type === 'Dynamic' ? mapPrependToClause(node.prepend ?? node.trim?.prefix, currentClause) : currentClause;
         const result = analyzeList(node.children ?? [], clauseForChildren, conditionStack);
         currentClause = result.clause;
         parameters.push(...result.parameters);

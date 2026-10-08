@@ -37,7 +37,9 @@ function assertSameAsPipeline(root) {
     assert.deepEqual(summary.circularReferences, result.circularReferences.map((c) => c.path));
     assert.deepEqual(session.graph.dependencyGraph.toJSON(), result.dependencyGraph.toJSON());
     const report = session.report();
-    assert.deepEqual(report.mappers, result.mapperReports);
+    // the pipeline reads iBATIS only; the session also reads MyBatis mappers (compared on their own elsewhere)
+    const mybatisFiles = new Set(session.files.filter((f) => f.syntax === 'mybatis').map((f) => f.sourceFile));
+    assert.deepEqual(report.mappers.filter((m) => !mybatisFiles.has(m.sourceFile)), result.mapperReports);
     assert.deepEqual(report.tables, result.tableUsageReport);
     assert.deepEqual(report.tableDependencyGraph, result.tableDependencyGraph);
     assert.ok(session.mappers.count <= 2 && session.analyses.count <= 3, 'caches stay bounded');

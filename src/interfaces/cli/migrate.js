@@ -99,7 +99,8 @@ export function migrateProject(options, log = () => {}) {
       const { sourceFile } = entry;
       if (!entry.parsed) return fileReport(session, entry, [], null);
       const conversion = session.convertFile(sourceFile);
-      writeInside(outDir, path.join('mybatis', sourceFile), conversion.xml);
+      // a mapper that already is MyBatis is copied as written; its renames still go to mybatis-schema/
+      writeInside(outDir, path.join('mybatis', sourceFile), entry.syntax === 'mybatis' ? session.text(sourceFile) : conversion.xml);
       const conversionEvents = [...conversion.statements].flatMap(([id, c]) => c.events.map((e) => ({ ...e, statementId: id })));
       let schemaEvents = null;
       if (mapping) {
@@ -141,6 +142,7 @@ function fileReport(session, entry, conversion, schemaEvents) {
     sourceFile,
     encoding: entry.encoding,
     namespace,
+    syntax: entry.syntax,
     statements: entry.statements.length,
     conversion: tally(conversion),
     schema: schemaEvents ? {
@@ -161,6 +163,7 @@ function buildReport(root, outDir, session, files, mapping) {
     generatedAt: new Date().toISOString(),
     totals: {
       mappers: files.length,
+      mybatisMappers: files.filter((f) => f.syntax === 'mybatis').length,
       statements: sum((f) => f.statements),
       skippedXml: session.skipped.length,
       errors: sum((f) => f.diagnostics.filter((d) => d.severity === 'ERROR').length),
@@ -180,7 +183,7 @@ function renderMarkdown(report) {
     '',
     `- 프로젝트: \`${report.project}\``,
     `- 생성: ${report.generatedAt}`,
-    `- 매퍼 ${t.mappers}개 · statement ${t.statements}개 · 건너뛴 XML ${t.skippedXml}개`,
+    `- 매퍼 ${t.mappers}개${t.mybatisMappers ? ` (이미 MyBatis ${t.mybatisMappers}개: 원본 그대로 복사, 스키마 변환만 적용)` : ''} · statement ${t.statements}개 · 건너뛴 XML ${t.skippedXml}개`,
     `- 검토 필요: **MANUAL ${t.MANUAL}** · WARNING ${t.WARNING} · 파싱/참조 오류 ${t.errors}`,
     ...(t.tables !== undefined ? [`- 스키마 변환: 테이블 ${t.tables}건 · 컬럼 ${t.columns}건`] : []),
     '',

@@ -224,7 +224,7 @@ function drawSchemaView(pane, result) {
     noDatasetCallout(),
     summaryStrip(qualifiedId, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
-    legend(),
+    legend(statement.syntax),
     pairView(statement, { includeTree: statement.includeTree, fragments: result.fragments }),
     // the server sent no include tree (whole-project API): the fragments as a flat list
     !statement.includeTree && shown.length
@@ -416,12 +416,14 @@ function summaryStrip(title, schemaEvents, conversionEvents, projectSummary) {
   );
 }
 
-function legend() {
+function legend(syntax = 'ibatis') {
   return el('div', { class: 'sm-legend' },
     el('span', {}, el('del', { class: 'r' }, '레거시'), ' → ', el('ins', { class: 'r' }, '신규'), ' 컬럼·테이블명 변경'),
-    schemaState.mybatis
-      ? el('span', {}, el('del', { class: 's' }, '#x#'), ' → ', el('ins', { class: 's' }, '#{x}'), ' MyBatis 문법 변환')
-      : el('span', { class: 'muted' }, 'iBATIS 문법은 그대로 — “MyBatis 문법 변환”을 켜면 문법 변환도 함께 표시'),
+    syntax === 'mybatis'
+      ? el('span', { class: 'muted' }, '이미 MyBatis 매퍼 — 문법 변환 없이 컬럼·테이블명만 바뀝니다')
+      : schemaState.mybatis
+        ? el('span', {}, el('del', { class: 's' }, '#x#'), ' → ', el('ins', { class: 's' }, '#{x}'), ' MyBatis 문법 변환')
+        : el('span', { class: 'muted' }, 'iBATIS 문법은 그대로 — “MyBatis 문법 변환”을 켜면 문법 변환도 함께 표시'),
   );
 }
 
@@ -738,8 +740,8 @@ function pairView(entry, { compact = false, includeTree = null, fragments = null
   const renameRows = rows.filter((r) => r.kinds.includes('r')).length;
   const syntaxRows = rows.filter((r) => r.kinds.includes('s')).length;
   const head = el('div', { class: 'sd-head' },
-    el('div', {}, '원본 · iBATIS'),
-    el('div', {}, mybatis ? '결과 · MyBatis + 신규 스키마' : '결과 · iBATIS + 신규 스키마',
+    el('div', {}, entry.syntax === 'mybatis' ? '원본 · MyBatis' : '원본 · iBATIS'),
+    el('div', {}, mybatis || entry.syntax === 'mybatis' ? '결과 · MyBatis + 신규 스키마' : '결과 · iBATIS + 신규 스키마',
       el('span', { class: 'sd-count' },
         renameRows ? el('span', { class: 'r' }, `컬럼명 ${renameRows}줄`) : null,
         syntaxRows ? el('span', { class: 's' }, `문법 ${syntaxRows}줄`) : null,

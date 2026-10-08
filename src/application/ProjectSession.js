@@ -2,6 +2,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseIbatisMapperSource } from '../parser/ibatis/IbatisMapperParser.js';
+import { parseMyBatisMapperSource } from '../parser/mybatis/MyBatisMapperParser.js';
+
+/** the kinds of XML a session reads: any mapper with SQL in it */
+const MAPPER_KINDS = { IBATIS_MAPPER: 'ibatis', MYBATIS_MAPPER: 'mybatis' };
+
+/** XML text -> { sqlMap (analysis AST), mybatis (a MyBatis file's own AST, else null), diagnostics } */
+function parseMapper(text, sourceFile, syntax) {
+  if (syntax === 'mybatis') {
+    const { mapper, sqlMap, diagnostics } = parseMyBatisMapperSource(text, sourceFile);
+    return { sqlMap, mybatis: mapper, diagnostics };
+  }
+  const { sqlMap, diagnostics } = parseIbatisMapperSource(text, sourceFile);
+  return { sqlMap, mybatis: null, diagnostics };
+}
 import { IncludeNode } from '../ast/ibatis/nodes.js';
 import { SymbolType } from '../ast/ibatis/enums.js';
 import { buildSymbolTable } from '../resolver/symbol/ProjectScanner.js';
@@ -153,6 +167,17 @@ function collectIncludes(node, out = []) {
   return out;
 }
 
+/** the one "conversion" event of a statement / fragment that already is MyBatis */
+function alreadyMyBatis(node) {
+  return {
+    grade: 'SAFE',
+    code: 'ALREADY_MYBATIS',
+    message: 'MyBatis 3 mapper: no syntax conversion needed (kept as written)',
+    sourceFile: node.sourceFile ?? null,
+    sourceLine: node.sourceLine ?? null,
+  };
+}
+
 export class ProjectSession {
   /**
    * @param {DirectorySource} source
@@ -192,7 +217,7 @@ export class ProjectSession {
       try {
         // most of a project's XML is not a mapper: decided from the file's head, never read whole
         const early = this.source.classify?.(sourceFile) ?? null;
-        if (early && early !== 'IBATIS_MAPPER') {
+        if (early && !MAPPER_KINDS[early]) {
           skipped.push({ sourceFile, kind: early, reason: SKIP_REASONS[early] });
           continue;
         }
@@ -202,13 +227,14 @@ export class ProjectSession {
         continue;
       }
       const kind = classifyXml(text);
-      if (kind !== 'IBATIS_MAPPER') {
+      const syntax = MAPPER_KINDS[kind];
+      if (!syntax) {
         skipped.push({ sourceFile, kind, reason: SKIP_REASONS[kind] });
         continue;
       }
-      const { sqlMap, diagnostics: fileDiagnostics } = parseIbatisMapperSource(text, sourceFile);
+      const { sqlMap, mybatis, diagnostics: fileDiagnostics } = parseMapper(text, sourceFile, syntax);
       diagnostics.merge(fileDiagnostics);
-      const entry = { sourceFile, size, encoding, lines: text.split('\n').length, namespace: sqlMap?.namespace ?? null, parsed: Boolean(sqlMap), statements: [], fragments: [], resultMaps: [] };
+      const entry = { sourceFile, size, encoding, syntax, lines: text.split('\n').length, namespace: sqlMap?.namespace ?? null, parsed: Boolean(sqlMap), statements: [], fragments: [], resultMaps: [] };
       files.push(entry);
       if (!sqlMap) continue;
       const ns = sqlMap.namespace;
@@ -231,7 +257,7 @@ export class ProjectSession {
       for (const cm of sqlMap.cacheModels) stub.cacheModels.push({ type: 'CacheModel', id: cm.id, sourceFile, sourceLine: cm.sourceLine });
       stubMappers.push({ sourceFile, sqlMap: stub });
       // the parse is already paid for: keep it while the cache has room (no extra memory past its bound)
-      this.mappers.set(sourceFile, this.#indexMapper(sqlMap));
+      this.mappers.set(sourceFile, this.#indexMapper(sqlMap, mybatis));
     }
 
     // project-wide reference graph on the stubs: same resolver, same rules, no file reads
@@ -284,9 +310,11 @@ export class ProjectSession {
 
   // ---------------------------------------------------------------- loading
 
-  #indexMapper(sqlMap) {
+  #indexMapper(sqlMap, mybatis = null) {
     return {
       sqlMap,
+      /** a MyBatis input file's own AST (null for iBATIS): its "conversion" is itself */
+      mybatis,
       statements: new Map(sqlMap.statements.map((s) => [s.id, s])),
       fragments: new Map(sqlMap.sqlFragments.map((s) => [s.id, s])),
       resultMaps: new Map(sqlMap.resultMaps.map((s) => [s.id, s])),
@@ -304,8 +332,8 @@ export class ProjectSession {
     this.#assertOpen();
     return this.mappers.getOrLoad(sourceFile, () => {
       this.loads++;
-      const { sqlMap } = parseIbatisMapperSource(this.text(sourceFile), sourceFile);
-      return this.#indexMapper(sqlMap);
+      const { sqlMap, mybatis } = parseMapper(this.text(sourceFile), sourceFile, this.fileEntries.get(sourceFile)?.syntax);
+      return this.#indexMapper(sqlMap, mybatis);
     });
   }
 
@@ -392,9 +420,12 @@ export class ProjectSession {
   /** MyBatis conversion of one statement: { node, events, safetySummary, xml } */
   convertStatement(qualifiedId) {
     const at = this.#locate(qualifiedId);
-    const statement = at && this.mapper(at.sourceFile).statements.get(at.localId);
+    const m = at && this.mapper(at.sourceFile);
+    const statement = m?.statements.get(at.localId);
     if (!statement) return null;
-    const { node, events } = this.converter.convertStatement(statement, this.#context(at.namespace));
+    const { node, events } = m.mybatis
+      ? { node: m.mybatis.statements.find((s) => s.id === at.localId), events: [alreadyMyBatis(statement)] }
+      : this.converter.convertStatement(statement, this.#context(at.namespace));
     const preview = new MapperNode({ namespace: at.namespace });
     preview.statements = [node];
     return { node, events, safetySummary: this.safety.summarize(events), xml: this.xml.generate(preview) };
@@ -404,6 +435,14 @@ export class ProjectSession {
   convertFile(sourceFile) {
     const m = this.mapper(sourceFile);
     const ns = m.sqlMap.namespace;
+    if (m.mybatis) {
+      // already MyBatis: the file is its own conversion (never mutated: the schema migration copies)
+      const graded = (nodes) => new Map(nodes.map((n) => {
+        const events = [alreadyMyBatis(n)];
+        return [qualify(ns, n.id), { events, safetySummary: this.safety.summarize(events) }];
+      }));
+      return { mapperNode: m.mybatis, statements: graded(m.sqlMap.statements), fragments: graded(m.sqlMap.sqlFragments), xml: this.xml.generate(m.mybatis), syntax: 'mybatis' };
+    }
     const mapperNode = new MapperNode({ namespace: ns });
     const statements = new Map();
     const fragments = new Map();
@@ -541,8 +580,8 @@ export class ProjectSession {
       const list = (side) => (kind === 'statement' ? side.mapper.statements : side.mapper.sqlFragments);
       const originalList = (side) => (kind === 'statement' ? side.original.statements : side.original.sqlFragments);
       const texts = {
-        ibatisBefore: this.ibatisXml.generateNode(originalList(r.ibatis)[i]),
-        ibatisAfter: this.ibatisXml.generateNode(list(r.ibatis)[i]),
+        ibatisBefore: this.#sourceXml(r).generateNode(originalList(r.ibatis)[i]),
+        ibatisAfter: this.#sourceXml(r).generateNode(list(r.ibatis)[i]),
         mybatisBefore: this.xml.generateNode(originalList(r.mybatis)[i]),
         mybatisAfter: this.xml.generateNode(list(r.mybatis)[i]),
       };
@@ -576,6 +615,11 @@ export class ProjectSession {
     ])];
     const scope = this.#schemaFiles([sourceFile], fragmentIds);
     return { ...this.#migrateFiles(scope, mapping, options), fragmentIds };
+  }
+
+  /** the generator for a file's own syntax (the left side of the 변환 view) */
+  #sourceXml(result) {
+    return result.syntax === 'mybatis' ? this.xml : this.ibatisXml;
   }
 
   /** the files a schema migration of `seedFiles` + `fragmentIds` needs, includer sites capped */
@@ -614,7 +658,8 @@ export class ProjectSession {
   #migrateFiles({ files, sampled }, mapping, options) {
     const converter = new SqlSchemaMigrationConverter(mapping, options);
     const conversions = files.map((f) => this.convertFile(f));
-    const originals = files.map((f) => this.mapper(f).sqlMap);
+    // the "keep the syntax" side: an iBATIS file's own AST, or a MyBatis file's own AST
+    const originals = files.map((f) => this.mapper(f).mybatis ?? this.mapper(f).sqlMap);
     const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode));
     const ibatis = converter.convertMappers(originals);
     const results = new Map();
@@ -622,6 +667,7 @@ export class ProjectSession {
       mybatis: { ...mybatis[i], original: conversions[i].mapperNode },
       ibatis: { ...ibatis[i], original: originals[i] },
       conversion: conversions[i],
+      syntax: this.fileEntries.get(f)?.syntax ?? 'ibatis',
     }));
     return { results, sampled };
   }
@@ -715,6 +761,7 @@ export class ProjectSession {
         sourceFile: f.sourceFile,
         namespace: f.namespace,
         encoding: f.encoding,
+        syntax: f.syntax,
         lines: f.lines,
         parsed: f.parsed,
         statements: f.statements.map((s) => ({ ...s, includes: this.includedFragments(s.qualifiedId).length })),

@@ -484,13 +484,15 @@ function normalizeSql(text) {
 function collectGuards() {
   const stmtEl = lineageState.stmtEl;
   if (!stmtEl) return [];
-  const selector = ['iterate', ...IBATIS_CONDITION_TAGS].join(', ');
-  return [...stmtEl.querySelectorAll(selector)].map((element) => {
+  // iBATIS isXxx / iterate, and MyBatis if / when / otherwise / foreach (a MyBatis input mapper)
+  const guardTags = new Set(['iterate', ...IBATIS_CONDITION_TAGS, ...MYBATIS_GUARD_TAGS]);
+  const groupTags = new Set(['dynamic', 'where', 'set', 'trim', 'choose']);
+  return [...stmtEl.querySelectorAll([...guardTags].join(', '))].map((element) => {
     let depth = 0;
     for (let parent = element.parentElement; parent && parent !== stmtEl; parent = parent.parentElement) {
-      if (parent.tagName === 'dynamic' || IBATIS_CONDITION_TAGS.has(parent.tagName) || parent.tagName === 'iterate') depth++;
+      if (groupTags.has(parent.tagName) || guardTags.has(parent.tagName)) depth++;
     }
-    const attrs = ['property', 'compareValue', 'prepend', 'conjunction']
+    const attrs = ['property', 'compareValue', 'prepend', 'conjunction', 'test', 'collection', 'separator']
       .map((name) => [name, element.getAttribute(name)])
       .filter(([, v]) => v !== null && v !== '')
       .map(([k, v]) => `${k}="${v}"`).join(' ');

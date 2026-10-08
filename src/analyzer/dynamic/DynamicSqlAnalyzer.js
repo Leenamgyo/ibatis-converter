@@ -28,7 +28,7 @@ function convertNode(node) {
   switch (node.type) {
     case 'Dynamic':
       return new DynamicGroup({
-        prepend: node.prepend,
+        prepend: node.prepend ?? node.trim?.prefix ?? null,
         sql: flattenText(node.children),
         children: convertChildren(node.children),
         sourceFile: node.sourceFile,
@@ -36,7 +36,8 @@ function convertNode(node) {
       });
     case 'Conditional':
       return new DynamicCondition({
-        property: node.property,
+        // a MyBatis <if test> / <when test> carries its OGNL expression instead of a property
+        property: node.property ?? node.test ?? null,
         operator: node.conditionType,
         compareValue: node.compareValue,
         prepend: node.prepend,

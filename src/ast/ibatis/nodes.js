@@ -87,12 +87,19 @@ export class TextSqlNode extends AstNode {
 
 /** `<dynamic prepend="WHERE">...</dynamic>`. */
 export class DynamicNode extends AstNode {
-  constructor({ prepend = null, open = null, close = null, sourceFile, sourceLine }) {
+  constructor({ prepend = null, open = null, close = null, trim = null, sourceFile, sourceLine }) {
     super('Dynamic', sourceFile, sourceLine);
     this.prepend = prepend;
     /** iBATIS `open`/`close`: rendered around the body, only when the body is non-empty */
     this.open = open;
     this.close = close;
+    /**
+     * A MyBatis `<where>` / `<set>` / `<trim>` read for analysis (parser/mybatis):
+     * `{ prefix, suffix, prefixOverrides: string[], suffixOverrides: string[] }`.
+     * The body's leading / trailing override is dropped, then prefix / suffix
+     * added — only when the body is non-empty. Null for iBATIS's own `<dynamic>`.
+     */
+    this.trim = trim;
     /** @type {AstNode[]} */
     this.children = [];
   }
@@ -109,6 +116,7 @@ export class ConditionalNode extends AstNode {
     open = null,
     close = null,
     removeFirstPrepend = false,
+    test = null,
     sourceFile,
     sourceLine,
   }) {
@@ -123,6 +131,8 @@ export class ConditionalNode extends AstNode {
     this.close = close;
     /** drop the first nested tag's own prepend (iBATIS `removeFirstPrepend="true"`) */
     this.removeFirstPrepend = removeFirstPrepend;
+    /** MyBatis OGNL `test` (conditionType TEST / WHEN), read for analysis from a MyBatis mapper */
+    this.test = test;
     /** @type {AstNode[]} */
     this.children = [];
   }

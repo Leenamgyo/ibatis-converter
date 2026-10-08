@@ -52,8 +52,10 @@ test('CLI: converts a project folder into out/, mirroring paths, with a report',
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-'));
   try {
     const report = migrateProject(parseArgs([project, '--out', out, '--mapping', path.join(fixture, 'mapping.json')]));
-    assert.equal(report.totals.mappers, 2);
-    assert.equal(report.totals.statements, 3);
+    // two iBATIS mappers + one already-MyBatis mapper (kept as written, still schema-migrated)
+    assert.equal(report.totals.mappers, 3);
+    assert.equal(report.totals.mybatisMappers, 1);
+    assert.equal(report.totals.statements, 4);
     assert.equal(report.totals.errors, 0);
     assert.equal(report.totals.tables, 3);
 
@@ -65,9 +67,11 @@ test('CLI: converts a project folder into out/, mirroring paths, with a report',
     assert.match(migrated, /FROM CUSTOMER C/);
 
     const md = fs.readFileSync(path.join(out, 'report.md'), 'utf8');
-    assert.match(md, /매퍼 2개 · statement 3개 · 건너뛴 XML 5개/);
+    assert.match(md, /매퍼 3개 \(이미 MyBatis 1개: 원본 그대로 복사, 스키마 변환만 적용\) · statement 4개 · 건너뛴 XML 4개/);
     assert.match(md, /Customer_SQL\.xml \(euc-kr\)/);
-    assert.ok(JSON.parse(fs.readFileSync(path.join(out, 'report.json'), 'utf8')).files.length === 2);
+    assert.ok(JSON.parse(fs.readFileSync(path.join(out, 'report.json'), 'utf8')).files.length === 3);
+    const already = 'src/main/resources/mybatis/AlreadyConverted.xml';
+    assert.equal(fs.readFileSync(path.join(out, 'mybatis', already), 'utf8'), fs.readFileSync(path.join(project, already), 'utf8'), 'a MyBatis mapper is copied unchanged');
     // the source tree is untouched
     assert.equal(fs.existsSync(path.join(project, 'mybatis')), false);
   } finally {

@@ -159,7 +159,8 @@ test(`generated legacy projects: scan, refid chains, diagnostics, MyBatis output
       }
 
       const report = migrateProject(parseArgs([dir, '--out', out]));
-      if (report.totals.mappers !== truth.mappers.length) problems.push({ seed, kind: 'cli' });
+      // generated projects also hold an already-MyBatis mapper: read too now, but not one of the truth's iBATIS mappers
+      if (report.totals.mappers - report.totals.mybatisMappers !== truth.mappers.length) problems.push({ seed, kind: 'cli' });
       for (const m of truth.mappers) if (!fs.existsSync(path.join(out, 'mybatis', m))) problems.push({ seed, kind: 'cli output', file: m });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

@@ -39,6 +39,14 @@
  *    former is its own embedded statement, the latter has no known
  *    content to include.
  *
+ * MyBatis 3 input (parser/mybatis) uses the same tree: `<where>` / `<set>` /
+ * `<trim>` are a Dynamic with `trim` (the body's leading / trailing override
+ * is removed, then prefix / suffix added), `<if>` a prepend-less — so
+ * transparent — Conditional, and `<choose>` a CHOOSE Conditional of which
+ * only the FIRST non-empty branch is flattened: its branches are
+ * alternatives, so all of them at once would not be SQL. `#{x}` / `${x}`
+ * become `?` like `#x#` / `$x$`.
+ *
  * Known simplification: a resolved `<include>`'s spliced-in content is
  * flattened as its own unsuppressed scope rather than being spliced into
  * the *surrounding* scope's suppression accounting, so a `<sql>` fragment
@@ -50,7 +58,8 @@
  */
 
 const isTransparentConditional = (node) =>
-  node.type === 'Conditional' && !node.prepend?.trim() && !node.removeFirstPrepend && !node.open && !node.close;
+  node.type === 'Conditional' && node.conditionType !== 'CHOOSE'
+  && !node.prepend?.trim() && !node.removeFirstPrepend && !node.open && !node.close;
 
 function flattenChildrenList(nodes, isTopLevel, state = { hasEmittedAnyContent: false }) {
   let out = '';
@@ -68,7 +77,8 @@ function flattenChildrenList(nodes, isTopLevel, state = { hasEmittedAnyContent: 
       // first isXxx/nested-<dynamic> inside a container never gets its
       // prepend dropped.
       if (node.text.trim() === '') continue;
-      out += node.text;
+      // MyBatis joins the SQL of separate tags with a space (DynamicContext#appendSql); iBATIS doesn't
+      out += node.spaced ? ` ${node.text} ` : node.text;
       state.hasEmittedAnyContent = true;
       continue;
     }
@@ -82,7 +92,17 @@ function flattenChildrenList(nodes, isTopLevel, state = { hasEmittedAnyContent: 
     if (node.type === 'UnresolvedInclude' || node.type === 'SelectKey') continue;
 
     let innerText;
-    if (node.type === 'Iterate') {
+    if (node.type === 'Conditional' && node.conditionType === 'CHOOSE') {
+      // one branch applies at runtime; the first non-empty one stands for the choose
+      innerText = '';
+      for (const branch of node.children) {
+        if (branch.type !== 'Conditional') continue;
+        innerText = flattenChildrenList(branch.children, true);
+        if (innerText.trim()) break;
+      }
+    } else if (node.type === 'Dynamic' && node.trim) {
+      innerText = applyTrim(flattenChildrenList(node.children, true), node.trim);
+    } else if (node.type === 'Iterate') {
       const body = flattenChildrenList(node.children, true);
       innerText = body === '' ? '' : `${node.open ?? ''}${body}${node.close ?? ''}`;
     } else if (node.type === 'Dynamic' || node.type === 'Conditional') {
@@ -103,8 +123,31 @@ function flattenChildrenList(nodes, isTopLevel, state = { hasEmittedAnyContent: 
   return out;
 }
 
+/** MyBatis trim semantics over the flattened body (overrides compared case-insensitively) */
+function applyTrim(body, { prefix = null, suffix = null, prefixOverrides = [], suffixOverrides = [] }) {
+  let text = body.trim();
+  if (!text) return '';
+  const upper = () => text.toUpperCase();
+  for (const o of prefixOverrides) {
+    const word = o.trim().toUpperCase();
+    if (word && upper().startsWith(word) && (/\W$/.test(word) || !/\w/.test(upper()[word.length] ?? ''))) {
+      text = text.slice(word.length).trim();
+      break;
+    }
+  }
+  for (const o of suffixOverrides) {
+    const word = o.trim().toUpperCase();
+    if (word && upper().endsWith(word)) {
+      text = text.slice(0, text.length - word.length).trim();
+      break;
+    }
+  }
+  return `${prefix ? ` ${prefix} ` : ' '}${text}${suffix ? ` ${suffix}` : ''}`;
+}
+
 function replaceParameterTokens(sql) {
-  return sql.replace(/#([^#]+)#|\$([^$]+)\$/g, '?');
+  // MyBatis #{x} / ${x} first: their braces can hold a ':' or '#' that the iBATIS form would misread
+  return sql.replace(/#\{[^}]*\}|\$\{[^}]*\}|#([^#]+)#|\$([^$]+)\$/g, '?');
 }
 
 /**

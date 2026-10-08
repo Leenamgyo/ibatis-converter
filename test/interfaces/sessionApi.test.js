@@ -43,7 +43,7 @@ test('POST /api/v1/projects returns the index only; statements load through thei
     assert.equal(opened.status, 200);
     const { projectId, files: index, totals } = opened.body;
     assert.ok(projectId);
-    assert.equal(totals.statements, 3);
+    assert.equal(totals.statements, 4); // 3 iBATIS + 1 already-MyBatis
     assert.ok(!JSON.stringify(opened.body).includes('<select'), 'no XML in the index');
     const id = index.flatMap((f) => f.statements)[0].qualifiedId;
     const q = `?projectId=${projectId}`;
@@ -104,7 +104,7 @@ test('POST /api/v1/projects/open reads a local folder in place; the cap closes t
   try {
     const first = await call('POST', '/api/v1/projects/open', { path: LEGACY_APP });
     assert.equal(first.status, 200);
-    assert.equal(first.body.totals.statements, 3);
+    assert.equal(first.body.totals.statements, 4);
     assert.ok(first.body.skipped.length >= 1, 'non-mapper XML is listed as skipped');
     const second = await call('POST', '/api/v1/projects/open', { path: LEGACY_APP });
     assert.equal((await call('GET', `/api/v1/projects/${first.body.projectId}`)).status, 404, 'evicted');
@@ -128,7 +128,7 @@ test('a project can arrive in batches: /uploads, /uploads/:id/files, /uploads/:i
     assert.equal((await call('POST', `/api/v1/uploads/${uploadId}/files`, { files: 'x' })).status, 400);
     const opened = await call('POST', `/api/v1/uploads/${uploadId}/open`);
     assert.equal(opened.status, 200);
-    assert.equal(opened.body.totals.statements, 3);
+    assert.equal(opened.body.totals.statements, 4);
     assert.equal((await call('POST', `/api/v1/uploads/${uploadId}/open`)).status, 404, 'an upload opens once');
     assert.equal((await call('POST', '/api/v1/uploads/nope/files', { files: [] })).status, 404);
   } finally {

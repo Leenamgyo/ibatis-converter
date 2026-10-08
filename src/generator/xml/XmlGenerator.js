@@ -36,6 +36,24 @@ function renderNode(node, level, lines) {
       renderChildren(node.children, level + 1, lines);
       lines.push(`${pad}</if>`);
       break;
+    case 'Choose':
+      lines.push(`${pad}<choose>`);
+      renderChildren(node.children, level + 1, lines);
+      lines.push(`${pad}</choose>`);
+      break;
+    case 'When':
+      lines.push(`${pad}<when${attrsString([['test', node.test]])}>`);
+      renderChildren(node.children, level + 1, lines);
+      lines.push(`${pad}</when>`);
+      break;
+    case 'Otherwise':
+      lines.push(`${pad}<otherwise>`);
+      renderChildren(node.children, level + 1, lines);
+      lines.push(`${pad}</otherwise>`);
+      break;
+    case 'Bind':
+      lines.push(`${pad}<bind${attrsString([['name', node.name], ['value', node.value]])}/>`);
+      break;
     case 'Where':
       lines.push(`${pad}<where>`);
       renderChildren(node.children, level + 1, lines);
@@ -122,6 +140,7 @@ function renderNode(node, level, lines) {
         ['resultType', node.resultType],
         ['resultMap', node.resultMap],
         ['statementType', node.callable ? 'CALLABLE' : null],
+        ...(node.otherAttributes ?? []),
       ])}>`);
       renderChildren(node.children, level + 1, lines);
       lines.push(`${pad}</${tagName}>`);
