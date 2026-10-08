@@ -435,13 +435,15 @@ export function createApp({
   const migrationOptions = (req) => ({ preserveResultColumnNames: Boolean(req.body?.preserveResultColumnNames) });
   // "쿼리 정렬": how the texts are written out, not part of the migration itself
   const formatSql = (req) => Boolean(req.body?.formatSql);
+  // "refid 쿼리에 통합": every <include> replaced by its fragment's text, ready to copy
+  const inlineRefid = (req) => Boolean(req.body?.inlineRefid);
 
   // One statement: only its file, its fragments' files and (capped) their includers' are loaded.
   app.post('/api/v1/statements/:id/schema-migration', (req, res) => {
     const project = resolveProject(req, res);
     if (!project || !knownStatement(project, req.params.id, res)) return;
     const mapping = requestMapping(req, res);
-    if (mapping) sendJson(req, res, project.schemaMigration(req.params.id, mapping, migrationOptions(req), { formatSql: formatSql(req) }));
+    if (mapping) sendJson(req, res, project.schemaMigration(req.params.id, mapping, migrationOptions(req), { formatSql: formatSql(req), inlineRefid: inlineRefid(req) }));
   });
 
   // Counts per statement (tree badges, totals), computed file by file.
@@ -468,7 +470,7 @@ export function createApp({
         res.status(404).json({ error: `Unknown mapper file "${file}"` });
         return;
       }
-      sendJson(req, res, shapeSchemaMigration(scoped.results, { files: new Set([file]), fragments: new Set(scoped.fragmentIds), sampled: scoped.sampled, project, formatSql: formatSql(req) }));
+      sendJson(req, res, shapeSchemaMigration(scoped.results, { files: new Set([file]), fragments: new Set(scoped.fragmentIds), sampled: scoped.sampled, project, formatSql: formatSql(req), inlineRefid: inlineRefid(req) }));
       return;
     }
     // no dataset yet is fine: the view still shows the iBATIS -> MyBatis conversion
@@ -510,7 +512,16 @@ export function createApp({
  * a missing after as "unchanged"). Per file: its statement / fragment ids and
  * a summary.
  */
-function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onlyFragments = null, sampled = new Map(), project = null, formatSql = false } = {}) {
+function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onlyFragments = null, sampled = new Map(), project = null, formatSql = false, inlineRefid = false } = {}) {
+  // inlined texts need the project's include rule (a scoped request); the whole-project form keeps <include>s
+  const inline = inlineRefid && project !== null;
+  const sides = inline ? {
+    ibatisBefore: ProjectSession.fragmentsOf(results, 'ibatis', false),
+    ibatisAfter: ProjectSession.fragmentsOf(results, 'ibatis', true),
+    mybatisBefore: ProjectSession.fragmentsOf(results, 'mybatis', false),
+    mybatisAfter: ProjectSession.fragmentsOf(results, 'mybatis', true),
+  } : null;
+  const flat = (node, side, namespace, qualifiedId) => (inline ? project.inlineIncludes(node, namespace, sides[side], qualifiedId) : node);
   const mybatisXml = new XmlGenerator({ formatSql });
   const ibatisXml = new IbatisXmlGenerator({ formatSql });
   const qualify = (namespace, id) => (namespace ? `${namespace}.${id}` : id);
@@ -527,12 +538,12 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
   // an "after" identical to its "before" is omitted (most nodes of a big project don't change):
   // a 10k-statement project's response shrinks several-fold
   // the left side is the file's own syntax: iBATIS, or MyBatis for a MyBatis input mapper
-  const texts = (ibatisNode, ibatisMigrated, mybatisNode, mybatisMigrated, syntax = 'ibatis') => {
+  const texts = (ibatisNode, ibatisMigrated, mybatisNode, mybatisMigrated, syntax = 'ibatis', namespace = null, qualifiedId = null) => {
     const sourceXml = syntax === 'mybatis' ? mybatisXml : ibatisXml;
-    const ibatisBefore = sourceXml.generateNode(ibatisNode);
-    const ibatisAfter = sourceXml.generateNode(ibatisMigrated);
-    const mybatisBefore = mybatisXml.generateNode(mybatisNode);
-    const mybatisAfter = mybatisXml.generateNode(mybatisMigrated);
+    const ibatisBefore = sourceXml.generateNode(flat(ibatisNode, 'ibatisBefore', namespace, qualifiedId));
+    const ibatisAfter = sourceXml.generateNode(flat(ibatisMigrated, 'ibatisAfter', namespace, qualifiedId));
+    const mybatisBefore = mybatisXml.generateNode(flat(mybatisNode, 'mybatisBefore', namespace, qualifiedId));
+    const mybatisAfter = mybatisXml.generateNode(flat(mybatisMigrated, 'mybatisAfter', namespace, qualifiedId));
     return {
       ibatisBefore,
       ...(ibatisAfter === ibatisBefore ? {} : { ibatisAfter }),
@@ -558,7 +569,7 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
       const conversion = result.conversion.statements.get(qualifiedId);
       statements[qualifiedId] = {
         sourceFile,
-        ...texts(sqlMap.statements[i], ibatisMigrated.statements[i], statement, migrated.statements[i], result.syntax),
+        ...texts(sqlMap.statements[i], ibatisMigrated.statements[i], statement, migrated.statements[i], result.syntax, namespace, qualifiedId),
         syntax: result.syntax ?? 'ibatis',
         // scoped: every fragment it includes, transitively, as resolved; whole project: as written
         includes: project ? project.includedFragments(qualifiedId) : collectIncludes(statement, namespace),
@@ -580,7 +591,7 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
         sourceFile,
         id: fragment.id,
         ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
-        ...texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i], result.syntax),
+        ...texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i], result.syntax, namespace, qualifiedId),
         syntax: result.syntax ?? 'ibatis',
         events: own,
         summary: tally(own),

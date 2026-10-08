@@ -601,40 +601,47 @@ function parseMapperSource(source) {
 }
 
 /**
- * Resolves an `<include refid>` the way the ReferenceResolver does: an
- * already-qualified id, then the including mapper's own namespace, then — a
- * bare id under iBATIS's default useStatementNamespaces=false — the one
- * fragment of that id in any mapper (none if two mappers define it).
+ * The fragment's real SQL text, with every `<include refid>` inside it — at
+ * any depth, also inside its dynamic tags — spliced in. Which fragment an
+ * include means is NOT guessed by name here: it comes from the server's
+ * resolved include tree (`GET /statements/:id/xml` -> includeTree, the
+ * ReferenceResolver's own answer, nested bare refids included). `treeNode`
+ * is this fragment's node in that tree; its children are the fragment's
+ * includes in document order.
  */
-function resolveFragmentElement(refid, fragments, namespace) {
-  const direct = fragments.get(refid) ?? (namespace ? fragments.get(`${namespace}.${refid}`) : undefined);
-  if (direct || refid.includes('.')) return direct;
-  const matches = [...fragments].filter(([qualifiedId]) => qualifiedId.endsWith(`.${refid}`) || qualifiedId === refid);
-  return matches.length === 1 ? matches[0][1] : undefined;
+function expandFragmentSql(element, fragments, treeNode) {
+  const includes = treeNode?.children ?? [];
+  let k = 0;
+  const walk = (parent) => {
+    let out = '';
+    for (const node of parent.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE) {
+        out += node.nodeValue;
+      } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'include') {
+        const refid = node.getAttribute('refid') ?? 'include';
+        const resolved = includes[k++];
+        const target = resolved?.qualifiedId ? fragments.get(resolved.qualifiedId) : undefined;
+        if (target) out += ` ${expandFragmentSql(target, fragments, resolved)} `;
+        else if (resolved?.unresolved === 'CIRCULAR') out += ` ${refid} (circular) `;
+        else if (resolved?.unresolved === 'MISSING') out += ` ${refid} (not found) `;
+        else out += ` ${refid} (not loaded) `;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        out += ` ${walk(node)} `; // a dynamic tag: its text, and the includes inside it
+      }
+    }
+    return out;
+  };
+  return walk(element).replace(/\s+/g, ' ').trim();
 }
 
-/**
- * The fragment's real SQL text, with any `<include refid>` *inside* the
- * fragment spliced in as well - a fragment built out of other fragments
- * would otherwise draw as an empty box. `seen` breaks refid cycles; the
- * resolver already reports those as diagnostics, the diagram just stops.
- */
-function expandFragmentSql(element, fragments, namespace, seen) {
-  let out = '';
-  for (const node of element.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      out += node.nodeValue;
-    } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'include') {
-      const refid = node.getAttribute('refid');
-      const target = refid && !seen.has(refid) ? resolveFragmentElement(refid, fragments, namespace) : undefined;
-      if (target) out += ` ${expandFragmentSql(target, fragments, namespace, new Set([...seen, refid]))} `;
-      else if (refid && seen.has(refid)) out += ` ${refid} (circular) `;
-      else out += ` ${refid ?? 'include'} (not loaded) `;
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      out += ` ${node.textContent} `;
-    }
+/** the include-tree node of `qualifiedId` (first in document order), for expanding it */
+function findIncludeNode(tree, qualifiedId) {
+  for (const node of tree ?? []) {
+    if (node.qualifiedId === qualifiedId) return node;
+    const inner = findIncludeNode(node.children, qualifiedId);
+    if (inner) return inner;
   }
-  return out.replace(/\s+/g, ' ').trim();
+  return null;
 }
 
 /** Longest first, so `LEFT OUTER JOIN` wins over `JOIN` and `UNION ALL` over `UNION`. */

@@ -263,7 +263,9 @@ export class ProjectSession {
 
     // project-wide reference graph on the stubs: same resolver, same rules, no file reads
     const { symbolTable } = buildSymbolTable(stubMappers, diagnostics);
-    const graph = new ReferenceResolver(symbolTable, diagnostics);
+    // MyBatis mappers resolve a bare refid in their own namespace only
+    this.strictNamespaces = new Set(files.filter((f) => f.syntax === 'mybatis' && f.namespace !== null).map((f) => f.namespace));
+    const graph = new ReferenceResolver(symbolTable, diagnostics, { strictNamespaces: this.strictNamespaces });
     for (const { sqlMap } of stubMappers) {
       for (const st of sqlMap.statements) {
         const qid = qualify(sqlMap.namespace, st.id);
@@ -365,7 +367,7 @@ export class ProjectSession {
 
   /** a resolver over the real (lazily loading) symbols — fresh per use, nothing accumulates */
   #realResolver() {
-    return new ReferenceResolver(this.realSymbols, new DiagnosticBag());
+    return new ReferenceResolver(this.realSymbols, new DiagnosticBag(), { strictNamespaces: this.strictNamespaces });
   }
 
   // ---------------------------------------------------------------- per statement
@@ -403,15 +405,19 @@ export class ProjectSession {
     const node = m.statements.get(at.localId) ?? m.fragments.get(at.localId);
     if (!node) return [];
     const { resolvedTree } = this.#realResolver().resolve(node, at.namespace, qualifiedId);
-    const walk = (children, out = []) => {
+    // `rule`: which lookup step found it (ReferenceResolver#includeTarget), so the UI can say why
+    const ruleOf = (refid, writtenIn) => this.graph.includeTarget(refid, writtenIn, at.namespace).rule;
+    const walk = (children, writtenIn, out = []) => {
       for (const child of children ?? []) {
-        if (child.type === 'ResolvedInclude') out.push({ refid: child.refid, qualifiedId: child.qualifiedId, children: walk(child.children) });
-        else if (child.type === 'UnresolvedInclude') out.push({ refid: child.refid, unresolved: child.reason });
-        else walk(child.children, out);
+        if (child.type === 'ResolvedInclude') {
+          const own = this.#locate(child.qualifiedId)?.namespace ?? writtenIn;
+          out.push({ refid: child.refid, qualifiedId: child.qualifiedId, rule: ruleOf(child.refid, writtenIn), children: walk(child.children, own) });
+        } else if (child.type === 'UnresolvedInclude') out.push({ refid: child.refid, unresolved: child.reason, rule: child.reason === 'MISSING' ? 'MISSING' : 'CIRCULAR' });
+        else walk(child.children, writtenIn, out);
       }
       return out;
     };
-    return walk(resolvedTree.children);
+    return walk(resolvedTree.children, at.namespace);
   }
 
   #context(namespace, extra = {}) {
@@ -519,6 +525,8 @@ export class ProjectSession {
       line: meta.line,
       lines: entry.lines,
       resultMaps: this.#resultMapChain(meta.resultMap, at.namespace),
+      // how every <include> of the statement resolved, nested ones too (the UI expands from this)
+      includeTree: this.includeTree(qualifiedId),
       xml: this.#slice(at.sourceFile, meta.line, STATEMENT_TAGS[meta.type] ?? 'select'),
       fragments,
     };
@@ -567,7 +575,7 @@ export class ProjectSession {
    * fragments, which the migration needs to infer a FROM-less fragment's
    * tables.
    */
-  schemaMigration(qualifiedId, mapping, options = {}, { formatSql = false } = {}) {
+  schemaMigration(qualifiedId, mapping, options = {}, { formatSql = false, inlineRefid = false } = {}) {
     const mybatisXml = formatSql ? new XmlGenerator({ formatSql }) : this.xml;
     const sourceXml = (r) => (r.syntax === 'mybatis' ? mybatisXml : formatSql ? new IbatisXmlGenerator({ formatSql }) : this.ibatisXml);
     const at = this.#locate(qualifiedId);
@@ -582,11 +590,12 @@ export class ProjectSession {
         : r.ibatis.mapper.sqlFragments.findIndex((s) => s.id === loc.localId);
       const list = (side) => (kind === 'statement' ? side.mapper.statements : side.mapper.sqlFragments);
       const originalList = (side) => (kind === 'statement' ? side.original.statements : side.original.sqlFragments);
+      const flat = (node, side, after) => (inlineRefid ? this.inlineIncludes(node, loc.namespace, ProjectSession.fragmentsOf(results, side, after), qid) : node);
       const texts = {
-        ibatisBefore: sourceXml(r).generateNode(originalList(r.ibatis)[i]),
-        ibatisAfter: sourceXml(r).generateNode(list(r.ibatis)[i]),
-        mybatisBefore: mybatisXml.generateNode(originalList(r.mybatis)[i]),
-        mybatisAfter: mybatisXml.generateNode(list(r.mybatis)[i]),
+        ibatisBefore: sourceXml(r).generateNode(flat(originalList(r.ibatis)[i], 'ibatis', false)),
+        ibatisAfter: sourceXml(r).generateNode(flat(list(r.ibatis)[i], 'ibatis', true)),
+        mybatisBefore: mybatisXml.generateNode(flat(originalList(r.mybatis)[i], 'mybatis', false)),
+        mybatisAfter: mybatisXml.generateNode(flat(list(r.mybatis)[i], 'mybatis', true)),
       };
       if (texts.ibatisAfter === texts.ibatisBefore) delete texts.ibatisAfter;
       if (texts.mybatisAfter === texts.mybatisBefore) delete texts.mybatisAfter;
@@ -658,8 +667,10 @@ export class ProjectSession {
     const conversions = files.map((f) => this.convertFile(f));
     // the "keep the syntax" side: an iBATIS file's own AST, or a MyBatis file's own AST
     const originals = files.map((f) => this.mapper(f).mybatis ?? this.mapper(f).sqlMap);
-    const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode));
-    const ibatis = converter.convertMappers(originals);
+    // includes resolved by the project-wide resolver, not by whichever mappers are loaded
+    const resolveInclude = (refid, writtenIn, root) => this.graph.includeTarget(refid, writtenIn, root).symbol?.qualifiedId ?? null;
+    const mybatis = converter.convertMappers(conversions.map((c) => c.mapperNode), { resolveInclude });
+    const ibatis = converter.convertMappers(originals, { resolveInclude });
     const results = new Map();
     files.forEach((f, i) => results.set(f, {
       mybatis: { ...mybatis[i], original: conversions[i].mapperNode },
@@ -748,6 +759,38 @@ export class ProjectSession {
     const statement = this.mapper(at.sourceFile).statements.get(at.localId);
     const resolved = this.#realResolver().resolve(statement, at.namespace, qualifiedId);
     return this.statementAnalyzer.analyze(resolved.originalTree, resolved.resolvedTree, qualifiedId, this.dialect);
+  }
+
+  /**
+   * A copy of a statement / fragment AST with every `<include>` replaced by the
+   * nodes of the fragment it resolves to (the project rule, includeTarget),
+   * recursively — "refid 쿼리에 통합": the query as one text, ready to copy.
+   * `fragments` maps qualified id -> the fragment node of the SAME tree (iBATIS
+   * or MyBatis, before or after the renames). A refid that resolves nowhere, or
+   * back into its own chain, stays an `<include>`. Inputs are never mutated.
+   */
+  inlineIncludes(root, namespace, fragments, rootQualifiedId = null) {
+    const withChildren = (node, children) => Object.assign(Object.create(Object.getPrototypeOf(node)), node, { children });
+    const expand = (nodes, writtenIn, stack) => (nodes ?? []).flatMap((node) => {
+      if (node.type === 'Include') {
+        const qualifiedId = this.graph.includeTarget(node.refid, writtenIn, namespace).symbol?.qualifiedId;
+        const fragment = qualifiedId && fragments.get(qualifiedId);
+        if (!fragment || stack.includes(qualifiedId)) return [node];
+        return expand(fragment.children, this.#locate(qualifiedId)?.namespace ?? writtenIn, [...stack, qualifiedId]);
+      }
+      return node.children ? [withChildren(node, expand(node.children, writtenIn, stack))] : [node];
+    });
+    return withChildren(root, expand(root.children, namespace, rootQualifiedId ? [rootQualifiedId] : []));
+  }
+
+  /** qualified id -> fragment node, for one side of a migration result set ('ibatis' | 'mybatis', before / after) */
+  static fragmentsOf(results, side, after) {
+    const map = new Map();
+    for (const r of results.values()) {
+      const mapper = after ? r[side].mapper : r[side].original;
+      for (const f of mapper.sqlFragments ?? []) map.set(mapper.namespace ? `${mapper.namespace}.${f.id}` : f.id, f);
+    }
+    return map;
   }
 
   // ---------------------------------------------------------------- column removal guide

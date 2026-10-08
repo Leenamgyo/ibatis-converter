@@ -153,13 +153,17 @@ test('SessionManager closes idle sessions, the oldest past the cap, and on reque
 test('includeTree follows <include> to every depth, in document order, cutting cycles', () => {
   const session = new ProjectSession(new DirectorySource(SAMPLES), { maxFiles: 1 }).open();
   try {
-    assert.deepEqual(session.includeTree('frag.nestedFragmentInclude'), [
+    const noRule = (tree) => tree.map(({ rule, children, ...n }) => ({ ...n, ...(children ? { children: noRule(children) } : {}) }));
+    const rules = (tree) => tree.flatMap((n) => [n.rule, ...rules(n.children ?? [])]);
+    assert.deepEqual(rules(session.includeTree('frag.nestedFragmentInclude')), ['NAMESPACE', 'NAMESPACE', 'QUALIFIED']);
+    assert.deepEqual(rules(session.includeTree('frag.circularRefid')), ['NAMESPACE', 'NAMESPACE', 'CIRCULAR']);
+    assert.deepEqual(noRule(session.includeTree('frag.nestedFragmentInclude')), [
       { refid: 'customerAndAudit', qualifiedId: 'frag.customerAndAudit', children: [
         { refid: 'customerColumns', qualifiedId: 'frag.customerColumns', children: [] },
         { refid: 'common.auditColumns', qualifiedId: 'common.auditColumns', children: [] },
       ] },
     ]);
-    assert.deepEqual(session.includeTree('frag.circularRefid'), [
+    assert.deepEqual(noRule(session.includeTree('frag.circularRefid')), [
       { refid: 'circularA', qualifiedId: 'frag.circularA', children: [
         { refid: 'circularB', qualifiedId: 'frag.circularB', children: [{ refid: 'circularA', unresolved: 'CIRCULAR' }] },
       ] },
@@ -180,6 +184,7 @@ test('includeTree resolves a nested bare refid against the including statement\'
     const [outer] = session.includeTree('b.q');
     assert.equal(outer.qualifiedId, 'a.outer');
     assert.equal(outer.children[0].qualifiedId, 'b.cond', 'shadowed by the statement namespace');
+    assert.equal(outer.children[0].rule, 'RUNTIME_SHADOWED');
     assert.equal(session.includeTree('a.outer')[0].qualifiedId, 'a.cond', 'on its own, its own namespace');
   } finally {
     session.close();
@@ -258,6 +263,75 @@ test('column removal guide: trace, fragment removable with its <include> sites, 
     const id = session.columnRemovalGuide('cust.list', 'NAME');
     assert.ok(id.steps.some((s) => s.action === 'SHARED_FRAGMENT' && s.sharedBy.includes('cust.other')));
     assert.equal(id.steps.some((s) => s.action === 'REMOVE_FRAGMENT'), false);
+  } finally {
+    session.close();
+  }
+});
+
+test('refid accuracy: the schema converter resolves every include exactly as the project resolver does', async () => {
+  const { SqlSchemaMigrationConverter } = await import('../../src/converter/schema/index.js');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'refid-accuracy-'));
+  try {
+    let resolved = 0;
+    let wrong = 0;
+    for (const seed of [1, 3, 6, 11]) {
+      const dir = path.join(tmp, `p${seed}`);
+      generateProject(seed, dir);
+      const session = new ProjectSession(new DirectorySource(dir)).open();
+      const truth = (r) => session.graph.includeTarget(r.refid, r.writtenIn, r.root).symbol?.qualifiedId ?? null;
+      for (const file of session.files) {
+        // only this file's neighbourhood is loaded — exactly the situation that used to drift
+        const { results } = session.migrateForFile(file.sourceFile, {});
+        const originals = [...results.values()].map((r) => r.ibatis.original);
+        new SqlSchemaMigrationConverter({}).convertMappers(originals, {
+          resolveInclude: (a, b, c) => session.graph.includeTarget(a, b, c).symbol?.qualifiedId ?? null,
+          onInclude: (r) => { resolved++; if (r.qualifiedId !== truth(r)) wrong++; },
+        });
+      }
+      session.close();
+    }
+    assert.ok(resolved > 1000, `${resolved} includes resolved`);
+    assert.equal(wrong, 0);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('MyBatis mappers resolve a bare refid in their own namespace only (no project-wide fallback)', () => {
+  const session = new ProjectSession(createUploadSource([
+    { sourceFile: 'common.xml', source: '<sqlMap namespace="common"><sql id="cols">A, B</sql></sqlMap>' },
+    { sourceFile: 'legacy.xml', source: '<sqlMap namespace="legacy"><select id="q">SELECT <include refid="cols"/> FROM T</select></sqlMap>' },
+    { sourceFile: 'mb.xml', source: '<mapper namespace="mb"><select id="q">SELECT <include refid="cols"/> FROM T</select></mapper>' },
+  ])).open();
+  try {
+    assert.equal(session.includeTree('legacy.q')[0].rule, 'GLOBAL_UNIQUE', 'iBATIS: a bare id unique in the project');
+    assert.equal(session.includeTree('mb.q')[0].unresolved, 'MISSING', 'MyBatis would not find it either');
+    assert.ok(session.summary().errors.some((e) => e.code === 'MISSING_REFERENCE' && e.sourceFile === 'mb.xml'));
+  } finally {
+    session.close();
+  }
+});
+
+test('refid 쿼리에 통합: every <include> becomes its fragment\'s text (nested too), on all four sides', () => {
+  const session = new ProjectSession(new DirectorySource(SAMPLES)).open();
+  try {
+    const mapping = JSON.parse(fs.readFileSync(path.join(SAMPLES, 'schema-mapping.json'), 'utf8'));
+    for (const id of ['frag.includeInsideDynamic', 'frag.nestedFragmentInclude', 'frag.crossMapperInclude']) {
+      const plain = session.schemaMigration(id, mapping.mapping ?? mapping).statement;
+      const inlined = session.schemaMigration(id, mapping.mapping ?? mapping, {}, { inlineRefid: true }).statement;
+      for (const side of ['ibatisBefore', 'mybatisBefore']) {
+        assert.match(plain[side], /<include /, `${id} ${side} has includes when not inlined`);
+        assert.doesNotMatch(inlined[side], /<include /, `${id} ${side}`);
+      }
+      for (const [before, after] of [['ibatisBefore', 'ibatisAfter'], ['mybatisBefore', 'mybatisAfter']]) {
+        if (inlined[after] !== undefined) assert.equal(inlined[after].split('\n').length, inlined[before].split('\n').length, `${id} ${after} lines up`);
+      }
+    }
+    // the nested chain is spliced to its last depth
+    const deep = session.schemaMigration('frag.nestedFragmentInclude', {}, {}, { inlineRefid: true }).statement.ibatisBefore;
+    assert.match(deep, /CREATED_AT/, 'common.auditColumns, two includes down');
+    // a cycle stays an <include> instead of looping
+    assert.match(session.schemaMigration('frag.circularRefid', {}, {}, { inlineRefid: true }).statement.ibatisBefore, /<include refid="circularA"/);
   } finally {
     session.close();
   }

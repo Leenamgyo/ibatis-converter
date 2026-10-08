@@ -474,13 +474,16 @@ function buildRefidCluster(analysis) {
   const fragments = lineageState.fragments ?? new Map();
   const body = el('div', { class: 'cluster-body' });
 
+  // analysis.includes: every fragment the resolver spliced in (qualified ids, any depth)
   for (const refid of analysis.includes) {
-    const target = resolveFragmentElement(refid, fragments, lineageState.namespace);
-    const sql = target ? expandFragmentSql(target, fragments, lineageState.namespace, new Set([refid])) : '';
+    const target = fragments.get(refid);
+    const treeNode = findIncludeNode(lineageState.doc?.includeTree, refid);
+    const sql = target ? expandFragmentSql(target, fragments, treeNode) : '';
     const clauses = sql ? splitSqlClauses(sql) : [];
     const id = `refid:${refid}`;
     body.appendChild(gnode(id, 'refid',
-      el('div', { class: 'title' }, `<include refid="${refid}"/>`),
+      el('div', { class: 'title' }, `<include refid="${treeNode?.refid ?? refid}"/>`),
+      treeNode && treeNode.refid !== refid ? el('div', { class: 'meta', title: REFID_RULE[treeNode.rule]?.[1] ?? '' }, `→ ${refid} · ${REFID_RULE[treeNode.rule]?.[0] ?? treeNode.rule}`) : null,
       clauses.length
         ? el('div', { class: 'sql' }, clauses.join(' · '))
         : el('div', { class: 'meta' }, '(fragment not loaded)'),
@@ -828,6 +831,9 @@ function renderGraph() {
   const analysis = lineageState.analysis;
   const lineage = analysis?.lineage;
   if (!lineage || !lineage.selects.length) {
+    // the refids are known even when the SQL can't be parsed: still show what the statement includes
+    const refids = analysis ? buildRefidCluster(analysis) : null;
+    if (refids) host.appendChild(refids);
     host.appendChild(el('div', { class: 'side-empty' },
       analysis?.warnings?.some((w) => w.code === 'SQL_PARSE_FAILED')
         ? '이 statement는 flatten된 SQL이 파싱되지 않아 (SQL_PARSE_FAILED) 리니지를 그릴 수 없습니다 — Statements 탭의 경고를 확인하세요.'

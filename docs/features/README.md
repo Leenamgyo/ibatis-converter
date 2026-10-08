@@ -13,6 +13,7 @@ feature changes, edit its file rather than appending to it.
 | [analysis-coverage.md](analysis-coverage.md) | What the analyzer handles and the one shape it can't |
 | [dev-loop.md](dev-loop.md) | `npm run dev`, watch paths, and why the UI is excluded |
 | [schema-view.md](schema-view.md) | The 변환 view (column renames first, MyBatis syntax as a toggle, every change marked) and the 데이터셋 JSON editor |
+| [refid-resolution.md](refid-resolution.md) | How refids are found: the project-wide metadata, the one lookup rule every component uses, and what was inaccurate before |
 | [column-removal-guide.md](column-removal-guide.md) | 컬럼 삭제 가이드: trace one output column and list every place to edit (refid / resultMap included), without editing |
 | [mybatis-input.md](mybatis-input.md) | MyBatis 3 `<mapper>` files read as input: parsed, analysed, schema-migrated (no syntax conversion) |
 | [large-projects.md](large-projects.md) | Index first, load on demand: `ProjectSession`, sessions on the server, what the browser keeps, measurements |

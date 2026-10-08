@@ -35,9 +35,17 @@ function cloneShallowWithChildren(node, children) {
  *  - every include (and extends) edge is recorded into a `DependencyGraph`.
  */
 export class ReferenceResolver {
-  constructor(symbolTable, diagnostics = new DiagnosticBag()) {
+  /**
+   * @param {object} symbolTable
+   * @param {DiagnosticBag} [diagnostics]
+   * @param {{ strictNamespaces?: Set<string> }} [options] strictNamespaces: mappers that are
+   *   MyBatis 3 — MyBatis resolves a bare refid in its own namespace only, never by a
+   *   project-wide unique id (iBATIS's useStatementNamespaces=false rule)
+   */
+  constructor(symbolTable, diagnostics = new DiagnosticBag(), { strictNamespaces = new Set() } = {}) {
     this.symbolTable = symbolTable;
     this.diagnostics = diagnostics;
+    this.strictNamespaces = strictNamespaces;
     this.dependencyGraph = new DependencyGraph();
     /** @type {CircularReferenceInfo[]} */
     this.circularReferences = [];
@@ -69,6 +77,7 @@ export class ReferenceResolver {
       if (this.symbolTable.has(qualified)) return this.symbolTable.get(qualified);
     }
     if (!type || refid.includes('.')) return undefined;
+    if (this.strictNamespaces.has(currentNamespace)) return undefined; // MyBatis: own namespace only
     const candidates = this._globalIndex(type).get(refid) ?? [];
     if (candidates.length === 1) return candidates[0];
     if (candidates.length > 1) this._ambiguous = { refid, candidates };
@@ -175,25 +184,53 @@ export class ReferenceResolver {
     }
   }
 
+  /**
+   * THE `<include refid>` lookup — the one rule every component uses (the analysis
+   * here, the schema converter and the UI through ProjectSession), so a refid can't
+   * resolve one way in the graph and another way elsewhere. No side effects.
+   *
+   * @param refid as written
+   * @param writtenIn the namespace of the mapper the `<include>` is written in
+   * @param rootNamespace the namespace of the statement being resolved (iBATIS and
+   *   MyBatis resolve every include of a statement — nested ones too — against it)
+   * @returns {{ symbol: object|undefined, rule: string, written: object|undefined, runtime: object|undefined, missingMessage: string|null }}
+   *   rule: QUALIFIED | NAMESPACE | GLOBAL_UNIQUE (by a bare id unique project-wide) |
+   *   RUNTIME_SHADOWED (the statement's namespace has its own fragment of that id) |
+   *   AUTHOR_NAMESPACE (the statement's namespace has none: the fragment author's) | MISSING
+   */
+  includeTarget(refid, writtenIn, rootNamespace = writtenIn) {
+    const how = (ns, symbol) => {
+      if (!symbol) return 'MISSING';
+      if (symbol.qualifiedId === refid) return 'QUALIFIED';
+      if (ns && symbol.qualifiedId === `${ns}.${refid}`) return 'NAMESPACE';
+      return 'GLOBAL_UNIQUE';
+    };
+    const written = this._resolveRefid(refid, writtenIn, SymbolType.SQL_FRAGMENT);
+    const missingMessage = written ? null : this._missingMessage('<include refid>', refid);
+    if (rootNamespace === undefined || rootNamespace === writtenIn || refid.includes('.')) {
+      return { symbol: written, rule: how(writtenIn, written), written, runtime: undefined, missingMessage };
+    }
+    // a bare refid inside a fragment of mapper `writtenIn`, included from a statement of `rootNamespace`:
+    // the runtime looks it up in `rootNamespace`, the fragment's author meant `writtenIn`
+    const runtime = this._resolveRefid(refid, rootNamespace, SymbolType.SQL_FRAGMENT);
+    this._ambiguous = null;
+    if (runtime && written && runtime.qualifiedId !== written.qualifiedId) return { symbol: runtime, rule: 'RUNTIME_SHADOWED', written, runtime, missingMessage };
+    if (!runtime && written) return { symbol: written, rule: written.qualifiedId === `${writtenIn}.${refid}` ? 'AUTHOR_NAMESPACE' : how(writtenIn, written), written, runtime, missingMessage };
+    if (runtime && !written) return { symbol: runtime, rule: how(rootNamespace, runtime), written, runtime, missingMessage: null };
+    return { symbol: written, rule: how(writtenIn, written), written, runtime, missingMessage };
+  }
+
   _resolveInclude(includeNode, namespace, stack) {
     const fromId = stack[stack.length - 1];
     const { refid } = includeNode;
-    let symbol = this._resolveRefid(refid, namespace, SymbolType.SQL_FRAGMENT);
-    const missingMessage = symbol ? null : this._missingMessage('<include refid>', refid);
     const root = this._rootNamespace;
-    if (root !== undefined && root !== namespace && !refid.includes('.')) {
-      // a bare refid inside a fragment of mapper `namespace`, included from a statement of `root`:
-      // the runtime looks it up in `root`, the fragment's author meant `namespace`
-      const runtime = this._resolveRefid(refid, root, SymbolType.SQL_FRAGMENT);
-      this._ambiguous = null;
-      if (runtime && symbol && runtime.qualifiedId !== symbol.qualifiedId) {
-        this._warnOnce(`${namespace}|${refid}|${root}`, `<include refid="${refid}"> in a fragment of ${namespace}, included from ${root}: iBATIS/MyBatis resolve it against ${root} -> ${runtime.qualifiedId}, not ${symbol.qualifiedId}. Analysed as the runtime does; qualify the refid if ${symbol.qualifiedId} was meant`, includeNode, 'NESTED_REFID_SHADOWED');
-        symbol = runtime;
-      } else if (!runtime && symbol) {
-        this._warnOnce(`${namespace}|${refid}|${root}`, `<include refid="${refid}"> in a fragment of ${namespace}, included from ${root}: iBATIS resolves it against ${root}, where there is no "${refid}" (a runtime error unless useStatementNamespaces=false). Analysed as ${symbol.qualifiedId}; the MyBatis output writes it qualified`, includeNode, 'NESTED_REFID_NAMESPACE');
-      } else if (runtime && !symbol) {
-        symbol = runtime;
-      }
+    const target = this.includeTarget(refid, namespace, root);
+    let { symbol } = target;
+    const { missingMessage } = target;
+    if (target.rule === 'RUNTIME_SHADOWED') {
+      this._warnOnce(`${namespace}|${refid}|${root}`, `<include refid="${refid}"> in a fragment of ${namespace}, included from ${root}: iBATIS/MyBatis resolve it against ${root} -> ${target.runtime.qualifiedId}, not ${target.written.qualifiedId}. Analysed as the runtime does; qualify the refid if ${target.written.qualifiedId} was meant`, includeNode, 'NESTED_REFID_SHADOWED');
+    } else if (target.written && !target.runtime && root !== undefined && root !== namespace && !refid.includes('.')) {
+      this._warnOnce(`${namespace}|${refid}|${root}`, `<include refid="${refid}"> in a fragment of ${namespace}, included from ${root}: iBATIS resolves it against ${root}, where there is no "${refid}" (a runtime error unless useStatementNamespaces=false). Analysed as ${symbol.qualifiedId}; the MyBatis output writes it qualified`, includeNode, 'NESTED_REFID_NAMESPACE');
     }
 
     if (!symbol) {

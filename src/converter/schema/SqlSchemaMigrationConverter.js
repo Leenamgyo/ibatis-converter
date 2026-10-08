@@ -86,14 +86,23 @@ export class SqlSchemaMigrationConverter {
    * finds its fragment. Input nodes are never mutated.
    *
    * @param {import('../../ast/mybatis/nodes.js').MapperNode[]} mapperNodes
-   * @param {{ fragmentContexts?: Record<string, string|string[]> }} [options]
-   *   explicit context table(s) per fragment, keyed by `namespace.id` or bare id
+   * @param {{ fragmentContexts?: Record<string, string|string[]>, resolveInclude?: Function }} [options]
+   *   fragmentContexts: explicit context table(s) per fragment, keyed by `namespace.id` or bare id.
+   *   resolveInclude(refid, writtenIn, rootNamespace) -> qualified id | null: the PROJECT's
+   *   include lookup (ProjectSession passes ReferenceResolver#includeTarget), so a refid
+   *   resolves here exactly as in the analysis even when only some of the project's mappers
+   *   are given. Without it, the same rules are applied to the given mappers.
+   *   onInclude({ refid, writtenIn, root, qualifiedId }): called for every include resolved (tests)
    * @returns {{ mapper: object, events: SchemaMigrationEvent[] }[]}
    */
-  convertMappers(mapperNodes, { fragmentContexts = this.fragmentContexts } = {}) {
+  convertMappers(mapperNodes, { fragmentContexts = this.fragmentContexts, resolveInclude = null, onInclude = null } = {}) {
     const fragments = new Map();
+    const fragmentNamespace = new Map();
     for (const mapper of mapperNodes) {
-      for (const fragment of mapper.sqlFragments) fragments.set(qualify(mapper.namespace, fragment.id), fragment);
+      for (const fragment of mapper.sqlFragments) {
+        fragments.set(qualify(mapper.namespace, fragment.id), fragment);
+        fragmentNamespace.set(qualify(mapper.namespace, fragment.id), mapper.namespace);
+      }
     }
     // a bare refid may name a fragment in another mapper (iBATIS useStatementNamespaces=false)
     const byLocalId = new Map();
@@ -103,15 +112,31 @@ export class SqlSchemaMigrationConverter {
         byLocalId.get(fragment.id).push(qualify(mapper.namespace, fragment.id));
       }
     }
-    const resolveRefid = (refid, namespace) => {
+    const lookupLocal = (refid, namespace) => {
       if (fragments.has(refid)) return refid;
-      if (fragments.has(qualify(namespace, refid))) return qualify(namespace, refid);
+      if (namespace && fragments.has(qualify(namespace, refid))) return qualify(namespace, refid);
       const global = refid.includes('.') ? [] : byLocalId.get(refid) ?? [];
-      return global.length === 1 ? global[0] : qualify(namespace, refid);
+      return global.length === 1 ? global[0] : null;
     };
+    // the resolver's rule (ReferenceResolver#includeTarget) over the given mappers: a nested bare
+    // refid is looked up in the statement's namespace first, the fragment author's otherwise
+    const localTarget = (refid, writtenIn, root = writtenIn) => {
+      const written = lookupLocal(refid, writtenIn);
+      if (root === writtenIn || refid.includes('.')) return written;
+      const runtime = lookupLocal(refid, root);
+      if (runtime && written && runtime !== written) return runtime;
+      return written ?? runtime;
+    };
+    const target = resolveInclude ?? localTarget;
     const project = {
-      lookup: (refid, namespace) => fragments.get(resolveRefid(refid, namespace)) ?? null,
-      qualifiedIdOf: resolveRefid,
+      lookup: (qualifiedId) => (qualifiedId ? fragments.get(qualifiedId) ?? null : null),
+      /** (refid as written, namespace it is written in, the statement's namespace) -> qualified id | null */
+      qualifiedIdOf: (refid, writtenIn, root = writtenIn) => {
+        const qualifiedId = target(refid, writtenIn, root);
+        onInclude?.({ refid, writtenIn, root, qualifiedId }); // observation only (tests)
+        return qualifiedId;
+      },
+      namespaceOf: (qualifiedId) => fragmentNamespace.get(qualifiedId),
       /** fragment qualified id -> scopes seen at its include sites */
       includeSites: new Map(),
     };
@@ -223,6 +248,7 @@ export class SqlSchemaMigrationConverter {
       events.push(...runEvents);
       if (record) {
         for (const { marker, qualifiedId } of markers) {
+          if (!qualifiedId) continue; // a refid that resolves nowhere has no include site to record
           const scope = resolution.tokenScopes[resolution.tokens.indexOf(marker)];
           // a fragment included in a FROM clause continues it: `FROM <include/>` is a table list
           const at = resolution.markerStates.get(marker);
@@ -242,7 +268,7 @@ export class SqlSchemaMigrationConverter {
    * `<set>`, and an included fragment's SQL (read-only). `test=`,
    * `collection=`, `item=` etc. are never tokenized.
    */
-  #segmentsOf(nodes, namespace, project, writable, includeStack, markers) {
+  #segmentsOf(nodes, namespace, project, writable, includeStack, markers, writtenIn = namespace) {
     const segments = [];
     const text = (node, field) => {
       const original = node[field];
@@ -313,11 +339,13 @@ export class SqlSchemaMigrationConverter {
             text(node, 'close');
             break;
           case 'Include': {
-            const qualifiedId = project.qualifiedIdOf(node.refid, namespace);
+            // `namespace` is the statement's (the runtime resolves every include against it),
+            // `writtenIn` the mapper this <include> is written in
+            const qualifiedId = project.qualifiedIdOf(node.refid, writtenIn, namespace);
             markers.push({ marker: marker(MarkerKind.INCLUDE), qualifiedId });
-            const fragment = project.lookup(node.refid, namespace);
+            const fragment = project.lookup(qualifiedId);
             if (fragment && !includeStack.includes(qualifiedId)) {
-              const inner = this.#segmentsOf(fragment.children, namespace, project, false, [...includeStack, qualifiedId], markers);
+              const inner = this.#segmentsOf(fragment.children, namespace, project, false, [...includeStack, qualifiedId], markers, project.namespaceOf(qualifiedId) ?? namespace);
               segments.push(...inner);
             }
             break;

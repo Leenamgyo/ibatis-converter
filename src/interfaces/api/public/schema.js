@@ -34,7 +34,9 @@ const schemaState = {
   datasetsLoaded: false,
   datasetId: readStored('schema.datasetId'),
   preserveResultColumnNames: readStored('schema.preserve') === 'true',
-  formatSql: readStored('schema.formatSql') === 'true', // "쿼리 정렬": pretty-print each SQL block (server-side, MyBatis-aware)
+  formatSql: readStored('schema.formatSql') === 'true',
+  // refid: below the query (default) or spliced into it under each <include> line
+  inlineRefid: readStored('schema.inlineRefid') === 'true', // "쿼리 정렬": pretty-print each SQL block (server-side, MyBatis-aware)
   mybatis: readStored('schema.mybatis') === 'true', // the syntax-conversion toggle
   scope: 'statement', // 'statement' | 'file'
   onlyChanged: false,
@@ -117,7 +119,7 @@ function invalidateSchemaResult() {
 const SCHEMA_RESULT_CACHE = 6;
 
 function schemaKey() {
-  return `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}|${schemaState.formatSql}`;
+  return `${state.projectId}|${schemaState.datasetId ?? '-'}|${schemaState.preserveResultColumnNames}|${schemaState.formatSql}|${schemaState.inlineRefid}`;
 }
 
 function schemaRequest() {
@@ -126,7 +128,7 @@ function schemaRequest() {
   return {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...body, preserveResultColumnNames: schemaState.preserveResultColumnNames, formatSql: schemaState.formatSql }),
+    body: JSON.stringify({ ...body, preserveResultColumnNames: schemaState.preserveResultColumnNames, formatSql: schemaState.formatSql, inlineRefid: schemaState.inlineRefid }),
   };
 }
 
@@ -226,7 +228,17 @@ function drawSchemaView(pane, result) {
     summaryStrip(qualifiedId, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
     legend(statement.syntax),
-    pairView(statement, { includeTree: statement.includeTree, fragments: result.fragments }),
+    // 통합 on: the server already spliced every fragment's text into the query (copy-ready)
+    schemaState.inlineRefid && statement.includeTree?.length
+      ? el('div', { class: 'sm-callout sm-inline-note' }, `refid ${countIncludes(statement.includeTree)}개를 fragment 내용으로 바꿔 넣은 쿼리입니다 — 그대로 복사해 쓸 수 있습니다.`)
+      : null,
+    pairView(statement),
+    // refid listed below the query (the default): the whole include tree, every depth
+    !schemaState.inlineRefid && statement.includeTree?.length
+      ? el('section', { class: 'sm-section' },
+        el('h3', { class: 'sm-h' }, '포함된 <sql> (refid)', el('span', { class: 'sm-h-sub' }, `${countIncludes(statement.includeTree)}개 · 쿼리 안에 펼쳐 보려면 "refid 쿼리에 통합"`)),
+        ...statement.includeTree.map((node) => includeBlock(node, { fragments: result.fragments, depth: 0, seen: new Set([qualifiedId]), openNested: true, inline: false })))
+      : null,
     // the server sent no include tree (whole-project API): the fragments as a flat list
     !statement.includeTree && shown.length
       ? el('section', { class: 'sm-section' },
@@ -268,7 +280,9 @@ function drawFile(pane, result, sourceFile) {
           el('span', { class: `sm-node-kind ${kind}` }, kind === 'sql' ? 'SQL' : 'STMT'),
           el('span', { class: 'mono' }, id),
           gradeDots(tallyEvents([...e.events, ...(schemaState.mybatis ? e.conversion?.events ?? [] : [])]))),
-        pairView(e, { compact: true, includeTree: e.includeTree, fragments: result.fragments, openNested: false }),
+        schemaState.inlineRefid
+          ? pairView(e, { compact: true }) // already spliced on the server
+          : [pairView(e, { compact: true }), ...(e.includeTree ?? []).map((node) => includeBlock(node, { fragments: result.fragments, depth: 0, seen: new Set([id]), openNested: false, inline: false }))],
       )),
     ),
     changeTable(schemaEvents, true),
@@ -364,6 +378,11 @@ function schemaToolbar() {
       el('span', { class: 'sm-sep', 'aria-hidden': 'true' }),
       el('div', { class: 'mb-scope' }, scopeButton('statement', '이 statement'), scopeButton('file', '파일 전체')),
       toggle('변경 줄만', schemaState.onlyChanged, (e) => { schemaState.onlyChanged = e.target.checked; renderSchemaView(); }),
+      toggle('refid 쿼리에 통합', schemaState.inlineRefid, (e) => {
+        schemaState.inlineRefid = e.target.checked;
+        writeStored('schema.inlineRefid', e.target.checked);
+        renderSchemaView();
+      }, '켜면 <include refid>를 fragment의 SQL로 바꿔 넣은 하나의 쿼리(복사해 바로 쓰는 텍스트)로, 끄면 쿼리 아래에 fragment를 따로 모아 보여줍니다'),
       toggle('쿼리 정렬', schemaState.formatSql, (e) => {
         schemaState.formatSql = e.target.checked;
         writeStored('schema.formatSql', e.target.checked);
@@ -789,12 +808,33 @@ function includeChanged(node, fragments, seen = new Set()) {
  * cycles cut), so this follows exactly what runs. A collapsed block renders
  * its body only when first opened.
  */
-function includeBlock(node, { fragments, depth, seen, openNested }) {
+/** how the resolver found the fragment (ProjectSession#includeTree rule) — shown with every refid */
+const REFID_RULE = {
+  QUALIFIED: ['namespace.id', 'refid가 namespace까지 적힌 id라 그대로 찾았습니다'],
+  NAMESPACE: ['같은 namespace', '<include>가 있는 매퍼의 namespace에서 찾았습니다'],
+  GLOBAL_UNIQUE: ['프로젝트에서 유일', '같은 namespace엔 없지만, 프로젝트 전체에서 이 id의 <sql>이 하나뿐이라 그것으로 찾았습니다 (iBATIS useStatementNamespaces=false)'],
+  RUNTIME_SHADOWED: ['statement namespace 우선', 'fragment 안의 refid는 실행 시 statement의 namespace로 먼저 찾습니다 — 그 namespace에 같은 id가 있어 그쪽입니다'],
+  AUTHOR_NAMESPACE: ['fragment의 namespace', 'statement namespace에는 없어 fragment가 있는 매퍼의 것으로 찾았습니다 (MyBatis 결과에는 namespace를 붙여 씁니다)'],
+  MISSING: ['못 찾음', '프로젝트 어디에도 이 id의 <sql>이 없거나, 둘 이상이라 정할 수 없습니다'],
+  CIRCULAR: ['순환', '이미 펼친 fragment를 다시 포함합니다 — 여기서 멈춥니다'],
+};
+
+function ruleChip(rule) {
+  const [text, title] = REFID_RULE[rule] ?? [rule, ''];
+  return rule ? el('span', { class: `sd-inc-rule rule-${String(rule).toLowerCase()}`, title }, text) : null;
+}
+
+/**
+ * The fragment an <include> brings in, and its own includes, to the last depth.
+ * inline: inside the query, right under the include line (refid 쿼리에 통합 on);
+ * otherwise listed below the query, each nested include as an indented block under its fragment.
+ */
+function includeBlock(node, { fragments, depth, seen, openNested, inline = schemaState.inlineRefid }) {
   const level = depth + 1;
   const label = el('span', { class: 'mono' }, `<include refid="${node.refid}">`);
   const note = (text) => el('div', { class: 'sd-include note', style: `--level:${level}` },
     el('span', { class: 'sd-inc-arrow' }, '↳'), label, el('span', { class: 'sd-inc-note' }, text));
-  if (node.unresolved) return note(node.unresolved === 'CIRCULAR' ? '순환 참조 — 여기서 멈춤' : 'fragment를 찾을 수 없음');
+  if (node.unresolved) return note(node.unresolved === 'CIRCULAR' ? '순환 참조 — 여기서 멈춤' : 'fragment를 찾을 수 없음 — refid 이름·namespace를 확인하세요');
   if (seen.has(node.qualifiedId)) return note('순환 참조 — 여기서 멈춤');
   const entry = fragments?.[node.qualifiedId];
   if (!entry) return note(`${node.qualifiedId}: 결과에 없음`);
@@ -805,13 +845,19 @@ function includeBlock(node, { fragments, depth, seen, openNested }) {
       el('span', { class: 'sd-inc-arrow' }, '↳'),
       label,
       node.qualifiedId !== node.refid ? el('span', { class: 'sd-inc-target mono' }, `→ ${node.qualifiedId}`) : null,
+      ruleChip(node.rule),
       el('span', { class: 'sd-inc-depth' }, `depth ${level}`),
       node.children?.length ? el('span', { class: 'sd-inc-sub' }, `하위 include ${countIncludes(node.children)}`) : null,
       gradeDots(tallyEvents(entry.events)),
     ));
-  const fill = () => details.appendChild(pairView(entry, {
-    compact: true, includeTree: node.children, fragments, depth: level, seen: new Set([...seen, node.qualifiedId]), openNested,
-  }));
+  const innerSeen = new Set([...seen, node.qualifiedId]);
+  const fill = () => {
+    details.appendChild(pairView(entry, inline
+      ? { compact: true, includeTree: node.children, fragments, depth: level, seen: innerSeen, openNested }
+      : { compact: true, depth: level }));
+    // listed below: the fragment's own includes follow it, one level deeper
+    if (!inline) for (const child of node.children ?? []) details.appendChild(includeBlock(child, { fragments, depth: level, seen: innerSeen, openNested, inline }));
+  };
   if (open) fill();
   else details.addEventListener('toggle', fill, { once: true });
   return details;
