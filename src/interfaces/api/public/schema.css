@@ -124,6 +124,17 @@ main#app[hidden] { display: none; }
 .sd-count { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--ins-fg); }
 .sd-body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; line-height: 1.5; max-height: 70vh; overflow: auto; }
 .sd-body.compact { max-height: 340px; }
+.sd-body.nested { max-height: none; overflow: visible; }
+/* an <include> expanded in place: indented one step per depth, its fragment's diff inside */
+.sd-include { margin: 0.25rem 0.5rem 0.4rem calc(0.5rem + (var(--level, 1) - 1) * 0.35rem); border-left: 3px solid var(--accent, #6b5bd6); border-radius: 4px; background: var(--bg-raised, transparent); }
+.sd-include.changed { border-left-color: var(--ins-fg); }
+.sd-include > summary, .sd-include.note { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; padding: 0.25rem 0.5rem; cursor: pointer; font-size: 0.72rem; color: var(--text-muted); }
+.sd-include.note { cursor: default; border-left-color: var(--text-faint); }
+.sd-include > .sd-diff { margin: 0 0 0.35rem 0.35rem; }
+.sd-inc-arrow { color: var(--accent, #6b5bd6); font-weight: 700; }
+.sd-inc-target { color: var(--text-faint); }
+.sd-inc-depth, .sd-inc-sub { font-size: 0.66rem; padding: 0 0.4em; border-radius: 3px; background: var(--bg-sunken, rgba(0,0,0,.06)); color: var(--text-muted); }
+.sd-inc-note { color: var(--manual, #c0563b); }
 .sd-row { display: grid; grid-template-columns: 3.2em minmax(0, 1fr) 3.2em minmax(0, 1fr); }
 .sd-row .ln { text-align: right; padding: 0 0.5em; color: var(--text-faint); user-select: none; border-right: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 .sd-row code { padding: 0 0.7em; white-space: pre-wrap; word-break: break-word; font: inherit; min-height: 1.5em; }

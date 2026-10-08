@@ -91,6 +91,7 @@ test('per-statement schema migration and the summary run a dataset without the w
     assert.deepEqual(Object.keys(scoped.body.files), [file]);
     for (const id of scoped.body.files[file].statements) assert.equal(scoped.body.statements[id].mybatisAfter, whole.body.statements[id].mybatisAfter, id);
     for (const id of scoped.body.statements[scoped.body.files[file].statements[0]].includes) assert.ok(scoped.body.fragments[id], `included fragment ${id} is in the scoped result`);
+    for (const id of scoped.body.files[file].statements) assert.ok(Array.isArray(scoped.body.statements[id].includeTree), `${id} has its include tree`);
     const bad = await call('POST', `/api/v1/statements/${index[0].statements[0].qualifiedId}/schema-migration?projectId=${projectId}`, { mapping: { T: 5 } });
     assert.equal(bad.status, 400);
   } finally {

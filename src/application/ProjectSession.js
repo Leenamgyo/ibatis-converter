@@ -325,6 +325,31 @@ export class ProjectSession {
     return statement ? this.#realResolver().resolve(statement, at.namespace, qualifiedId) : null;
   }
 
+  /**
+   * The `<include>`s of a statement or fragment as a tree, every depth, in
+   * document order: `[{ refid, qualifiedId, children }]`, or
+   * `{ refid, unresolved: 'MISSING' | 'CIRCULAR' }`. Taken from the
+   * resolver's resolved tree, so a nested bare refid is followed the way the
+   * runtime follows it (against the root statement's namespace).
+   */
+  includeTree(qualifiedId) {
+    const at = this.#locate(qualifiedId);
+    if (!at) return [];
+    const m = this.mapper(at.sourceFile);
+    const node = m.statements.get(at.localId) ?? m.fragments.get(at.localId);
+    if (!node) return [];
+    const { resolvedTree } = this.#realResolver().resolve(node, at.namespace, qualifiedId);
+    const walk = (children, out = []) => {
+      for (const child of children ?? []) {
+        if (child.type === 'ResolvedInclude') out.push({ refid: child.refid, qualifiedId: child.qualifiedId, children: walk(child.children) });
+        else if (child.type === 'UnresolvedInclude') out.push({ refid: child.refid, unresolved: child.reason });
+        else walk(child.children, out);
+      }
+      return out;
+    };
+    return walk(resolvedTree.children);
+  }
+
   #context(namespace, extra = {}) {
     return { namespace, resolveReference: (ref, ns, type, options) => this.graph.qualifiedIdOf(ref, ns, type, options), ...extra };
   }

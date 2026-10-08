@@ -225,8 +225,9 @@ function drawSchemaView(pane, result) {
     summaryStrip(qualifiedId, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
     legend(),
-    pairView(statement),
-    shown.length
+    pairView(statement, { includeTree: statement.includeTree, fragments: result.fragments }),
+    // the server sent no include tree (whole-project API): the fragments as a flat list
+    !statement.includeTree && shown.length
       ? el('section', { class: 'sm-section' },
         el('h3', { class: 'sm-h' }, '포함된 <sql> fragment', el('span', { class: 'sm-h-sub' }, `${shown.length}개 변경`)),
         ...shown.map(([id, f]) => el('details', { class: 'sm-fragment', open: '' },
@@ -266,7 +267,7 @@ function drawFile(pane, result, sourceFile) {
           el('span', { class: `sm-node-kind ${kind}` }, kind === 'sql' ? 'SQL' : 'STMT'),
           el('span', { class: 'mono' }, id),
           gradeDots(tallyEvents([...e.events, ...(schemaState.mybatis ? e.conversion?.events ?? [] : [])]))),
-        pairView(e, { compact: true }),
+        pairView(e, { compact: true, includeTree: e.includeTree, fragments: result.fragments, openNested: false }),
       )),
     ),
     changeTable(schemaEvents, true),
@@ -668,7 +669,7 @@ function alignLines(left, right) {
  * vs MyBatis, both before or both after the renames, paired by alignLines),
  * never between the iBATIS original and the final MyBatis text directly.
  */
-function pairView(entry, { compact = false } = {}) {
+function pairView(entry, { compact = false, includeTree = null, fragments = null, depth = 0, seen = new Set(), openNested = true } = {}) {
   const mybatis = schemaState.mybatis;
   // the server leaves out an "after" that didn't change
   const L = entry.ibatisBefore.split('\n');
@@ -678,7 +679,21 @@ function pairView(entry, { compact = false } = {}) {
   const renamesLineUp = L.length === LA.length && MB.length === MA.length;
   const pairs = !mybatis ? L.map((_, i) => [i, i]) : renamesLineUp ? alignLines(L, MB) : null;
 
+  // which <include> lines of the original carry which include-tree nodes (both are in document order)
+  const includeAt = new Map();
+  if (includeTree?.length) {
+    let k = 0;
+    L.forEach((line, i) => {
+      const n = (line.match(/<include\b/g) ?? []).length;
+      if (n) includeAt.set(i, includeTree.slice(k, k += n));
+    });
+  }
+  const nestedOpts = { fragments, depth, seen, openNested };
   const rows = [];
+  // an <include> line is followed by the fragment it brings in, expanded to every depth
+  const pushIncludes = (i) => {
+    for (const node of includeAt.get(i) ?? []) rows.push({ kinds: [], keep: true, nested: node });
+  };
   if (pairs) {
     for (const [i, j] of pairs) {
       const leftText = i === null ? '' : L[i];
@@ -698,6 +713,7 @@ function pairView(entry, { compact = false } = {}) {
         syntaxL?.removed.some(Boolean) || syntaxR?.added.some(Boolean) ? 's' : null,
       ].filter(Boolean);
       rows.push({ kinds, leftNo: i === null ? '' : i + 1, rightNo: j === null ? '' : j + 1, left, right });
+      if (i !== null) pushIncludes(i);
     }
   } else {
     // too large to align (or renames changed the line count): side by side, renames only
@@ -714,6 +730,7 @@ function pairView(entry, { compact = false } = {}) {
         left: i < L.length ? markTokens(lf.at, (k) => (lf.removed[k] ? 'r' : null), 'del') : [document.createTextNode(' ')],
         right: i < R.length ? markTokens(rf.bt, (k) => (rf.added[k] ? 'r' : null), 'ins') : [document.createTextNode(' ')],
       });
+      if (i < L.length) pushIncludes(i);
     }
   }
 
@@ -728,11 +745,15 @@ function pairView(entry, { compact = false } = {}) {
         syntaxRows ? el('span', { class: 's' }, `문법 ${syntaxRows}줄`) : null,
         changedRows.length ? null : '변경 없음')),
   );
-  const body = el('div', { class: `sd-body${compact ? ' compact' : ''}` });
+  const body = el('div', { class: `sd-body${compact ? ' compact' : ''}${depth ? ' nested' : ''}` });
   if (!pairs && mybatis) body.appendChild(el('div', { class: 'sd-gap' }, '이 항목은 너무 커서 iBATIS와 MyBatis 줄을 맞추지 않고, 컬럼명 변경만 표시합니다'));
   for (const item of collapseRows(rows, schemaState.onlyChanged ? 2 : Infinity)) {
     if (item.gap) {
       body.appendChild(el('div', { class: 'sd-gap' }, `⋯ 변경 없는 ${item.gap}줄`));
+      continue;
+    }
+    if (item.nested) {
+      body.appendChild(includeBlock(item.nested, nestedOpts));
       continue;
     }
     body.appendChild(el('div', { class: `sd-row ${item.kinds.map((k) => `k-${k}`).join(' ')}` },
@@ -745,11 +766,59 @@ function pairView(entry, { compact = false } = {}) {
   return el('div', { class: 'sd-diff' }, head, body);
 }
 
+/** Does this fragment, or anything it includes at any depth, change? */
+function includeChanged(node, fragments, seen = new Set()) {
+  const entry = fragments?.[node.qualifiedId];
+  if (!entry || seen.has(node.qualifiedId)) return false;
+  if (entryChanged(entry)) return true;
+  return (node.children ?? []).some((c) => includeChanged(c, fragments, new Set([...seen, node.qualifiedId])));
+}
+
+/**
+ * The fragment an `<include refid>` brings in, as its own pair view right
+ * under the include line, and that fragment's includes under it — to the
+ * last depth. The tree comes from the resolver (statement-namespace rules,
+ * cycles cut), so this follows exactly what runs. A collapsed block renders
+ * its body only when first opened.
+ */
+function includeBlock(node, { fragments, depth, seen, openNested }) {
+  const level = depth + 1;
+  const label = el('span', { class: 'mono' }, `<include refid="${node.refid}">`);
+  const note = (text) => el('div', { class: 'sd-include note', style: `--level:${level}` },
+    el('span', { class: 'sd-inc-arrow' }, '↳'), label, el('span', { class: 'sd-inc-note' }, text));
+  if (node.unresolved) return note(node.unresolved === 'CIRCULAR' ? '순환 참조 — 여기서 멈춤' : 'fragment를 찾을 수 없음');
+  if (seen.has(node.qualifiedId)) return note('순환 참조 — 여기서 멈춤');
+  const entry = fragments?.[node.qualifiedId];
+  if (!entry) return note(`${node.qualifiedId}: 결과에 없음`);
+  const changed = includeChanged(node, fragments);
+  const open = openNested || changed;
+  const details = el('details', { class: `sd-include${changed ? ' changed' : ''}`, style: `--level:${level}`, ...(open ? { open: '' } : {}) },
+    el('summary', {},
+      el('span', { class: 'sd-inc-arrow' }, '↳'),
+      label,
+      node.qualifiedId !== node.refid ? el('span', { class: 'sd-inc-target mono' }, `→ ${node.qualifiedId}`) : null,
+      el('span', { class: 'sd-inc-depth' }, `depth ${level}`),
+      node.children?.length ? el('span', { class: 'sd-inc-sub' }, `하위 include ${countIncludes(node.children)}`) : null,
+      gradeDots(tallyEvents(entry.events)),
+    ));
+  const fill = () => details.appendChild(pairView(entry, {
+    compact: true, includeTree: node.children, fragments, depth: level, seen: new Set([...seen, node.qualifiedId]), openNested,
+  }));
+  if (open) fill();
+  else details.addEventListener('toggle', fill, { once: true });
+  return details;
+}
+
+function countIncludes(tree) {
+  return tree.reduce((n, node) => n + 1 + countIncludes(node.children ?? []), 0);
+}
+
 /** Every row, or only changed rows with `context` rows around them and gap markers. */
 function collapseRows(rows, context) {
   if (context === Infinity) return rows;
   const keep = rows.map(() => false);
   rows.forEach((r, i) => {
+    if (r.keep) keep[i] = true; // an expanded <include>: always shown
     if (!r.kinds.length) return;
     for (let j = Math.max(0, i - context); j <= Math.min(rows.length - 1, i + context); j++) keep[j] = true;
   });

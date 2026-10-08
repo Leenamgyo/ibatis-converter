@@ -405,6 +405,7 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
         ...texts(sqlMap.statements[i], ibatisMigrated.statements[i], statement, migrated.statements[i]),
         // scoped: every fragment it includes, transitively, as resolved; whole project: as written
         includes: project ? project.includedFragments(qualifiedId) : collectIncludes(statement, namespace),
+        ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
         events: own,
         summary: tally(own),
         conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null,
@@ -421,6 +422,7 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
       fragments[qualifiedId] = {
         sourceFile,
         id: fragment.id,
+        ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
         ...texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i]),
         events: own,
         summary: tally(own),

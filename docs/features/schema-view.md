@@ -60,8 +60,21 @@ renames only.
 - **검토 필요.** Every WARNING / MANUAL decision, MANUAL first, each tagged
   with its source: **컬럼명** (schema migration) or **문법** (MyBatis
   conversion, switch on). Labels are in Korean (`SCHEMA_CODE_LABEL`).
-- **포함된 `<sql>` fragment.** The same pair view for each included fragment
-  that changes.
+- **`<include refid>` expanded in place, every depth.** Right under each
+  `<include>` line, the fragment it brings in is shown as its own pair view.
+  That fragment's own includes are expanded under it, down to the last
+  depth (8 in the generated corpus).
+  - The tree is the resolver's (`ProjectSession#includeTree`, sent as
+    `includeTree`). A nested bare refid follows the runtime rule: it
+    resolves against the statement's namespace.
+  - A cycle shows "순환 참조 — 여기서 멈춤", and a missing fragment says so.
+  - Each block shows its depth, its sub-include count and its grades. In
+    파일 전체, unchanged blocks start closed and render only when opened.
+  - Include lines and tree nodes are paired by document order. That held for
+    all 1,672 statements and fragments of the samples and 30 generated
+    projects.
+  - The whole-project API has no `includeTree`. There, the old flat
+    "포함된 `<sql>` fragment" list is shown instead.
 - **컬럼·테이블명 변경 목록.** One row per distinct rename. Clicking a row
   flashes those green tokens.
 - **MyBatis 문법 변환 내역** (switch on). Every syntax decision with its

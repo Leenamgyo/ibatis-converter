@@ -147,3 +147,39 @@ test('SessionManager closes idle sessions, the oldest past the cap, and on reque
   sessions.closeAll();
   void b;
 });
+
+test('includeTree follows <include> to every depth, in document order, cutting cycles', () => {
+  const session = new ProjectSession(new DirectorySource(SAMPLES), { maxFiles: 1 }).open();
+  try {
+    assert.deepEqual(session.includeTree('frag.nestedFragmentInclude'), [
+      { refid: 'customerAndAudit', qualifiedId: 'frag.customerAndAudit', children: [
+        { refid: 'customerColumns', qualifiedId: 'frag.customerColumns', children: [] },
+        { refid: 'common.auditColumns', qualifiedId: 'common.auditColumns', children: [] },
+      ] },
+    ]);
+    assert.deepEqual(session.includeTree('frag.circularRefid'), [
+      { refid: 'circularA', qualifiedId: 'frag.circularA', children: [
+        { refid: 'circularB', qualifiedId: 'frag.circularB', children: [{ refid: 'circularA', unresolved: 'CIRCULAR' }] },
+      ] },
+    ]);
+    // a fragment's own tree, resolved in its own namespace
+    assert.equal(session.includeTree('common.liveRowCondition').length, 2);
+  } finally {
+    session.close();
+  }
+});
+
+test('includeTree resolves a nested bare refid against the including statement\'s namespace, as the runtime does', () => {
+  const session = new ProjectSession(createUploadSource([
+    { sourceFile: 'a.xml', source: '<sqlMap namespace="a"><sql id="cond">X = 1</sql><sql id="outer">WHERE <include refid="cond"/></sql></sqlMap>' },
+    { sourceFile: 'b.xml', source: '<sqlMap namespace="b"><sql id="cond">Y = 2</sql><select id="q">SELECT 1 FROM T <include refid="a.outer"/></select></sqlMap>' },
+  ])).open();
+  try {
+    const [outer] = session.includeTree('b.q');
+    assert.equal(outer.qualifiedId, 'a.outer');
+    assert.equal(outer.children[0].qualifiedId, 'b.cond', 'shadowed by the statement namespace');
+    assert.equal(session.includeTree('a.outer')[0].qualifiedId, 'a.cond', 'on its own, its own namespace');
+  } finally {
+    session.close();
+  }
+});
