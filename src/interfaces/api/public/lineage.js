@@ -109,6 +109,7 @@ async function selectLineageStatement(qualifiedId) {
   lineageState.collapsed = new Set();
   lineageState.selectedNodeId = null;
   lineageState.selectedColumn = null;
+  lineageState.selectedEdge = null;
   lineageState.namespace = doc.namespace ?? null;
   lineageState.stmtEl = parseSlice(doc.xml, doc.namespace);
   lineageState.fragments = fragmentElements(doc);
@@ -244,7 +245,7 @@ function resetLayout() {
     if (element) element.style.translate = '';
   }
   lineageState.layout = { offsets: {}, view: lineageState.layoutSaved === null ? null : lineageState.layout.view };
-  fitGraph();
+  fitGraph(); // redraws the edges, straight again
   renderLayoutStatus();
 }
 
@@ -942,6 +943,10 @@ function drawEdges() {
   svg.setAttribute('width', String(content.scrollWidth));
   svg.setAttribute('height', String(content.scrollHeight));
   svg.replaceChildren(arrowDefs());
+  // wide invisible strokes over the edges, so a 1.5px line can be grabbed (own group:
+  // the highlight code only touches `#lineageEdges > path`)
+  const hits = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  hits.setAttribute('class', 'edge-hits');
 
   lineageState.edges.forEach((e, index) => {
     const fromEl = visibleAnchor(e.from);
@@ -957,17 +962,20 @@ function drawEdges() {
     let path;
     // Sides are picked from where the boxes are, not assumed: a dragged box can be
     // anywhere relative to the other one.
+    // a user's bend: both control points shifted by it (the curve's middle moves 3/4 of that)
+    const [bx, by] = lineageState.layout.offsets[edgeKey(e)] ?? [0, 0];
+    const curve = (c1x, c1y, c2x, c2y) => `M ${x1} ${y1} C ${c1x + bx} ${c1y + by}, ${c2x + bx} ${c2y + by}, ${x2} ${y2}`;
     const horizontal = (fromRight) => {
       x1 = fromRight ? a.left + a.width : a.left; y1 = a.top + a.height / 2;
       x2 = fromRight ? b.left : b.left + b.width; y2 = b.top + b.height / 2;
       const dx = Math.max(18, Math.abs(x2 - x1) / 2) * (fromRight ? 1 : -1);
-      return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+      return curve(x1 + dx, y1, x2 - dx, y2);
     };
     const vertical = (fromBottom) => {
       x1 = a.left + a.width / 2; y1 = fromBottom ? a.top + a.height : a.top;
       x2 = b.left + b.width / 2; y2 = fromBottom ? b.top : b.top + b.height;
       const dy = Math.max(14, Math.abs(y2 - y1) / 2) * (fromBottom ? 1 : -1);
-      return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+      return curve(x1, y1 + dy, x2, y2 - dy);
     };
     if (b.left >= a.left + a.width - 8) path = horizontal(true); // left -> right: source -> output
     else if (b.top >= a.top + a.height - 8) path = vertical(true); // stacked: bottom -> top
@@ -985,9 +993,33 @@ function drawEdges() {
     el.dataset.edgeIndex = String(index);
     el.dataset.from = e.from;
     el.dataset.to = e.to;
+    if (lineageState.selectedEdge === edgeKey(e)) el.classList.add('selected');
+    if (bx || by) el.classList.add('bent');
     svg.appendChild(el);
 
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('d', path);
+    hit.setAttribute('class', 'edge-hit');
+    hit.dataset.edgeKey = edgeKey(e);
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `${e.from} → ${e.to}\n드래그: 휘기 · 더블클릭: 곧게 · 클릭: 양 끝 강조`;
+    hit.appendChild(title);
+    hits.appendChild(hit);
   });
+  svg.appendChild(hits);
+}
+
+/** an edge's layout key: its two ends and kind (stable across redraws and reloads) */
+function edgeKey(e) {
+  return `edge:${e.kind ?? 'flow'}:${e.from}>${e.to}`;
+}
+
+/** Clicking an edge highlights it and its two boxes; clicking it again (or the background) clears it. */
+function selectEdge(key) {
+  lineageState.selectedEdge = lineageState.selectedEdge === key ? null : key;
+  const edge = lineageState.edges.find((e) => edgeKey(e) === lineageState.selectedEdge);
+  for (const [id, node] of lineageState.nodeById) node.classList.toggle('edge-end', Boolean(edge) && (id === edge.from || id === edge.to));
+  drawEdges();
 }
 
 /* ------------------------------------------------------------------ *
@@ -1379,6 +1411,16 @@ function renderMinimap() {
   let suppressClickUntil = 0;
   viewport.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || e.target.closest('button, input, a')) return;
+    // an edge: dragging bends it
+    const hit = e.target.closest('.edge-hit');
+    if (hit) {
+      const key = hit.dataset.edgeKey;
+      const [dx, dy] = lineageState.layout.offsets[key] ?? [0, 0];
+      // the curve's middle moves 3/4 of a control-point shift: scale so it follows the mouse
+      dragging = { element: null, key, startX: e.clientX, startY: e.clientY, dx, dy, moved: false, factor: 4 / 3 };
+      e.preventDefault();
+      return;
+    }
     const head = e.target.closest('.cluster-head');
     const element = head ? head.closest('[data-layout-key]') : e.target.closest('.gnode.tobj') ?? e.target.closest('.gnode');
     if (!element || !viewport.contains(element)) return;
@@ -1395,18 +1437,22 @@ function renderMinimap() {
     if (!dragging.moved && Math.hypot(mx, my) < 4) return;
     if (!dragging.moved) {
       dragging.moved = true;
-      dragging.element.classList.add('dragging');
+      dragging.element?.classList.add('dragging');
       viewport.classList.add('moving');
     }
-    const next = [Math.round(dragging.dx + mx / lineageState.scale), Math.round(dragging.dy + my / lineageState.scale)];
-    dragging.element.style.translate = `${next[0]}px ${next[1]}px`;
+    const f = dragging.factor ?? 1;
+    const next = [Math.round(dragging.dx + (mx * f) / lineageState.scale), Math.round(dragging.dy + (my * f) / lineageState.scale)];
+    if (dragging.element) dragging.element.style.translate = `${next[0]}px ${next[1]}px`;
     lineageState.layout.offsets[dragging.key] = next;
     if (!edgeFrame) edgeFrame = requestAnimationFrame(() => { edgeFrame = 0; drawEdges(); });
   });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
-    if (dragging.moved) {
-      dragging.element.classList.remove('dragging');
+    if (!dragging.moved && dragging.key.startsWith('edge:')) {
+      selectEdge(dragging.key);
+      suppressClickUntil = Date.now() + 80; // the background click would clear it again
+    } else if (dragging.moved) {
+      dragging.element?.classList.remove('dragging');
       viewport.classList.remove('moving');
       const [x, y] = lineageState.layout.offsets[dragging.key];
       if (!x && !y) delete lineageState.layout.offsets[dragging.key];
@@ -1416,6 +1462,14 @@ function renderMinimap() {
       renderLayoutStatus();
     }
     dragging = null;
+  });
+  // double-click an edge: straight again
+  viewport.addEventListener('dblclick', (e) => {
+    const hit = e.target.closest('.edge-hit');
+    if (!hit || !lineageState.layout.offsets[hit.dataset.edgeKey]) return;
+    delete lineageState.layout.offsets[hit.dataset.edgeKey];
+    drawEdges();
+    renderLayoutStatus();
   });
   viewport.addEventListener('click', (e) => {
     if (Date.now() < suppressClickUntil) {
@@ -1432,7 +1486,7 @@ function renderMinimap() {
 
   let panning = null;
   viewport.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.gnode, .cluster-head')) return;
+    if (e.target.closest('.gnode, .cluster-head, .edge-hit')) return;
     panning = { x: e.clientX - lineageState.tx, y: e.clientY - lineageState.ty };
     viewport.classList.add('panning');
   });
@@ -1456,6 +1510,7 @@ function renderMinimap() {
     if (e.target.closest('.gnode, .cluster-head')) return;
     lineageState.selectedNodeId = null;
     for (const node of lineageState.nodeById.values()) node.classList.remove('selected');
+    if (lineageState.selectedEdge) selectEdge(lineageState.selectedEdge);
   });
 
   document.querySelector('.dash-toolbar').addEventListener('click', (e) => {

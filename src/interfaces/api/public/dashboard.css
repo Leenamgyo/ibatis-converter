@@ -168,6 +168,11 @@
    `.graph-nodes` must stay `z-index: auto`: give it one and it becomes a
    stacking context, trapping `.gnode` below the edges again. */
 .graph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 1; }
+/* edges can be grabbed: a wide invisible stroke over each (lineage.js drawEdges) */
+.graph-edges .edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: grab; }
+.graph-edges .edge-hit:hover { stroke: var(--edge-hi); stroke-opacity: 0.18; }
+.graph-edges path.selected { stroke: var(--edge-hi); stroke-width: 2.6; opacity: 1; }
+.graph-nodes .edge-end { outline: 2px solid var(--edge-hi); outline-offset: 2px; }
 .graph-edges path { fill: none; stroke: var(--edge); stroke-width: 1.5; opacity: 0.85; }
 .graph-edges path.ref { stroke: var(--edge-ref); stroke-dasharray: 4 3; }
 .graph-edges path.join { stroke: var(--edge-join); stroke-width: 1.1; }

@@ -66,6 +66,16 @@ The breadcrumb shows where a clicked node sits (`MAIN → S1 → TABLE`).
   - Edge sides are chosen from where the boxes now are: right/left,
     below/above, or by centres when they overlap. A box dragged above or
     left of its target still gets a clean line.
+- **Edges.** Each line has a 12px invisible grab area (its own `<g
+  class="edge-hits">`, so the highlight code's `#lineageEdges > path` never
+  touches it).
+  - **Drag** a line to bend it: both control points shift, scaled 4/3 so
+    the curve's middle follows the mouse. The bend is stored like a box
+    offset, keyed `edge:<kind>:<from>><to>`.
+  - **Click** a line to highlight it and outline its two boxes; click again
+    or click the background to clear.
+  - **Double-click** a line to straighten it.
+  - Dragging a line never pans.
 - **Saving.** **배치 저장** (or Ctrl/⌘+S in this view) stores the offsets and
   the current zoom/pan for that statement on the server (`LayoutStore`,
   `data/layouts/` or `LAYOUT_DIR`; `GET/PUT/DELETE /api/v1/layouts/:id`).
