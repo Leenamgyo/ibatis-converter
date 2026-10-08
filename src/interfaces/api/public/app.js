@@ -306,16 +306,25 @@ async function collectXmlFromDirectory(dirHandle, isInSkippedDirectory, onProgre
   return { entries: out, skippedDirs };
 }
 
-document.getElementById('folderBtn').addEventListener('click', async () => {
+/**
+ * The browser's own folder access: the File System Access picker where there is one,
+ * else the classic folder input. Used only when the page is not served from this
+ * machine (the in-app browser below needs the local server). Chrome's picker
+ * refuses folders it deems sensitive ("시스템 파일이 포함되어 있으므로 …"); that
+ * refusal reaches the page as a plain cancel, so the hint says what to do.
+ */
+async function pickWithBrowser() {
   if (!window.showDirectoryPicker) {
-    folderInput.click(); // no directory API (Firefox / Safari): the classic folder input
+    folderInput.click();
     return;
   }
   let handle;
   try {
     handle = await window.showDirectoryPicker({ mode: 'read' });
   } catch (e) {
-    if (e.name !== 'AbortError') fileCount.textContent = `폴더를 열 수 없습니다: ${e.message}`;
+    fileCount.textContent = e.name === 'AbortError'
+      ? '폴더를 고르지 않았습니다 — 브라우저가 “시스템 파일” 때문에 막았다면 그 안의 프로젝트 폴더를 직접 고르세요'
+      : `브라우저가 폴더를 열 수 없습니다: ${e.message}`;
     return;
   }
   try {
@@ -328,6 +337,63 @@ document.getElementById('folderBtn').addEventListener('click', async () => {
   } catch (e) {
     fileCount.textContent = `업로드 실패: ${e.message}`;
   }
+}
+
+/* ---- in-app folder browser (local server) -------------------------- */
+const folderDialog = document.getElementById('folderDialog');
+const folderBrowser = { path: null, parent: null, home: null };
+
+async function listFolder(dir) {
+  const url = new URL('/api/v1/fs/dirs', window.location.origin);
+  if (dir) url.searchParams.set('path', dir);
+  const res = await fetch(url);
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
+}
+
+async function showFolder(dir) {
+  const error = document.getElementById('folderError');
+  const { ok, body } = await listFolder(dir);
+  if (!ok) {
+    error.textContent = body.error ?? '폴더를 읽을 수 없습니다';
+    return false;
+  }
+  error.textContent = '';
+  Object.assign(folderBrowser, { path: body.path, parent: body.parent, home: body.home });
+  document.getElementById('folderPath').textContent = body.path;
+  document.getElementById('folderUp').disabled = !body.parent;
+  const list = document.getElementById('folderList');
+  list.replaceChildren(...(body.dirs.length
+    ? body.dirs.map((name) => el('li', {},
+      el('button', { type: 'button', class: 'fd-dir', role: 'option', onclick: () => showFolder(`${body.path}/${name}`) }, el('span', { class: 'fd-icon', 'aria-hidden': 'true' }, '📁'), name)))
+    : [el('li', { class: 'fd-empty' }, '하위 폴더 없음')]));
+  document.getElementById('folderOpen').textContent = `이 폴더 열기${body.xmlHere ? ` (XML ${body.xmlHere})` : ''}`;
+  list.scrollTop = 0;
+  return true;
+}
+
+document.getElementById('folderBtn').addEventListener('click', async () => {
+  // served from this machine: browse its folders in-app; otherwise the browser's picker
+  const remembered = (() => { try { return localStorage.getItem('project.path'); } catch { return null; } })();
+  const start = remembered ? remembered.replace(/\/[^/]+\/?$/, '') : null; // the remembered project's parent
+  const probe = await listFolder(start).catch(() => ({ ok: false, status: 0 }));
+  if (probe.status === 403 || probe.status === 0) {
+    pickWithBrowser();
+    return;
+  }
+  if (!(await showFolder(probe.ok ? start : null))) await showFolder(null);
+  folderDialog.showModal();
+});
+document.getElementById('folderUp').addEventListener('click', () => folderBrowser.parent && showFolder(folderBrowser.parent));
+document.getElementById('folderHome').addEventListener('click', () => folderBrowser.home && showFolder(folderBrowser.home));
+document.getElementById('folderBrowserPicker').addEventListener('click', () => {
+  folderDialog.close();
+  pickWithBrowser();
+});
+document.getElementById('folderOpen').addEventListener('click', () => {
+  const dir = folderBrowser.path;
+  folderDialog.close();
+  openByPath(dir).catch((err) => { fileCount.textContent = `열기 실패: ${err.message}`; });
 });
 
 folderInput.addEventListener('change', () => {
@@ -358,28 +424,32 @@ async function uploadFolder(files) {
  * each file only when a statement in it is opened — nothing is uploaded, and
  * the browser never holds the files.
  */
-document.getElementById('pathForm').addEventListener('submit', async (e) => {
+/** Opens a folder on this machine in place (the server reads it; nothing is uploaded). */
+async function openByPath(dir) {
+  fileCount.textContent = '여는 중…';
+  const res = await fetch('/api/v1/projects/open', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: dir }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? res.status);
+  state.sampleKind = null;
+  await openProject(body);
+  state.openedPath = dir; // a closed session (idle timeout, restart) can be reopened from it
+  const mybatis = body.files.filter((f) => f.syntax === 'mybatis').length;
+  fileCount.textContent = body.totals.files
+    ? `매퍼 ${body.totals.files}개${mybatis ? ` (MyBatis ${mybatis})` : ''} · statement ${body.totals.statements.toLocaleString()}개${body.skipped.length ? ` · XML ${body.skipped.length}개 제외` : ''}`
+    : `SQL 매퍼(iBATIS <sqlMap> / MyBatis <mapper>)를 찾지 못했습니다${body.skipped.length ? ` (XML ${body.skipped.length}개는 매퍼가 아님)` : ''}`;
+  fileCount.title = body.skipped.length ? `건너뛴 XML:\n${body.skipped.map((x) => `${x.sourceFile} — ${x.reason}`).join('\n')}` : '';
+  document.getElementById('pathInput').value = dir;
+  try { localStorage.setItem('project.path', dir); } catch { /* not remembered */ }
+}
+
+document.getElementById('pathForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const dir = document.getElementById('pathInput').value.trim();
-  if (!dir) return;
-  fileCount.textContent = '여는 중…';
-  try {
-    const res = await fetch('/api/v1/projects/open', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path: dir }),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error ?? res.status);
-    state.sampleKind = null;
-    await openProject(body);
-    state.openedPath = dir; // a closed session (idle timeout, restart) can be reopened from it
-    fileCount.textContent = `매퍼 ${body.totals.files}개 · statement ${body.totals.statements.toLocaleString()}개${body.skipped.length ? ` · XML ${body.skipped.length}개 제외` : ''}`;
-    fileCount.title = body.skipped.length ? `건너뛴 XML:\n${body.skipped.map((x) => `${x.sourceFile} — ${x.reason}`).join('\n')}` : '';
-    try { localStorage.setItem('project.path', dir); } catch { /* not remembered */ }
-  } catch (err) {
-    fileCount.textContent = `열기 실패: ${err.message}`;
-  }
+  if (dir) openByPath(dir).catch((err) => { fileCount.textContent = `열기 실패: ${err.message}`; });
 });
 try { document.getElementById('pathInput').value = localStorage.getItem('project.path') ?? ''; } catch { /* storage unavailable */ }
 

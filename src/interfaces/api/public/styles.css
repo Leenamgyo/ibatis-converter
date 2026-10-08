@@ -163,3 +163,22 @@ table.data td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); 
         header.top { gap: 0.6rem; }
   .top-actions { margin-left: 0; width: 100%; justify-content: flex-end; }
 }
+
+/* in-app folder browser (프로젝트 폴더) */
+.folder-dialog { border: 1px solid var(--border-strong); border-radius: 8px; padding: 0; background: var(--bg-raised); color: var(--text); width: min(560px, calc(100vw - 32px)); }
+.folder-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.fd-inner { display: flex; flex-direction: column; max-height: min(640px, 80vh); }
+.fd-head { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 1rem; border-bottom: 1px solid var(--border); }
+.fd-head h2 { font-size: 0.95rem; margin: 0; }
+.fd-x { border: none; background: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; }
+.fd-path { padding: 0.5rem 1rem; font: 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); word-break: break-all; background: var(--bg-sunken, transparent); }
+.fd-nav { display: flex; gap: 0.4rem; align-items: center; padding: 0.5rem 1rem; flex-wrap: wrap; }
+.fd-hint { font-size: 0.72rem; color: var(--text-faint); }
+.fd-list { list-style: none; margin: 0; padding: 0.25rem 0.5rem; overflow: auto; flex: 1; min-height: 160px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.fd-dir { display: flex; gap: 0.5rem; align-items: center; width: 100%; text-align: left; border: none; background: none; color: var(--text); padding: 0.35rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+.fd-dir:hover, .fd-dir:focus-visible { background: var(--accent-soft); color: var(--accent); }
+.fd-empty { padding: 0.75rem; color: var(--text-faint); font-size: 0.8rem; }
+.fd-foot { display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 1rem; }
+.fd-foot .btn.primary { margin-left: auto; }
+.fd-error { font-size: 0.75rem; color: var(--manual, #c0563b); }
+.btn.link { border: none; background: none; color: var(--text-muted); text-decoration: underline; padding: 0.4rem 0; }

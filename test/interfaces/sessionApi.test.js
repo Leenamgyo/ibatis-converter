@@ -135,3 +135,24 @@ test('a project can arrive in batches: /uploads, /uploads/:id/files, /uploads/:i
     stop();
   }
 });
+
+test('GET /api/v1/fs/dirs lists folder names only (no dot or build folders), for the in-app folder picker', async () => {
+  const { call, stop } = startServer();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-dirs-'));
+  try {
+    for (const d of ['projA', 'projB', '.git', 'node_modules', 'target']) fs.mkdirSync(path.join(root, d));
+    fs.writeFileSync(path.join(root, 'a.xml'), '<x/>');
+    fs.writeFileSync(path.join(root, 'notes.txt'), 'x');
+    const listed = await call('GET', `/api/v1/fs/dirs?path=${encodeURIComponent(root)}`);
+    assert.equal(listed.status, 200);
+    assert.deepEqual(listed.body.dirs, ['projA', 'projB']);
+    assert.equal(listed.body.xmlHere, 1);
+    assert.equal(listed.body.parent, path.dirname(fs.realpathSync(root)) === path.dirname(root) ? path.dirname(root) : listed.body.parent);
+    assert.equal((await call('GET', `/api/v1/fs/dirs?path=${encodeURIComponent(path.join(root, 'nope'))}`)).status, 400);
+    const opened = await call('POST', '/api/v1/projects/open', { path: path.join(root, 'projA') });
+    assert.equal(opened.status, 200, 'a listed folder opens in place');
+  } finally {
+    stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

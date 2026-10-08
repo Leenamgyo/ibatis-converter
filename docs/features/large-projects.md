@@ -48,12 +48,26 @@ The caches are `LruCache`s:
 
 ## Picking a big folder (3,800 files)
 
-**프로젝트 폴더** uses `showDirectoryPicker()` where the browser has it
-(Chrome / Edge). The page walks the folder itself
-(`collectXmlFromDirectory`) and never descends into build or tool
-directories. It sees only `.xml` files, and the browser doesn't ask to
-"upload N files". Elsewhere it falls back to `<input webkitdirectory>`,
-which hands every file over, and the path filter below drops them.
+**프로젝트 폴더** opens an **in-app folder browser** when the page is served
+from this machine (`GET /api/v1/fs/dirs`, loopback only).
+- It starts in the folder holding this tool, so `../<project>` siblings
+  are one click away, or in the last opened project's parent.
+- It lists folder names only, never file contents, and hides dot and
+  build folders.
+- **이 폴더 열기** opens the folder in place (`POST /projects/open`):
+  nothing is uploaded.
+
+Why not the browser's picker: Chrome's `showDirectoryPicker()` refuses
+folders it deems sensitive ("시스템 파일이 포함되어 있으므로 localhost에서
+열 수 없습니다"), and the refusal reaches the page as a plain cancel. The
+classic `<input webkitdirectory>` asks to "upload N files" and hands every
+file over.
+
+Both remain as the fallback when the page is not local, or via
+"브라우저 선택기로 고르기":
+- `showDirectoryPicker` walks only source folders
+  (`collectXmlFromDirectory`).
+- The input route drops non-mappers by path.
 
 The browser folder picker hands over every file in the project. Only
 mapper XML goes to the server:

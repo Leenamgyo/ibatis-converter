@@ -3,6 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import fs from 'node:fs';
+import os from 'node:os';
+import { SKIPPED_DIRECTORIES } from '../../application/mapperDetection.js';
 import { ProjectSession, DirectorySource, UploadSource, createUploadSource } from '../../application/ProjectSession.js';
 import { DependencyAnalyzer } from '../../analyzer/dependency/DependencyAnalyzer.js';
 import { SessionManager } from './SessionManager.js';
@@ -162,6 +164,32 @@ export function createApp({
     }
     const session = new ProjectSession(new DirectorySource(dir)).open();
     sendJson(req, res, indexBody(sessions.add(session), session));
+  });
+
+  // The in-app folder browser behind 프로젝트 폴더: folder NAMES under a path on this machine
+  // (never file contents), so a project is picked without the browser's own picker — which
+  // refuses folders it deems sensitive ("시스템 파일이 포함되어 있으므로 열 수 없습니다") and,
+  // as a plain input, offers to upload every file. Local requests only, like /projects/open.
+  app.get('/api/v1/fs/dirs', (req, res) => {
+    if (!isLoopback(req.socket.remoteAddress)) {
+      res.status(403).json({ error: 'browsing server-side folders is allowed from this machine only' });
+      return;
+    }
+    // default: the folder this tool sits in (its sibling projects), i.e. the working directory's parent
+    const dir = path.resolve(typeof req.query.path === 'string' && req.query.path.trim() ? req.query.path : path.join(process.cwd(), '..'));
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      res.status(400).json({ error: `cannot read ${dir}: ${err.code ?? err.message}`, path: dir, parent: path.dirname(dir) });
+      return;
+    }
+    const dirs = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !SKIPPED_DIRECTORIES.has(e.name))
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b));
+    const xmlHere = entries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.xml')).length;
+    res.json({ path: dir, parent: path.dirname(dir) === dir ? null : path.dirname(dir), dirs, xmlHere, home: os.homedir() });
   });
 
   app.get('/api/v1/projects/:projectId', (req, res) => {

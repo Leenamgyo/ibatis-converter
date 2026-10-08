@@ -40,6 +40,28 @@
     </div>
   </header>
 
+  <!-- 프로젝트 폴더: folders on this machine, listed by the local server (no upload, no browser picker) -->
+  <dialog class="folder-dialog" id="folderDialog" aria-labelledby="folderDialogTitle">
+    <form method="dialog" class="fd-inner">
+      <div class="fd-head">
+        <h2 id="folderDialogTitle">프로젝트 폴더 선택</h2>
+        <button class="fd-x" value="cancel" aria-label="닫기">×</button>
+      </div>
+      <div class="fd-path" id="folderPath"></div>
+      <div class="fd-nav">
+        <button type="button" class="btn small" id="folderUp">↑ 상위 폴더</button>
+        <button type="button" class="btn small" id="folderHome">홈</button>
+        <span class="fd-hint">폴더를 클릭해 들어가고, 프로젝트 폴더에서 “이 폴더 열기”</span>
+      </div>
+      <ul class="fd-list" id="folderList" role="listbox" aria-label="하위 폴더"></ul>
+      <div class="fd-foot">
+        <button type="button" class="btn link" id="folderBrowserPicker" title="이 컴퓨터가 아닌 곳에서 열었을 때: 브라우저의 폴더 선택기">브라우저 선택기로 고르기</button>
+        <span class="fd-error" id="folderError" role="alert"></span>
+        <button type="button" class="btn primary" id="folderOpen">이 폴더 열기</button>
+      </div>
+    </form>
+  </dialog>
+
   <main id="app">
     <div class="empty-state" id="emptyState">
       Upload one or more iBATIS mapper XML files (or click "Load sample"), then "Analyze".
