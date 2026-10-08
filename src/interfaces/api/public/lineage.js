@@ -1129,6 +1129,80 @@ function highlightColumnPath(index) {
 }
 
 /* ------------------------------------------------------------------ *
+ * 컬럼 삭제 가이드 (GET /statements/:id/column-guide)                    *
+ * Where to edit to drop one output column — its trace down the SELECT *
+ * hierarchy, then every place in the XML: the select items, the <sql>  *
+ * fragments (shared or removable, with their <include> sites), the     *
+ * resultMap mappings, and the other clauses that still use it. Only a  *
+ * guide: nothing is edited.                                            *
+ * ------------------------------------------------------------------ */
+const GUIDE_ACTIONS = {
+  REMOVE_SELECT_ITEM: ['삭제', 'SELECT 항목'],
+  REMOVE_FRAGMENT: ['삭제', '<sql> fragment 통째로'],
+  REMOVE_INCLUDE: ['삭제', '<include refid>'],
+  REMOVE_RESULT_MAPPING: ['삭제', 'resultMap 매핑'],
+  REMOVE_DYNAMIC_TAG: ['삭제', '동적 태그'],
+  SHARED_FRAGMENT: ['먼저 확인', '공유 fragment'],
+  SHARED_RESULT_MAP: ['먼저 확인', '공유 resultMap'],
+  CHECK_JAVA: ['먼저 확인', 'Java 필드'],
+  CHECK_REFERENCE: ['함께 확인', '다른 절에서 사용'],
+};
+
+function guideTrace(node, depth = 0) {
+  if (node.base) {
+    return el('li', { class: 'gt-base' }, el('span', { class: 'gt-tag' }, '테이블'), el('span', { class: 'mono' }, `${node.table ?? '?'}.${node.column}`));
+  }
+  const scope = node.selectId === 'MAIN' ? '결과' : `${node.selectId}${node.scopeAlias ? ` · ${node.origin} ${node.scopeAlias}` : ''}`;
+  return el('li', {},
+    el('span', { class: 'gt-tag' }, scope),
+    el('span', { class: 'mono' }, `${node.expression}${node.alias ? ` AS ${node.alias}` : ''}`),
+    node.aggregate ? el('span', { class: 'gt-agg' }, '집계') : null,
+    node.sources.length ? el('ul', {}, ...node.sources.map((s) => guideTrace(s, depth + 1))) : null);
+}
+
+async function openColumnGuide(column) {
+  const dialog = document.getElementById('guideDialog');
+  const body = document.getElementById('guideBody');
+  const id = lineageState.statementId;
+  document.getElementById('guideTitle').textContent = `컬럼 삭제 가이드 · ${column}`;
+  body.replaceChildren(el('div', { class: 'side-empty' }, '추적 중…'));
+  if (!dialog.open) dialog.showModal();
+  let guide;
+  try {
+    guide = await api(`/api/v1/statements/${encodeURIComponent(id)}/column-guide?column=${encodeURIComponent(column)}`);
+  } catch (e) {
+    body.replaceChildren(el('div', { class: 'sm-callout error' }, `가이드를 만들 수 없습니다: ${e.message}`));
+    return;
+  }
+  // what is shared comes first: it decides whether the deletions below may be done as they are
+  const groups = ['먼저 확인', '삭제', '함께 확인'].map((title) => [title, guide.steps.filter((s) => GUIDE_ACTIONS[s.action]?.[0] === title)]);
+  let n = 0;
+  body.replaceChildren(...[
+    el('p', { class: 'gd-lead' }, el('span', { class: 'mono' }, id), ' — 직접 수정하지 않습니다. 아래 위치를 차례로 고치세요.'),
+    ...guide.notes.map((note) => el('div', { class: 'sm-callout' }, note)),
+    guide.trace.length
+      ? el('section', { class: 'gd-section' }, el('h3', {}, '컬럼 추적 (결과 → 원본)'), el('ul', { class: 'gd-trace' }, ...guide.trace.map((t) => guideTrace(t))))
+      : null,
+    ...groups.filter(([, steps]) => steps.length).map(([title, steps]) => el('section', { class: `gd-section gd-${title === '삭제' ? 'remove' : title === '먼저 확인' ? 'first' : 'check'}` },
+      el('h3', {}, title, el('span', { class: 'gd-count' }, String(steps.length))),
+      el('ol', { class: 'gd-steps' }, ...steps.map((step) => el('li', { value: String(++n) },
+        el('div', { class: 'gd-step-head' },
+          el('span', { class: 'gd-kind' }, GUIDE_ACTIONS[step.action]?.[1] ?? step.action),
+          step.level === 'inner' ? el('span', { class: 'gd-tag' }, '안쪽 쿼리') : null,
+          step.fragment ? el('span', { class: 'gd-tag' }, `<sql> ${step.fragment}`) : null,
+          el('span', { class: 'gd-loc mono' }, `${step.file}:${step.line}`)),
+        step.text ? el('code', { class: 'gd-code' }, step.text) : null,
+        el('div', { class: 'gd-why' }, step.reason),
+        step.sharedBy?.length
+          ? el('details', { class: 'gd-shared' }, el('summary', {}, `함께 쓰는 statement ${step.sharedBy.length}개`), el('ul', {}, ...step.sharedBy.map((s) => el('li', { class: 'mono' }, s))))
+          : null,
+      )))),
+    ),
+    guide.steps.length ? null : el('div', { class: 'side-empty' }, '고칠 곳을 찾지 못했습니다.'),
+  ].filter(Boolean));
+}
+
+/* ------------------------------------------------------------------ *
  * Right panel                                                          *
  * ------------------------------------------------------------------ */
 function sideCard(title, count, ...body) {
@@ -1183,6 +1257,15 @@ function renderRightPanel() {
         entry.sourceTable
           ? [el('span', { class: 't' }, entry.sourceTable), entry.sourceColumn ? el('span', { class: 'c' }, entry.sourceColumn) : null]
           : '—'),
+      el('td', {}, el('button', {
+        class: 'tool-btn guide-btn',
+        type: 'button',
+        title: '이 결과 컬럼을 없애려면 고칠 곳 (refid·resultMap 포함)',
+        onclick: (e) => {
+          e.stopPropagation();
+          openColumnGuide(entry.alias ?? entry.sourceColumn ?? String(entry.expression).split('.').pop());
+        },
+      }, '가이드')),
     );
     return row;
   });
@@ -1190,7 +1273,7 @@ function renderRightPanel() {
   const columnCard = sideCard('SELECT 컬럼 매핑', lineage.columnLineage.length,
     columnRows.length
       ? el('table', { class: 'data lineage-cols' },
-        el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'SQL Expression'), el('th', {}, 'Alias'), el('th', {}, 'Source'))),
+        el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'SQL Expression'), el('th', {}, 'Alias'), el('th', {}, 'Source'), el('th', { title: '컬럼 삭제 가이드' }, ''))),
         el('tbody', {}, ...columnRows))
       : el('div', { class: 'side-empty' }, 'no resolved output columns'),
   );

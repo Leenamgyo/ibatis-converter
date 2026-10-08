@@ -264,6 +264,18 @@ export function createApp({
     sendJson(req, res, project.analyze(req.params.id));
   });
 
+  // "이 결과 컬럼을 없애려면": the column's trace and every place to edit (a guide; nothing is changed)
+  app.get('/api/v1/statements/:id/column-guide', (req, res) => {
+    const project = resolveProject(req, res);
+    if (!project || !knownStatement(project, req.params.id, res)) return;
+    const column = String(req.query.column ?? '').trim();
+    if (!column) {
+      res.status(400).json({ error: 'Expected ?column=<output column name>' });
+      return;
+    }
+    sendJson(req, res, project.columnRemovalGuide(req.params.id, column));
+  });
+
   // search the project: ids, paths, and the mapper text (tables, columns, aliases, refids...)
   app.get('/api/v1/search', (req, res) => {
     const project = resolveProject(req, res);

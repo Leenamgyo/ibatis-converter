@@ -201,3 +201,20 @@ test('formatSql (쿼리 정렬) changes only the layout of the returned texts', 
     stop();
   }
 });
+
+test('GET /api/v1/statements/:id/column-guide returns a removal guide (and needs a column)', async () => {
+  const { call, stop } = startServer();
+  try {
+    const { body: { projectId, files: index } } = await call('POST', '/api/v1/projects', { files: files() });
+    const id = index.flatMap((f) => f.statements).find((s) => s.type === 'SELECT').qualifiedId;
+    const analysis = (await call('GET', `/api/v1/statements/${id}?projectId=${projectId}`)).body;
+    const column = analysis.lineage.columnLineage[0].alias ?? analysis.lineage.columnLineage[0].sourceColumn;
+    const guide = await call('GET', `/api/v1/statements/${id}/column-guide?column=${encodeURIComponent(column)}&projectId=${projectId}`);
+    assert.equal(guide.status, 200);
+    assert.equal(guide.body.found, true);
+    assert.ok(guide.body.steps.some((s) => s.action === 'REMOVE_SELECT_ITEM'));
+    assert.equal((await call('GET', `/api/v1/statements/${id}/column-guide?projectId=${projectId}`)).status, 400);
+  } finally {
+    stop();
+  }
+});

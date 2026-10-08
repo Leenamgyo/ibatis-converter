@@ -185,3 +185,31 @@ table.data td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); 
 
 .update-bar { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.45rem 1rem; background: var(--warning-soft, #fff4d6); color: var(--warning, #8a5a00); font-size: 0.8rem; border-bottom: 1px solid var(--border); }
 .update-bar[hidden] { display: none; }
+
+/* 컬럼 삭제 가이드 */
+.guide-dialog { border: 1px solid var(--border-strong); border-radius: 8px; padding: 0; background: var(--bg-raised); color: var(--text); width: min(820px, calc(100vw - 32px)); }
+.guide-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.gd-inner { display: flex; flex-direction: column; max-height: 86vh; }
+.gd-body { overflow: auto; padding: 0.75rem 1rem 1rem; font-size: 0.82rem; }
+.gd-lead { margin: 0 0 0.6rem; color: var(--text-muted); }
+.gd-section { margin-top: 0.9rem; }
+.gd-section h3 { font-size: 0.82rem; margin: 0 0 0.4rem; display: flex; align-items: center; gap: 0.4rem; }
+.gd-count { font-size: 0.7rem; padding: 0 0.4em; border-radius: 8px; background: var(--bg-sunken, rgba(0,0,0,.08)); color: var(--text-muted); }
+.gd-remove h3 { color: var(--manual, #c0563b); }
+.gd-first h3 { color: var(--warning, #b7791f); }
+.gd-trace, .gd-trace ul { list-style: none; margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--border); }
+.gd-trace { padding-left: 0.6rem; }
+.gd-trace li { margin: 0.25rem 0; }
+.gt-tag, .gd-tag { font-size: 0.66rem; padding: 0 0.4em; margin-right: 0.4rem; border-radius: 3px; background: var(--accent-soft); color: var(--accent); }
+.gt-base .gt-tag { background: var(--bg-sunken, rgba(0,0,0,.08)); color: var(--text-muted); }
+.gt-agg { font-size: 0.66rem; margin-left: 0.4rem; color: var(--warning, #b7791f); }
+.gd-steps { margin: 0; padding-left: 1.4rem; }
+.gd-steps > li { margin: 0 0 0.6rem; }
+.gd-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.gd-kind { font-weight: 700; }
+.gd-loc { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); }
+.gd-code { display: block; margin: 0.25rem 0; padding: 0.3rem 0.5rem; border-radius: 4px; background: var(--code-bg, var(--bg-sunken, rgba(0,0,0,.06))); font: 0.74rem ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+.gd-why { color: var(--text-muted); font-size: 0.76rem; }
+.gd-shared summary { cursor: pointer; font-size: 0.72rem; color: var(--text-muted); }
+.gd-shared ul { margin: 0.2rem 0 0; padding-left: 1.2rem; font-size: 0.72rem; }
+.guide-btn { padding: 0.1rem 0.4rem; font-size: 0.66rem; white-space: nowrap; }

@@ -34,6 +34,7 @@ import { MigrationSafetyAnalyzer } from '../report/migration/MigrationSafetyAnal
 import { findXmlFiles } from './ProjectLoader.js';
 import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS } from './mapperDetection.js';
 import { LruCache } from './LruCache.js';
+import { buildColumnRemovalGuide } from './ColumnRemovalGuide.js';
 
 /**
  * A project opened for interactive or batch work WITHOUT holding it in
@@ -747,6 +748,83 @@ export class ProjectSession {
     const statement = this.mapper(at.sourceFile).statements.get(at.localId);
     const resolved = this.#realResolver().resolve(statement, at.namespace, qualifiedId);
     return this.statementAnalyzer.analyze(resolved.originalTree, resolved.resolvedTree, qualifiedId, this.dialect);
+  }
+
+  // ---------------------------------------------------------------- column removal guide
+
+  /** the index entry of a statement ({ id, type, line, parameterClass, resultClass, resultMap }) */
+  statementMeta(qualifiedId) {
+    const file = this.fileByQualifiedId.get(qualifiedId);
+    return this.fileEntries.get(file)?.statements.find((s) => s.qualifiedId === qualifiedId) ?? null;
+  }
+
+  /** statements that include `fragmentQualifiedId`, directly or through other fragments */
+  includerStatements(fragmentQualifiedId) {
+    const out = new Set();
+    const walk = (id, seen) => {
+      for (const from of this.includedBy.get(id) ?? []) {
+        if (seen.has(from)) continue;
+        seen.add(from);
+        if (this.statementIds.has(from)) out.add(from);
+        else walk(from, seen);
+      }
+    };
+    walk(fragmentQualifiedId, new Set());
+    return [...out];
+  }
+
+  /** every `<include refid>` that points at `fragmentQualifiedId`: { statement, file, line, refid, text } */
+  includeSites(fragmentQualifiedId) {
+    const sites = [];
+    for (const owner of this.includedBy.get(fragmentQualifiedId) ?? []) {
+      const loc = this.#locate(owner);
+      if (!loc) continue;
+      const m = this.mapper(loc.sourceFile);
+      const node = m.statements.get(loc.localId) ?? m.fragments.get(loc.localId);
+      const lines = this.text(loc.sourceFile).split('\n');
+      for (const inc of collectIncludes(node ?? { children: [] })) {
+        const target = this.graph.qualifiedIdOf(inc.refid, loc.namespace, 'SQL_FRAGMENT');
+        if (target?.qualifiedId !== fragmentQualifiedId) continue;
+        sites.push({ statement: owner, file: loc.sourceFile, line: inc.sourceLine, refid: inc.refid, text: (lines[inc.sourceLine - 1] ?? '').trim() });
+      }
+    }
+    return sites;
+  }
+
+  /** a resultMap and the ones it extends, as AST nodes (loaded on demand) */
+  resultMapNodes(name, namespace) {
+    const out = [];
+    const seen = new Set();
+    let current = name;
+    let ns = namespace;
+    while (current) {
+      const symbol = this.graph._resolveRefid(current, ns, SymbolType.RESULT_MAP);
+      this.graph._ambiguous = null;
+      if (!symbol || seen.has(symbol.qualifiedId)) break;
+      seen.add(symbol.qualifiedId);
+      const node = this.realSymbols.get(symbol.qualifiedId)?.node;
+      if (!node) break;
+      out.push({ qualifiedId: symbol.qualifiedId, sourceFile: symbol.sourceFile, node });
+      current = node.extends;
+      ns = symbol.mapper;
+    }
+    return out;
+  }
+
+  /** statements whose resultMap="…" resolves to `resultMapQualifiedId` */
+  statementsUsingResultMap(resultMapQualifiedId) {
+    const out = [];
+    for (const f of this.files) {
+      for (const s of f.statements) {
+        if (s.resultMap && this.graph.qualifiedIdOf(s.resultMap, f.namespace, 'RESULT_MAP')?.qualifiedId === resultMapQualifiedId) out.push(s.qualifiedId);
+      }
+    }
+    return out;
+  }
+
+  /** see ColumnRemovalGuide: what to remove, and where, to drop one output column */
+  columnRemovalGuide(qualifiedId, column) {
+    return this.hasStatement(qualifiedId) ? buildColumnRemovalGuide(this, qualifiedId, column) : null;
   }
 
   // ---------------------------------------------------------------- search

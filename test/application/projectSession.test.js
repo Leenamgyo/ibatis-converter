@@ -215,3 +215,50 @@ test('search finds statements by id, file name, and by what their SQL uses — t
     session.close();
   }
 });
+
+test('column removal guide: trace, fragment removable with its <include> sites, dynamic tag, resultMap mapping', () => {
+  const session = new ProjectSession(createUploadSource([
+    { sourceFile: 'cols.xml', source: `<sqlMap namespace="cols">
+  <sql id="emailCol">C.EMAIL</sql>
+  <sql id="baseCols">C.ID, C.NAME</sql>
+</sqlMap>` },
+    { sourceFile: 'cust.xml', source: `<sqlMap namespace="cust">
+  <resultMap id="custMap" class="shop.Customer">
+    <result property="id" column="ID"/>
+    <result property="email" column="EMAIL"/>
+  </resultMap>
+  <select id="list" resultMap="custMap">
+    SELECT <include refid="cols.baseCols"/>,
+           <include refid="cols.emailCol"/>
+      FROM CUSTOMER C
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="email" prepend="AND">C.EMAIL = #email#</isNotEmpty>
+      <isNotEmpty property="name" prepend="AND">C.NAME = #name#</isNotEmpty>
+    </dynamic>
+  </select>
+  <select id="other" resultMap="custMap">SELECT <include refid="cols.baseCols"/> FROM CUSTOMER C</select>
+</sqlMap>` },
+  ])).open();
+  try {
+    const guide = session.columnRemovalGuide('cust.list', 'EMAIL');
+    assert.equal(guide.found, true);
+    assert.deepEqual(guide.trace[0].sources, [{ table: 'CUSTOMER', column: 'EMAIL', base: true }]);
+    const kinds = guide.steps.map((s) => `${s.action}@${s.file}:${s.line}`);
+    assert.ok(kinds.includes('REMOVE_SELECT_ITEM@cols.xml:2'), kinds.join(' '));
+    assert.ok(kinds.includes('REMOVE_FRAGMENT@cols.xml:2'), 'the fragment holds only this column');
+    assert.ok(kinds.includes('REMOVE_INCLUDE@cust.xml:8'), 'and its <include refid> site');
+    assert.ok(kinds.includes('REMOVE_DYNAMIC_TAG@cust.xml:11'), 'a tag whose whole body is this column\'s condition');
+    assert.ok(kinds.includes('CHECK_REFERENCE@cust.xml:11'));
+    assert.ok(kinds.includes('REMOVE_RESULT_MAPPING@cust.xml:4'));
+    const shared = guide.steps.find((s) => s.action === 'SHARED_RESULT_MAP');
+    assert.deepEqual(shared.sharedBy, ['cust.other'], 'the resultMap is used by another statement');
+    assert.ok(!kinds.some((k) => k.startsWith('REMOVE_DYNAMIC_TAG@cust.xml:12')), 'the NAME condition is not touched');
+
+    // a column of a fragment other statements share: flagged, not removed
+    const id = session.columnRemovalGuide('cust.list', 'NAME');
+    assert.ok(id.steps.some((s) => s.action === 'SHARED_FRAGMENT' && s.sharedBy.includes('cust.other')));
+    assert.equal(id.steps.some((s) => s.action === 'REMOVE_FRAGMENT'), false);
+  } finally {
+    session.close();
+  }
+});

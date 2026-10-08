@@ -67,6 +67,17 @@
     <button class="btn small primary" type="button" onclick="location.reload()">새로고침</button>
   </div>
 
+  <!-- 컬럼 삭제 가이드: what to edit to drop one output column (lineage.js openColumnGuide) -->
+  <dialog class="guide-dialog" id="guideDialog" aria-labelledby="guideTitle">
+    <div class="gd-inner">
+      <div class="fd-head">
+        <h2 id="guideTitle">컬럼 삭제 가이드</h2>
+        <button class="fd-x" type="button" aria-label="닫기" onclick="this.closest('dialog').close()">×</button>
+      </div>
+      <div class="gd-body" id="guideBody"></div>
+    </div>
+  </dialog>
+
   <main id="app">
     <div class="empty-state" id="emptyState">
       Upload one or more iBATIS mapper XML files (or click "Load sample"), then "Analyze".
