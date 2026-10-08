@@ -15,11 +15,22 @@
  *   anything else                                -> skipped
  */
 
-/** Build output and tool directories: they hold copies (target/classes/**.xml) or nothing of interest. */
-export const SKIPPED_DIRECTORIES = new Set([
+/** Tool / VCS folders: they never hold a project's mappers, so they are never walked. */
+export const IGNORED_DIRECTORIES = new Set([
   'node_modules', '.git', '.svn', '.hg', '.idea', '.vscode', '.gradle', '.settings',
-  'target', 'build', 'dist', 'out', 'bin', 'classes', 'WEB-INF/classes',
 ]);
+
+/**
+ * Names build output usually has. NOT a filter: real mapper folders are named
+ * like this too — a package `…/erp/out/…`, `…/batch/build/…`, a legacy project
+ * whose only sqlMaps live in WEB-INF/classes. Dropping such folders by name lost
+ * whole projects (and with them every refid into them). The names only decide
+ * which of two copies of the SAME mapper is the build copy (copyScore).
+ */
+export const BUILD_DIRECTORY_NAMES = new Set(['target', 'build', 'dist', 'out', 'bin', 'classes']);
+
+/** @deprecated the folders still skipped by name are the ignored ones only */
+export const SKIPPED_DIRECTORIES = IGNORED_DIRECTORIES;
 
 /**
  * The charset a `<?xml ... encoding="..."?>` declaration names, from the
@@ -101,6 +112,7 @@ export const SKIP_REASONS = {
   MYBATIS_CONFIG: 'MyBatis 설정 파일',
   OTHER: 'iBATIS 매퍼가 아님',
   UNREADABLE: '루트 요소를 찾을 수 없음',
+  BUILD_COPY: '같은 매퍼의 빌드 복사본',
 };
 
 /** How much of a file classifyHead looks at: the root element is almost always within it. */
@@ -126,8 +138,24 @@ export function classifyXml(text) {
   return KIND_BY_ROOT[root] ?? 'OTHER';
 }
 
-/** Is any segment of this relative path a directory we never descend into? */
-export function isInSkippedDirectory(relativePath) {
+/** Is any folder of this relative path a tool / VCS folder we never descend into? */
+export function isInIgnoredDirectory(relativePath) {
+  return relativePath.split(/[\\/]/).slice(0, -1).some((part) => IGNORED_DIRECTORIES.has(part));
+}
+
+/** @deprecated same as isInIgnoredDirectory (build-like folder names are no longer skipped) */
+export const isInSkippedDirectory = isInIgnoredDirectory;
+
+/**
+ * How much a path looks like build output: of two files holding the same
+ * mapper, the higher-scoring one is the copy. 0 for an ordinary source path.
+ */
+export function copyScore(relativePath) {
   const parts = relativePath.split(/[\\/]/).slice(0, -1);
-  return parts.some((part, k) => SKIPPED_DIRECTORIES.has(part) || SKIPPED_DIRECTORIES.has(`${parts[k - 1]}/${part}`));
+  const joined = `/${parts.join('/')}/`;
+  let score = 0;
+  if (BUILD_DIRECTORY_NAMES.has(parts[0])) score += 4; // a top-level target/ build/ bin/ out/ dist/
+  if (/\/(target\/(classes|test-classes)|build\/(resources|classes)|out\/production|bin\/(main|test))\//.test(joined)) score += 3;
+  if (/\/WEB-INF\/classes\//.test(joined)) score += 1; // the deployed copy, when a source copy exists
+  return score;
 }

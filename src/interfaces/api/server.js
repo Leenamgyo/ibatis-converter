@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import fs from 'node:fs';
 import os from 'node:os';
-import { SKIPPED_DIRECTORIES } from '../../application/mapperDetection.js';
+import { IGNORED_DIRECTORIES } from '../../application/mapperDetection.js';
 import { ProjectSession, DirectorySource, UploadSource, createUploadSource } from '../../application/ProjectSession.js';
 import { DependencyAnalyzer } from '../../analyzer/dependency/DependencyAnalyzer.js';
 import { SessionManager } from './SessionManager.js';
@@ -196,7 +196,7 @@ export function createApp({
       return;
     }
     const dirs = entries
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !SKIPPED_DIRECTORIES.has(e.name))
+      .filter((e) => (e.isDirectory() || e.isSymbolicLink()) && !e.name.startsWith('.') && !IGNORED_DIRECTORIES.has(e.name))
       .map((e) => e.name)
       .sort((a, b) => a.localeCompare(b));
     const xmlHere = entries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.xml')).length;

@@ -55,6 +55,14 @@ export class LruCache {
     return this.set(key, load());
   }
 
+  delete(key) {
+    const entry = this.entries.get(key);
+    if (!entry) return false;
+    this.entries.delete(key);
+    this.size -= entry.size;
+    return true;
+  }
+
   clear() {
     this.entries.clear();
     this.size = 0;

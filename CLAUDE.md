@@ -56,7 +56,8 @@ Plain Node.js (ESM, `"type": "module"`), no TypeScript, no bundler.
   `parser/mybatis`, see `docs/features/mybatis-input.md`).
   `ProjectLoader.scanProject` (the reference pipeline) still finds iBATIS
   `<sqlMap>` only. They skip build output
-  (`target/`, `build/` …: copies) and decode a declared EUC-KR/MS949.
+  (`ProjectSession` drops build copies by CONTENT, never by folder name —
+  see docs/features/refid-resolution.md) and decode a declared EUC-KR/MS949.
   `application/mapperDetection.js` holds that logic, has no Node built-ins,
   and is served to the browser at `/shared/mapperDetection.js` for the
   **프로젝트 폴더** upload, so the CLI and the UI pick the same files.

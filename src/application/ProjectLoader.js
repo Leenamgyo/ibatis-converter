@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { SKIPPED_DIRECTORIES, decodeXml, classifyXml, SKIP_REASONS } from './mapperDetection.js';
+import { IGNORED_DIRECTORIES, BUILD_DIRECTORY_NAMES, decodeXml, classifyXml, SKIP_REASONS } from './mapperDetection.js';
 
 /**
  * Recursively finds every `.xml` file under `rootDir`, not descending into
@@ -8,11 +8,21 @@ import { SKIPPED_DIRECTORIES, decodeXml, classifyXml, SKIP_REASONS } from './map
  * Maven's target/classes holds a copy of every mapper; reading it too
  * would register every namespace twice.
  */
-export function findXmlFiles(rootDir) {
+export function findXmlFiles(rootDir, { skipBuildDirectories = false } = {}) {
   const results = [];
   const stack = [rootDir];
+  // symlinked folders are followed (a shared checkout linked into the project), each real folder once
+  const visited = new Set();
   while (stack.length > 0) {
     const dir = stack.pop();
+    let real;
+    try {
+      real = fs.realpathSync(dir);
+    } catch {
+      continue;
+    }
+    if (visited.has(real)) continue;
+    visited.add(real);
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -21,9 +31,22 @@ export function findXmlFiles(rootDir) {
     }
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) stack.push(full);
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.xml')) {
+      let isDir = entry.isDirectory();
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        try {
+          const target = fs.statSync(full);
+          isDir = target.isDirectory();
+          isFile = target.isFile();
+        } catch {
+          continue; // dangling link
+        }
+      }
+      if (isDir) {
+        if (IGNORED_DIRECTORIES.has(entry.name)) continue;
+        if (skipBuildDirectories && BUILD_DIRECTORY_NAMES.has(entry.name)) continue;
+        stack.push(full);
+      } else if (isFile && entry.name.toLowerCase().endsWith('.xml')) {
         results.push(full);
       }
     }
@@ -47,7 +70,8 @@ export function scanProject(rootDir, { maxFileBytes = 20 * 1024 * 1024 } = {}) {
   const root = path.resolve(rootDir);
   const mappers = [];
   const skipped = [];
-  for (const file of findXmlFiles(root)) {
+  // the reference pipeline keeps the old name rule; ProjectSession reads build-named folders and drops copies by content
+  for (const file of findXmlFiles(root, { skipBuildDirectories: true })) {
     const sourceFile = path.relative(root, file).split(path.sep).join('/');
     let bytes;
     try {

@@ -278,7 +278,8 @@ async function uploadPicked(entries, { buildCopies = 0, skippedDirs = 0 } = {}) 
   setFiles(new Map());
   await uploadProject(mappers.map(({ sourceFile, file }) => fileItem(sourceFile, file, decodeXml)), progress);
   const mybatisCount = state.index?.files.filter((f) => f.syntax === 'mybatis').length ?? 0;
-  fileCount.textContent = `매퍼 ${mappers.length.toLocaleString()}개${mybatisCount ? ` (MyBatis ${mybatisCount.toLocaleString()})` : ''} · XML ${xmlCount.toLocaleString()}개 중${buildCopies ? ` · 빌드 폴더 XML ${buildCopies.toLocaleString()}개 제외` : ''}${skippedDirs ? ` · 빌드/도구 폴더 ${skippedDirs.toLocaleString()}개 건너뜀` : ''}`;
+  const copies = state.index?.skipped.filter((x) => x.kind === 'BUILD_COPY').length ?? 0;
+  fileCount.textContent = `매퍼 ${(state.index?.totals.files ?? mappers.length).toLocaleString()}개${mybatisCount ? ` (MyBatis ${mybatisCount.toLocaleString()})` : ''} · XML ${xmlCount.toLocaleString()}개 중${copies ? ` · 같은 매퍼 빌드 복사본 ${copies.toLocaleString()}개 제외` : ''}${buildCopies + skippedDirs ? ` · 도구 폴더(.git, node_modules…) 건너뜀` : ''}`;
 }
 
 fileInput.addEventListener('change', () => {
@@ -303,14 +304,15 @@ const folderInput = document.getElementById('folderInput');
  * browser never asks to "upload" every file. Paths are relative to the
  * picked folder.
  */
-async function collectXmlFromDirectory(dirHandle, isInSkippedDirectory, onProgress) {
+async function collectXmlFromDirectory(dirHandle, isInIgnoredDirectory, onProgress) {
   const out = [];
   let skippedDirs = 0;
   const walk = async (handle, prefix) => {
     for await (const [name, child] of handle.entries()) {
       const relative = prefix ? `${prefix}/${name}` : name;
       if (child.kind === 'directory') {
-        if (isInSkippedDirectory(`${relative}/x`)) skippedDirs++;
+        // only tool / VCS folders are skipped; build-named folders may hold the real mappers
+        if (isInIgnoredDirectory(`${relative}/x`)) skippedDirs++;
         else await walk(child, relative);
       } else if (name.toLowerCase().endsWith('.xml')) {
         out.push({ sourceFile: relative, file: await child.getFile() });
@@ -345,9 +347,9 @@ async function pickWithBrowser() {
     return;
   }
   try {
-    const { isInSkippedDirectory } = await import('/shared/mapperDetection.js');
+    const { isInIgnoredDirectory } = await import('/shared/mapperDetection.js');
     fileCount.textContent = `${handle.name}: XML 찾는 중…`;
-    const { entries, skippedDirs } = await collectXmlFromDirectory(handle, isInSkippedDirectory, (n) => {
+    const { entries, skippedDirs } = await collectXmlFromDirectory(handle, isInIgnoredDirectory, (n) => {
       fileCount.textContent = `${handle.name}: XML ${n.toLocaleString()}개 찾는 중…`;
     });
     await uploadPicked(entries, { buildCopies: 0, skippedDirs });
@@ -421,15 +423,15 @@ folderInput.addEventListener('change', () => {
 
 /** @param {File[]} files everything the folder picker returned (webkitRelativePath set) */
 async function uploadFolder(files) {
-  const { isInSkippedDirectory } = await import('/shared/mapperDetection.js');
+  const { isInIgnoredDirectory } = await import('/shared/mapperDetection.js');
   const entries = [];
-  let buildCopies = 0;
+  let buildCopies = 0; // files in tool / VCS folders (.git, node_modules…); build copies are found by content, on the server
   for (const file of files) {
     const relative = file.webkitRelativePath || file.name;
     if (!relative.toLowerCase().endsWith('.xml')) continue;
     // drop the picked folder's own name, keep the path inside it
     const inside = relative.split('/').slice(1).join('/') || relative;
-    if (isInSkippedDirectory(inside)) buildCopies++;
+    if (isInIgnoredDirectory(inside)) buildCopies++;
     else entries.push({ sourceFile: inside, file });
   }
   fileCount.textContent = `파일 ${files.length.toLocaleString()}개 중 XML ${entries.length.toLocaleString()}개 확인 중…`;

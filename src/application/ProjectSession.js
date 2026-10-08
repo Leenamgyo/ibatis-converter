@@ -32,7 +32,7 @@ import { MapperReport } from '../report/migration/MapperReport.js';
 import { ProjectReport } from '../report/migration/ProjectReport.js';
 import { MigrationSafetyAnalyzer } from '../report/migration/MigrationSafetyAnalyzer.js';
 import { findXmlFiles } from './ProjectLoader.js';
-import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS } from './mapperDetection.js';
+import { decodeXml, classifyXml, classifyHead, HEAD_BYTES, SKIP_REASONS, copyScore } from './mapperDetection.js';
 import { LruCache } from './LruCache.js';
 import { buildColumnRemovalGuide } from './ColumnRemovalGuide.js';
 
@@ -207,6 +207,7 @@ export class ProjectSession {
     const files = [];
     const skipped = [];
     const stubMappers = [];
+    const candidates = []; // every mapper file read; copies are dropped below, by content
     for (const { sourceFile, size } of this.source.list()) {
       // the same guards as scanProject: an oversized or unreadable file is listed, not fatal
       if (size > this.maxFileBytes) {
@@ -234,10 +235,15 @@ export class ProjectSession {
         continue;
       }
       const { sqlMap, mybatis, diagnostics: fileDiagnostics } = parseMapper(text, sourceFile, syntax);
-      diagnostics.merge(fileDiagnostics);
       const entry = { sourceFile, size, encoding, syntax, lines: text.split('\n').length, namespace: sqlMap?.namespace ?? null, parsed: Boolean(sqlMap), statements: [], fragments: [], resultMaps: [] };
-      files.push(entry);
+      const candidate = { entry, fileDiagnostics, stub: null, signature: null };
+      candidates.push(candidate);
       if (!sqlMap) continue;
+      // the same mapper = the same kind, namespace and ids; a second file like that is a copy
+      candidate.signature = [syntax, sqlMap.namespace,
+        sqlMap.statements.map((s) => s.id).sort().join(','),
+        sqlMap.sqlFragments.map((f) => f.id).sort().join(','),
+        sqlMap.resultMaps.map((r) => r.id).sort().join(',')].join('|');
       const ns = sqlMap.namespace;
       // the stub mapper keeps ids, include lists and the attributes reference resolution reads
       const stub = { namespace: ns, sourceFile, statements: [], sqlFragments: [], resultMaps: [], parameterMaps: [], cacheModels: [] };
@@ -256,9 +262,32 @@ export class ProjectSession {
       }
       for (const pm of sqlMap.parameterMaps) stub.parameterMaps.push({ type: 'ParameterMap', id: pm.id, sourceFile, sourceLine: pm.sourceLine });
       for (const cm of sqlMap.cacheModels) stub.cacheModels.push({ type: 'CacheModel', id: cm.id, sourceFile, sourceLine: cm.sourceLine });
-      stubMappers.push({ sourceFile, sqlMap: stub });
+      candidate.stub = stub;
       // the parse is already paid for: keep it while the cache has room (no extra memory past its bound)
       this.mappers.set(sourceFile, this.#indexMapper(sqlMap, mybatis));
+    }
+
+    // Copies are dropped by CONTENT, never by folder name: of the files holding the same mapper,
+    // the one that looks least like build output (copyScore) stays, the others are listed as
+    // copies of it. A mapper with a single file stays wherever it is (out/, bin/, WEB-INF/classes…).
+    const keep = new Map(); // signature -> candidate
+    for (const c of candidates) {
+      if (!c.signature) continue;
+      const best = keep.get(c.signature);
+      const better = !best || copyScore(c.entry.sourceFile) < copyScore(best.entry.sourceFile)
+        || (copyScore(c.entry.sourceFile) === copyScore(best.entry.sourceFile) && c.entry.sourceFile.length < best.entry.sourceFile.length);
+      if (better) keep.set(c.signature, c);
+    }
+    for (const c of candidates) {
+      const original = c.signature ? keep.get(c.signature) : c;
+      if (original !== c) {
+        skipped.push({ sourceFile: c.entry.sourceFile, kind: 'BUILD_COPY', reason: `${SKIP_REASONS.BUILD_COPY} (원본: ${original.entry.sourceFile})`, copyOf: original.entry.sourceFile });
+        this.mappers.delete(c.entry.sourceFile);
+        continue;
+      }
+      files.push(c.entry);
+      diagnostics.merge(c.fileDiagnostics);
+      if (c.stub) stubMappers.push({ sourceFile: c.entry.sourceFile, sqlMap: c.stub });
     }
 
     // project-wide reference graph on the stubs: same resolver, same rules, no file reads

@@ -234,12 +234,17 @@ export class ReferenceResolver {
     }
 
     if (!symbol) {
-      this.diagnostics.error(
-        missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found`,
-        includeNode.sourceFile,
-        includeNode.sourceLine,
-        'MISSING_REFERENCE',
-      );
+      // one error per <include> (file, line, refid), not one per statement that reaches it
+      const key = `missing|${includeNode.sourceFile}|${includeNode.sourceLine}|${includeNode.refid}|${root}`;
+      if (!this._warned.has(key)) {
+        this._warned.add(key);
+        this.diagnostics.error(
+          missingMessage ?? `Unresolved <include refid="${includeNode.refid}">: no matching <sql> fragment found`,
+          includeNode.sourceFile,
+          includeNode.sourceLine,
+          'MISSING_REFERENCE',
+        );
+      }
       this.dependencyGraph.addEdge(fromId, includeNode.refid, 'INCLUDE_MISSING');
       return new UnresolvedIncludeNode({
         refid: includeNode.refid,

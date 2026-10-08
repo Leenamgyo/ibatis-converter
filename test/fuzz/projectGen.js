@@ -34,12 +34,27 @@ const LAYOUTS = [
   (mod, sub) => ['modules', `${mod}-core`, 'src', 'main', 'resources', 'kr', 'co', 'acme', mod, 'persistence', 'ibatis', ...sub],
 ];
 
-export function generateProject(seed, rootDir) {
+/**
+ * hard: real mapper folders a name filter would wrongly drop — package segments named
+ * out / bin / build / dist / classes / target at any depth, a WEB-INF/classes-only
+ * legacy layout, trees 20+ levels deep, one module behind a symlinked folder — with
+ * the usual build copies around them. Each file picks its own layout.
+ */
+const HARD_LAYOUTS = [
+  (mod, sub) => ['src', 'main', 'java', 'com', 'acme', 'erp', 'out', mod, 'bin', 'dao', 'build', 'persistence', 'dist', 'classes', 'sqlmap', ...sub],
+  (mod, sub) => ['WebContent', 'WEB-INF', 'classes', 'sqlmap', mod, ...sub],
+  (mod, sub) => ['modules', `${mod}-api`, 'src', 'main', 'resources', 'kr', 'co', 'acme', 'target', mod, 'out', 'inbound', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'mapper', ...sub],
+  (mod, sub) => ['apps', 'legacy', 'build', 'scripts', 'sql', mod, 'bin', ...sub],
+];
+
+export function generateProject(seed, rootDir, { hard = false } = {}) {
   const r = rng(seed * 104729 + 7);
   const pick = (a) => a[Math.floor(r() * a.length)];
   const chance = (p) => r() < p;
   const style = pick(['QUALIFIED', 'GLOBAL', 'MIXED']);
-  const layout = pick(LAYOUTS);
+  const projectLayout = pick(LAYOUTS);
+  const layoutFor = () => (hard ? pick(HARD_LAYOUTS) : projectLayout);
+  const linkedModule = hard ? 'customer' : null; // in hard mode, this module's files sit behind a symlink
   const longNamespaces = chance(0.5);
   const modules = ['order', 'customer', 'product', 'billing', 'stats', 'common', 'admin', 'batch'].slice(0, 3 + Math.floor(r() * 6));
 
@@ -51,9 +66,11 @@ export function generateProject(seed, rootDir) {
   const fileCount = 4 + Math.floor(r() * 14);
   for (let f = 0; f < fileCount; f++) {
     const mod = modules[f % modules.length];
-    const sub = Array.from({ length: Math.floor(r() * 4) }, (_, k) => pick(['impl', 'v2', 'legacy', 'read', 'write', 'ext', 'tmp']) + (k ? k : ''));
+    const sub = Array.from({ length: Math.floor(r() * (hard ? 9 : 4)) }, (_, k) => pick(['impl', 'v2', 'legacy', 'read', 'write', 'ext', 'tmp', ...(hard ? ['out', 'bin', 'build', 'dist'] : [])]) + (k ? k : ''));
     const name = `${mod[0].toUpperCase()}${mod.slice(1)}${f}_SQL.xml`;
-    const rel = path.join(...layout(mod, sub), name);
+    const rel = mod === linkedModule
+      ? path.join('linked', `${mod}-shared`, ...sub, name) // reached through a symlinked folder
+      : path.join(...layoutFor()(mod, sub), name);
     const namespace = longNamespaces ? `kr.co.acme.${mod}.${name.replace('_SQL.xml', '')}Mapper` : `${mod}${f}`;
     const file = { rel, namespace, fragments: [], statements: [], resultMaps: [], encoding: chance(0.2) ? 'EUC-KR' : 'UTF-8' };
     const nFrag = Math.floor(r() * 4);
@@ -179,6 +196,13 @@ export function generateProject(seed, rootDir) {
     return Buffer.from(out);
   };
 
+  // hard mode: `linked/` is a symlink to a folder OUTSIDE the project (a shared checkout)
+  const linkedTarget = `${rootDir}-linked-src`;
+  if (hard) {
+    fs.mkdirSync(linkedTarget, { recursive: true });
+    fs.mkdirSync(rootDir, { recursive: true });
+    fs.symlinkSync(linkedTarget, path.join(rootDir, 'linked'), 'dir');
+  }
   const write = (rel, bytes) => {
     const full = path.join(rootDir, rel);
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -227,6 +251,8 @@ export function generateProject(seed, rootDir) {
   return {
     seed,
     style,
+    /** a folder outside rootDir to delete too (hard mode's symlink target), or null */
+    extraDir: hard ? linkedTarget : null,
     mappers: files.map((f) => f.rel.split(path.sep).join('/')).sort(),
     statements,
     fragments: allFragments.map((f) => f.qid),

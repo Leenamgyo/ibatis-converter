@@ -57,6 +57,43 @@ Now:
 - `test/application/projectSession.test.js` keeps both, plus the MyBatis
   strict rule, under test.
 
+## Files that never reached the metadata (fixed)
+
+A refid is only as findable as the file its fragment lives in. File
+discovery used to skip, **by folder name, anywhere in the path**, every
+folder called `target`, `build`, `bin`, `out`, `dist` or `classes` (meant
+for build copies). It also didn't follow symlinked folders. So the
+metadata simply lacked:
+
+- a package `…/erp/out/…` or `…/batch/build/…`, deep in a source tree;
+- a legacy project whose only sqlMaps are in `WEB-INF/classes`;
+- a module linked in by a symlink.
+
+Every refid into those files was "not found". The hard generated
+corpus (`generateProject(seed, dir, { hard: true })`: trees 20+ deep,
+such package names at every level, a WEB-INF/classes layout, a symlinked
+module) found **0 of 107** mappers.
+
+Now:
+- only tool / VCS folders (`node_modules`, `.git`, `.idea`, …) are skipped
+  by name (`IGNORED_DIRECTORIES`); symlinked folders are followed, each
+  real folder once.
+- A build copy is recognised by CONTENT (`ProjectSession#open`): files with
+  the same kind, namespace and ids are one mapper. The one that looks least
+  like build output stays (`copyScore`: a top-level `target/`, `build/`, … >
+  `…/target/classes/`, `…/build/resources/` > `WEB-INF/classes` > source).
+  The others are listed as `BUILD_COPY` with the original's path. A file
+  with no second copy stays wherever it is.
+- The browser's folder upload and folder walk skip only the same tool
+  folders and leave copies to the server.
+
+`test/fuzz/projectCorpus.test.js` ("hard folder layouts") checks, against
+the generator's ground truth, by path and by upload: every mapper found,
+every statement's refid chain exact (12 projects in `npm test`, 40 with
+`FUZZ_SEEDS`). On `../demo`, the `bin/` and `build/` copies are recognised
+as copies of the `src/` mappers. Each missing refid is now reported once per
+`<include>`, not once per statement that reaches it.
+
 ## Showing it
 
 - Every refid in the 변환 view and the lineage refid boxes carries its rule

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../../src/interfaces/api/server.js';
-import { isInSkippedDirectory } from '../../src/application/mapperDetection.js';
+import { isInIgnoredDirectory, BUILD_DIRECTORY_NAMES } from '../../src/application/mapperDetection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCAN = path.join(__dirname, '..', 'fixtures', 'project-scan');
@@ -33,7 +33,8 @@ function startServer(options = {}) {
 }
 
 const files = () => fs.readdirSync(LEGACY_APP, { recursive: true })
-  .filter((f) => f.endsWith('.xml') && !isInSkippedDirectory(f))
+  // what the browser sends is mapper XML outside tool folders; build copies here are left out for brevity
+  .filter((f) => f.endsWith('.xml') && !isInIgnoredDirectory(f) && !f.split('/').some((p) => BUILD_DIRECTORY_NAMES.has(p)))
   .map((f) => ({ sourceFile: f, source: fs.readFileSync(path.join(LEGACY_APP, f), 'utf8') }));
 
 test('POST /api/v1/projects returns the index only; statements load through their own endpoints', async () => {
@@ -136,7 +137,7 @@ test('a project can arrive in batches: /uploads, /uploads/:id/files, /uploads/:i
   }
 });
 
-test('GET /api/v1/fs/dirs lists folder names only (no dot or build folders), for the in-app folder picker', async () => {
+test('GET /api/v1/fs/dirs lists folder names only (no dot or tool folders), for the in-app folder picker', async () => {
   const { call, stop } = startServer();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-dirs-'));
   try {
@@ -145,7 +146,8 @@ test('GET /api/v1/fs/dirs lists folder names only (no dot or build folders), for
     fs.writeFileSync(path.join(root, 'notes.txt'), 'x');
     const listed = await call('GET', `/api/v1/fs/dirs?path=${encodeURIComponent(root)}`);
     assert.equal(listed.status, 200);
-    assert.deepEqual(listed.body.dirs, ['projA', 'projB']);
+    // tool / VCS folders are hidden; a build-named folder is listed (it can hold real mappers)
+    assert.deepEqual(listed.body.dirs, ['projA', 'projB', 'target']);
     assert.equal(listed.body.xmlHere, 1);
     assert.equal(listed.body.parent, path.dirname(fs.realpathSync(root)) === path.dirname(root) ? path.dirname(root) : listed.body.parent);
     assert.equal((await call('GET', `/api/v1/fs/dirs?path=${encodeURIComponent(path.join(root, 'nope'))}`)).status, 400);

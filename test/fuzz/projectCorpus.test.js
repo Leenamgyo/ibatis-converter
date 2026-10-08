@@ -169,3 +169,47 @@ test(`generated legacy projects: scan, refid chains, diagnostics, MyBatis output
   }
   assert.deepEqual(problems, []);
 });
+
+test('hard folder layouts: deep trees, out/bin/build/classes packages, WEB-INF/classes only, a symlinked module — every mapper found, every refid chain exact', async () => {
+  const { ProjectSession, DirectorySource, UploadSource } = await import('../../src/application/ProjectSession.js');
+  const { isInIgnoredDirectory } = await import('../../src/application/mapperDetection.js');
+  const seeds = Number(process.env.FUZZ_SEEDS ?? 0) > 0 ? 40 : 12;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hard-corpus-'));
+  const problems = [];
+  let chains = 0;
+  let deepest = 0;
+  try {
+    for (let seed = 1; seed <= seeds; seed++) {
+      const dir = path.join(tmp, `h${seed}`);
+      const truth = generateProject(seed, dir, { hard: true });
+      deepest = Math.max(deepest, truth.maxDirDepth);
+      // the same project opened by path, and uploaded with every mapper XML (build copies too)
+      const all = fs.readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.xml') && !isInIgnoredDirectory(f));
+      const sources = [
+        new DirectorySource(dir),
+        new UploadSource(all.map((f) => ({ sourceFile: f.split(path.sep).join('/'), source: fs.readFileSync(path.join(dir, f), 'latin1') }))),
+      ];
+      for (const source of sources) {
+        const how = source instanceof UploadSource ? 'upload' : 'path';
+        const session = new ProjectSession(source).open();
+        const found = new Set(session.files.filter((f) => f.syntax === 'ibatis').map((f) => f.sourceFile));
+        for (const m of truth.mappers) if (!found.has(m)) problems.push({ seed, how, kind: 'mapper-not-found', m });
+        if (found.size !== truth.mappers.length) problems.push({ seed, how, kind: 'mapper-count', found: found.size, expected: truth.mappers.length });
+        for (const st of truth.statements) {
+          const flat = [];
+          const walk = (t) => { for (const n of t) { if (n.qualifiedId) flat.push(n.qualifiedId); walk(n.children ?? []); } };
+          walk(session.includeTree(st.qualifiedId));
+          chains++;
+          if (JSON.stringify(flat) !== JSON.stringify(st.markers)) problems.push({ seed, how, kind: 'refid-chain', id: st.qualifiedId, got: flat, expected: st.markers });
+        }
+        session.close();
+      }
+      fs.rmSync(truth.extraDir, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  assert.ok(deepest >= 20, `trees go ${deepest} folders deep`);
+  assert.ok(chains > 500, `${chains} refid chains checked`);
+  assert.deepEqual(problems.slice(0, 5), []);
+});

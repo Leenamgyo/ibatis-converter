@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanProject } from '../../src/application/ProjectLoader.js';
-import { detectXmlEncoding, rootElementName, classifyXml, isInSkippedDirectory } from '../../src/application/mapperDetection.js';
+import { detectXmlEncoding, rootElementName, classifyXml, isInIgnoredDirectory, copyScore } from '../../src/application/mapperDetection.js';
 import { migrateProject, parseArgs } from '../../src/interfaces/cli/migrate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,8 +44,14 @@ test('encoding / root element / skipped-directory detection', () => {
   assert.equal(rootElementName('<?xml version="1.0"?>\n<!-- c -->\n<!DOCTYPE x [ <!ENTITY a "b"> ]>\n<sqlMap namespace="x">'), 'sqlMap');
   assert.equal(classifyXml('<mapper namespace="x"/>'), 'MYBATIS_MAPPER');
   assert.equal(classifyXml('not xml'), 'UNREADABLE');
-  assert.equal(isInSkippedDirectory('target/classes/a.xml'), true);
-  assert.equal(isInSkippedDirectory('src/main/resources/sqlmap/a.xml'), false);
+  // only tool / VCS folders are skipped by name; build-named folders can hold the real mappers
+  assert.equal(isInIgnoredDirectory('node_modules/x/a.xml'), true);
+  assert.equal(isInIgnoredDirectory('target/classes/a.xml'), false);
+  assert.equal(isInIgnoredDirectory('src/main/java/com/acme/erp/out/a.xml'), false);
+  // …which only decide which of two copies of the same mapper is the copy
+  assert.ok(copyScore('target/classes/sqlmap/a.xml') > copyScore('src/main/resources/sqlmap/a.xml'));
+  assert.ok(copyScore('WebContent/WEB-INF/classes/sqlmap/a.xml') > copyScore('src/sqlmap/a.xml'));
+  assert.equal(copyScore('src/main/java/com/acme/erp/out/bin/build/a.xml'), 0, 'package folders named out/bin/build are source');
 });
 
 test('CLI: converts a project folder into out/, mirroring paths, with a report', () => {
@@ -67,7 +73,9 @@ test('CLI: converts a project folder into out/, mirroring paths, with a report',
     assert.match(migrated, /FROM CUSTOMER C/);
 
     const md = fs.readFileSync(path.join(out, 'report.md'), 'utf8');
-    assert.match(md, /매퍼 3개 \(이미 MyBatis 1개: 원본 그대로 복사, 스키마 변환만 적용\) · statement 4개 · 건너뛴 XML 4개/);
+    // target/classes/…/Order_SQL.xml is read and recognised as a copy of the source mapper (by content)
+    assert.match(md, /매퍼 3개 \(이미 MyBatis 1개: 원본 그대로 복사, 스키마 변환만 적용\) · statement 4개 · 건너뛴 XML 5개/);
+    assert.match(md, /target\/classes\/sqlmap\/order\/Order_SQL\.xml — 같은 매퍼의 빌드 복사본 \(원본: src\/main\/resources\/sqlmap\/order\/Order_SQL\.xml\)/);
     assert.match(md, /Customer_SQL\.xml \(euc-kr\)/);
     assert.ok(JSON.parse(fs.readFileSync(path.join(out, 'report.json'), 'utf8')).files.length === 3);
     const already = 'src/main/resources/mybatis/AlreadyConverted.xml';
