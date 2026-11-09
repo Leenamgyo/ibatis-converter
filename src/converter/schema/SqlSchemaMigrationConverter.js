@@ -153,11 +153,14 @@ export class SqlSchemaMigrationConverter {
     return mapperNodes.map((mapper, m) => {
       const overrides = new Map();
       const events = [];
+      /** local id -> the tables its SQL reads or writes (its refids' included) */
+      const tables = new Map();
       mapper.statements.forEach((statement, s) => {
         const result = statementResults[m][s];
         if (!result) return;
         mergeOverrides(overrides, result.overrides);
         events.push(...tag(result.events, statement.id));
+        tables.set(statement.id, result.tables);
       });
       for (const fragment of mapper.sqlFragments) {
         const qualifiedId = qualify(mapper.namespace, fragment.id);
@@ -166,13 +169,14 @@ export class SqlSchemaMigrationConverter {
         const result = this.#convertFragment(fragment, mapper.namespace, qualifiedId, explicit, project);
         mergeOverrides(overrides, result.overrides);
         events.push(...tag(result.events, fragment.id));
+        tables.set(fragment.id, result.tables);
       }
 
       const migrated = cloneNode(mapper, new Map());
       migrated.statements = mapper.statements.map((node) => cloneNode(node, overrides));
       migrated.sqlFragments = mapper.sqlFragments.map((node) => cloneNode(node, overrides));
       migrated.resultMaps = mapper.resultMaps.map((node) => cloneNode(node, overrides));
-      return { mapper: migrated, events };
+      return { mapper: migrated, events, tables };
     });
   }
 
@@ -198,6 +202,7 @@ export class SqlSchemaMigrationConverter {
       const asFromList = sites.every(({ start }) => start);
       return {
         overrides: chosen.overrides,
+        tables: standalone.tables,
         events: [
           new SchemaMigrationEvent({
             grade: SchemaMigrationGrade.SAFE,
@@ -212,6 +217,7 @@ export class SqlSchemaMigrationConverter {
     }
     return {
       overrides: standalone.overrides,
+      tables: standalone.tables,
       events: [
         new SchemaMigrationEvent({
           grade: SchemaMigrationGrade.MANUAL,
@@ -231,6 +237,7 @@ export class SqlSchemaMigrationConverter {
   #convertTree(root, namespace, project, outerScope, includeStack, { record = true, start = null, owner = null } = {}) {
     const overrides = new Map();
     const events = [];
+    const tables = new TableUsage(this.mapping);
     const runs = [{ nodes: root.children ?? [] }];
     const selectKeys = [];
     const collect = (nodes) => {
@@ -246,6 +253,7 @@ export class SqlSchemaMigrationConverter {
       const markers = [];
       const segments = this.#segmentsOf(nodes, namespace, project, true, includeStack, markers);
       const { texts, events: runEvents, resolution } = this.#run(segments, outerScope, start);
+      tables.add(resolution, segments);
       segments.forEach((segment, i) => {
         if (!segment.writable || texts[i] === segment.original) return;
         const entry = overrides.get(segment.node) ?? {};
@@ -273,7 +281,7 @@ export class SqlSchemaMigrationConverter {
         }
       }
     });
-    return { overrides, events };
+    return { overrides, events, tables: tables.list() };
   }
 
   /**
@@ -471,6 +479,55 @@ export class SqlSchemaMigrationConverter {
 
 function qualify(namespace, id) {
   return namespace ? `${namespace}.${id}` : id;
+}
+
+/**
+ * The real tables (not CTEs, not subqueries) one statement or fragment
+ * touches, as the TableResolver read them, each with what the mapping says
+ * about it: `{ table, schema, name, aliases, clauses, viaRefid, mapped,
+ * targetTable, mappedColumns }`. `viaRefid` is true when every occurrence
+ * comes from an included `<sql>` fragment. Source order; Oracle's DUAL is left out.
+ */
+class TableUsage {
+  constructor(mapping) {
+    this.mapping = mapping;
+    this.byKey = new Map();
+  }
+
+  add(resolution, segments) {
+    // token index -> is it the statement's own text (writable) or an included fragment's
+    const own = [];
+    for (const segment of segments) for (let i = 0; i < segment.tokens.length; i++) own.push(segment.writable);
+    for (const ref of resolution.tableRefs) {
+      if (ref.kind !== 'TABLE' || !ref.name || ref.nameToken === null) continue;
+      if (!ref.schema && ref.name.toUpperCase() === 'DUAL') continue; // Oracle's one-row dummy, not a table to migrate
+      const table = ref.schema ? `${ref.schema}.${ref.name}` : ref.name;
+      const key = table.toUpperCase();
+      let entry = this.byKey.get(key);
+      if (!entry) {
+        const mapped = this.mapping.table(ref.name, ref.schema);
+        entry = {
+          table,
+          schema: ref.schema ?? null,
+          name: ref.name,
+          aliases: [],
+          clauses: [],
+          viaRefid: true,
+          mapped: Boolean(mapped),
+          targetTable: mapped?.targetTable ?? null,
+          mappedColumns: mapped ? mapped.columns.size : 0,
+        };
+        this.byKey.set(key, entry);
+      }
+      if (ref.alias && ref.alias.toUpperCase() !== ref.name.toUpperCase() && !entry.aliases.includes(ref.alias)) entry.aliases.push(ref.alias);
+      if (ref.clause && !entry.clauses.includes(ref.clause)) entry.clauses.push(ref.clause);
+      if (own[ref.nameToken]) entry.viaRefid = false;
+    }
+  }
+
+  list() {
+    return [...this.byKey.values()];
+  }
 }
 
 function tag(events, statementId) {

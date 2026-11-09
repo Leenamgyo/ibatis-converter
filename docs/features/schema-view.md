@@ -60,6 +60,16 @@ renames only.
 - **검토 필요.** Every WARNING / MANUAL decision, MANUAL first, each tagged
   with its source: **컬럼명** (schema migration) or **문법** (MyBatis
   conversion, switch on). Labels are in Korean (`SCHEMA_CODE_LABEL`).
+- **사용 테이블.** Every real table the selected statement's SQL touches,
+  refids included (the user asked for this list). It comes from the schema
+  converter itself (`TableUsage` in `SqlSchemaMigrationConverter`, sent as
+  `tables` per statement and fragment), so it is exactly the tables the
+  renames were resolved against. CTE names, subqueries and Oracle's `DUAL`
+  are left out. Per table: its aliases, its use (조회 / INSERT / UPDATE /
+  DELETE / USING), its source (쿼리, or refid when it only comes from an
+  included `<sql>`), and what the dataset does to it: the new name, "이름
+  유지 · 컬럼 n개 매핑", or "매핑 없음 — 그대로". 파일 전체 merges the file's
+  statements and fragments by table name.
 - **`<include refid>` expanded in place, every depth.** Right under each
   `<include>` line, the fragment it brings in is shown as its own pair view.
   That fragment's own includes are expanded under it, down to the last

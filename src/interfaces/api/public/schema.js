@@ -233,6 +233,7 @@ function drawSchemaView(pane, result) {
     noDatasetCallout(),
     summaryStrip(qualifiedId, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
+    tableUsage(statement.tables),
     legend(statement.syntax),
     // 통합 on: the server already spliced every fragment's text into the query (copy-ready)
     schemaState.inlineRefid && statement.includeTree?.length
@@ -278,6 +279,7 @@ function drawFile(pane, result, sourceFile) {
     noDatasetCallout(),
     summaryStrip(`${sourceFile} 전체`, schemaEvents, conversionEvents, schemaState.summary?.total),
     reviewSection(schemaEvents, conversionEvents),
+    tableUsage(entries.flatMap(([, e]) => e.tables ?? []), '파일'),
     legend(),
     el('section', { class: 'sm-section' },
       el('h3', { class: 'sm-h' }, `${sourceFile}`, el('span', { class: 'sm-h-sub' }, `${entries.length}개 중 ${entries.filter(([, e]) => entryChanged(e)).length}개 변경${schemaState.onlyChanged ? ' · 변경된 것만 표시' : ''}`)),
@@ -518,6 +520,63 @@ function conversionList(events) {
         el('td', { class: 'reason' }, e.message),
       ))),
     ),
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Tables used                                                          *
+ * ------------------------------------------------------------------ */
+const TABLE_CLAUSE_LABEL = { FROM: '조회', INTO: 'INSERT', UPDATE: 'UPDATE', DELETE: 'DELETE', USING: 'USING' };
+
+/**
+ * Every real table the SQL touches (refids included), as the schema
+ * converter resolved it, with what the dataset does to it. Entries of
+ * several statements (파일 전체) are merged by table name.
+ */
+function tableUsage(list, scopeLabel = 'statement') {
+  if (!list) return null;
+  const merged = new Map();
+  for (const t of list) {
+    const key = t.table.toUpperCase();
+    const m = merged.get(key);
+    if (!m) {
+      merged.set(key, { ...t, aliases: [...t.aliases], clauses: [...t.clauses] });
+      continue;
+    }
+    for (const a of t.aliases) if (!m.aliases.includes(a)) m.aliases.push(a);
+    for (const c of t.clauses) if (!m.clauses.includes(c)) m.clauses.push(c);
+    m.viaRefid = m.viaRefid && t.viaRefid;
+  }
+  const rows = [...merged.values()];
+  const hasDataset = Boolean(schemaState.datasetId);
+  const mappedCount = rows.filter((t) => t.mapped).length;
+  const verdict = (t) => {
+    if (!hasDataset) return el('td', { class: 'reason' }, '—');
+    if (!t.mapped) return el('td', { class: 'reason' }, '매핑 없음 — 그대로');
+    if (t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase()) {
+      return el('td', { class: 'mono new' }, t.targetTable);
+    }
+    return el('td', { class: 'reason' }, `이름 유지 · 컬럼 ${t.mappedColumns}개 매핑`);
+  };
+  return el('section', { class: 'sm-section' },
+    el('h3', { class: 'sm-h' }, '사용 테이블',
+      el('span', { class: 'sm-h-sub' }, rows.length
+        ? `${scopeLabel === '파일' ? '파일 전체 ' : ''}${rows.length}개${hasDataset ? ` · 매핑됨 ${mappedCount} · 매핑 없음 ${rows.length - mappedCount}` : ''} · refid 포함`
+        : '')),
+    rows.length
+      ? el('table', { class: 'data sm-changes sm-tables' },
+        el('thead', {}, el('tr', {},
+          el('th', {}, '테이블'), el('th', {}, '별칭'), el('th', {}, '용도'), el('th', {}, '출처'), el('th', {}), el('th', {}, '신규'))),
+        el('tbody', {}, ...rows.map((t) => el('tr', { class: t.mapped ? 'mapped' : '' },
+          el('td', { class: `mono${t.mapped && t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase() ? ' old' : ''}` }, t.table),
+          el('td', { class: 'mono where' }, t.aliases.join(', ')),
+          el('td', {}, ...t.clauses.map((c) => el('span', { class: 'sm-kind TABLE sm-use' }, TABLE_CLAUSE_LABEL[c] ?? c))),
+          el('td', { class: 'reason' }, t.viaRefid ? 'refid' : '쿼리'),
+          el('td', { class: 'arrow' }, hasDataset && t.mapped ? '→' : ''),
+          verdict(t),
+        ))),
+      )
+      : el('div', { class: 'sm-callout' }, '이 SQL에서 찾은 테이블이 없습니다.'),
   );
 }
 

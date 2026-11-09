@@ -123,3 +123,25 @@ test('a malformed JSON body gets a JSON 400, not an HTML error page', async () =
     fs.rmSync(datasetDir, { recursive: true, force: true });
   }
 });
+
+test('schema-migration: each statement lists the tables it uses, refids included, with the mapping verdict', () => withServer(async (call) => {
+  const files = ['02-join-same-column.xml', '04-include-fragments.xml'].map((f) => ({
+    sourceFile: f, source: fs.readFileSync(path.join(casesDir, f), 'utf8'),
+  }));
+  const { body: project } = await call('POST', '/api/v1/projects/analyze', { files });
+  const { body } = await call('POST', `/api/v1/schema-migration?projectId=${project.projectId}&file=02-join-same-column.xml`, { mapping: MAPPING });
+
+  const detail = body.statements['order.getOrderDetail'].tables;
+  const order = detail.find((t) => t.table === 'TB_ORD_H');
+  assert.ok(order, JSON.stringify(detail));
+  assert.deepEqual([order.mapped, order.targetTable, order.viaRefid], [true, 'ORDERS', false]);
+  assert.deepEqual(order.aliases, ['H']);
+  assert.ok(order.clauses.includes('FROM'));
+  assert.equal(new Set(detail.map((t) => t.table)).size, detail.length); // one row per table
+
+  // a table read only through an <include refid> is listed and marked as such
+  const whole = await call('POST', `/api/v1/schema-migration?projectId=${project.projectId}&file=04-include-fragments.xml`, { mapping: {} });
+  const list = whole.body.statements['product.listProducts'].tables;
+  assert.ok(list.length > 0);
+  assert.ok(list.every((t) => t.mapped === false && t.targetTable === null)); // empty mapping: nothing mapped
+}));
