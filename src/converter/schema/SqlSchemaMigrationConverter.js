@@ -488,7 +488,8 @@ function qualify(namespace, id) {
  * The real tables (not CTEs, not subqueries) one statement or fragment
  * touches, as the TableResolver read them, each with what the mapping says
  * about it: `{ table, schema, name, aliases, clauses, viaRefid, mapped,
- * targetTable, mappedColumns, dynamic, variantOf?, suffix? }`. `viaRefid` is true when every occurrence
+ * targetTable, mappedColumns, dynamic, variantOf?, suffix?, slot, choiceLabel? }`. Tables with
+ * the same `slot` are one table at runtime (a dynamic table name: a suffix or `<if>` alternatives). `viaRefid` is true when every occurrence
  * comes from an included `<sql>` fragment. Source order; Oracle's DUAL is left out.
  */
 class TableUsage {
@@ -524,6 +525,12 @@ class TableUsage {
           dynamic: ref.dynamic,
           // TB_ORDER<isEqual>_RBK</isEqual>: this table exists only when the condition adds the suffix
           ...(ref.variantOf ? this.#variant(ref) : {}),
+          // one slot = one table at runtime: TB_ORDER and TB_ORDER_RBK share TB_ORDER's,
+          // `<if>` alternatives share their group's
+          slot: this.#slot(ref),
+          ...(ref.variants.length ? { choiceLabel: `${ref.variants.map((v) => v.suffix).join(' / ')} 없을 때` } : {}),
+          ...(ref.variantOf ? { choiceLabel: `조건부 ${ref.suffix}` } : {}),
+          ...(ref.choiceGroup?.tables.length > 1 ? { choiceLabel: `분기 ${ref.choiceGroup.tables.indexOf(ref) + 1}/${ref.choiceGroup.tables.length}` } : {}),
         };
         this.byKey.set(key, entry);
       }
@@ -535,6 +542,17 @@ class TableUsage {
 
   list() {
     return [...this.byKey.values()];
+  }
+
+  #groups = new Map();
+
+  #slot(ref) {
+    const base = ref.variantOf ?? ref;
+    if (base.choiceGroup?.tables.length > 1) {
+      if (!this.#groups.has(base.choiceGroup)) this.#groups.set(base.choiceGroup, `alt${this.#groups.size}`);
+      return this.#groups.get(base.choiceGroup);
+    }
+    return (base.schema ? `${base.schema}.${base.name}` : base.name).toUpperCase();
   }
 
   /** the suffixed table's runtime name: the base's new name + the suffix, and whether the mapping agrees */

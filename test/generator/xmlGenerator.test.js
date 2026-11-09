@@ -105,3 +105,14 @@ test('a tag glued to the SQL around it stays inline, so the runtime SQL is uncha
     assert.equal(ibatis.split('\n').length, mybatis.split('\n').length);
   }
 });
+
+test('nested glued tags stay inline too (isPropertyAvailable > isEqual > _RBK)', async () => {
+  const { parseIbatisMapperSource } = await import('../../src/parser/ibatis/IbatisMapperParser.js');
+  const { IbatisXmlGenerator } = await import('../../src/generator/xml/IbatisXmlGenerator.js');
+  const source = `<sqlMap namespace="rbk"><sql id="t">TB_ORDER<isPropertyAvailable property="rbk"><isEqual property="rbk" compareValue="Y">_RBK</isEqual></isPropertyAvailable></sql></sqlMap>`;
+  const { sqlMap } = parseIbatisMapperSource(source, 'rbk.xml');
+  assert.equal(new IbatisXmlGenerator().generateNode(sqlMap.sqlFragments[0]),
+    '<sql id="t">\n  TB_ORDER<isPropertyAvailable property="rbk"><isEqual property="rbk" compareValue="Y">_RBK</isEqual></isPropertyAvailable>\n</sql>');
+  const fragment = converter.convertSqlFragment(sqlMap.sqlFragments[0]).node;
+  assert.match(generator.generateNode(fragment), /\n {2}TB_ORDER<if test="[^"]*"><if test="[^"]*">_RBK<\/if><\/if>\n/);
+});

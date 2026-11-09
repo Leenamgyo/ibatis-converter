@@ -83,12 +83,16 @@
     WHERE O.CUSTOMER_ID = #customerId#
   </select>
 
-  <!-- The same rollback suffix, inside the fragment that names the table. -->
-  <sql id="orderTableWithRollback">ORDERS<isEqual property="rbkYn" compareValue="Y">_RBK</isEqual></sql>
+  <!-- The rollback suffix inside the fragment that names the table, behind
+       isPropertyAvailable: ORDERS or ORDERS_RBK. At runtime this slot is ONE
+       table, so the statement reads 2 tables (that one + CUSTOMER), out of
+       3 candidates. -->
+  <sql id="orderTableWithRollback">ORDERS<isPropertyAvailable property="rbkYn"><isEqual property="rbkYn" compareValue="Y">_RBK</isEqual></isPropertyAvailable></sql>
 
   <select id="rollbackTableViaRefid" parameterClass="map" resultClass="map">
-    SELECT O.ORDER_ID
+    SELECT O.ORDER_ID, C.CUSTOMER_NAME
     FROM <include refid="orderTableWithRollback"/> O
+    JOIN CUSTOMER C ON C.CUSTOMER_ID = O.CUSTOMER_ID
     WHERE O.STATUS = #status#
   </select>
 

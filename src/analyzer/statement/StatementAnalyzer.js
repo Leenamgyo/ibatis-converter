@@ -79,8 +79,16 @@ function mergeVariants(results, points) {
     select.tables = select.tables.map(tag);
   }
 
+  // a slot's candidates next to each other (TB_ORDER, TB_ORDER_RBK, TB_CUST — not TB_ORDER, TB_CUST, TB_ORDER_RBK)
+  const tagged = tables.map(tag);
+  const ordered = [];
+  for (const t of tagged) {
+    if (ordered.includes(t)) continue;
+    ordered.push(t, ...(t.choice ? tagged.filter((o) => o !== t && o.choice?.group === t.choice.group) : []));
+  }
+
   return {
-    tables: tables.map(tag),
+    tables: ordered,
     columns: dedupe(results.flatMap((r) => r.columns)),
     joins: dedupe(results.flatMap((r) => r.joins)),
     where: first.where,

@@ -183,6 +183,15 @@ come from the analysis (`choice.group`, see ARCHITECTURE.md "Dynamic table
 names"). A table named by a variable (`$tableName$`, `ORDERS_$yyyymm$`) is
 shown as written, with a `변수` tag.
 
+**Counting.** A dynamic table slot is one table at runtime, however many
+candidates it has. The header's 테이블 counts slots and shows the candidates
+next to it ("테이블 · 동적 후보 3" = 2). Joins are counted per slot the same
+way. The rule applies only where the shape really chooses a table: a suffix
+glued to a table name, at any nesting depth (`TB_ORDER<isPropertyAvailable>
+<isEqual>_RBK</isEqual></isPropertyAvailable>`), or branches right after
+FROM / JOIN. An ordinary `isPropertyAvailable` around a WHERE condition is
+not a table choice.
+
 ## Known limits
 
 - Obstacle avoidance looks at table objects only, and at one detour (over

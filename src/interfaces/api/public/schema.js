@@ -550,6 +550,9 @@ function tableUsage(list, scopeLabel = 'statement') {
     m.viaRefid = m.viaRefid && t.viaRefid;
   }
   const rows = [...merged.values()];
+  // one statement: a dynamic table name (TB_ORDER / TB_ORDER_RBK, or <if> alternatives) is ONE
+  // table at runtime — counted once, its candidates next to it. 파일 전체 just counts distinct tables.
+  const slots = scopeLabel === '파일' ? rows.length : new Set(rows.map((t) => t.slot ?? t.table.toUpperCase())).size;
   const hasDataset = Boolean(schemaState.datasetId);
   const mappedCount = rows.filter((t) => t.mapped).length;
   const verdict = (t) => {
@@ -572,7 +575,7 @@ function tableUsage(list, scopeLabel = 'statement') {
   return el('section', { class: 'sm-section' },
     el('h3', { class: 'sm-h' }, '사용 테이블',
       el('span', { class: 'sm-h-sub' }, rows.length
-        ? `${scopeLabel === '파일' ? '파일 전체 ' : ''}${rows.length}개${hasDataset ? ` · 매핑됨 ${mappedCount} · 매핑 없음 ${rows.length - mappedCount}` : ''} · refid 포함`
+        ? `${scopeLabel === '파일' ? '파일 전체 ' : ''}${slots}개${slots !== rows.length ? ` (동적 테이블 후보 포함 ${rows.length}개)` : ''}${hasDataset ? ` · 매핑됨 ${mappedCount} · 매핑 없음 ${rows.length - mappedCount}` : ''} · refid 포함`
         : '')),
     rows.length
       ? el('table', { class: 'data sm-changes sm-tables' },
@@ -582,7 +585,7 @@ function tableUsage(list, scopeLabel = 'statement') {
           el('td', {},
             el('span', { class: `mono${t.mapped && t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase() ? ' old' : ''}` }, t.table),
             t.dynamic ? el('span', { class: 'sm-tag dyn', title: '테이블명이 변수로 들어갑니다' }, '변수') : null,
-            t.variantOf ? el('span', { class: 'sm-tag cond', title: `${t.variantOf}에 조건(isXxx/if)이 ${t.suffix}를 붙일 때` }, `조건부 ${t.suffix}`) : null),
+            t.choiceLabel ? el('span', { class: 'sm-tag cond', title: '동적 테이블명: 조건에 따라 이 중 하나만 쓰입니다' }, t.choiceLabel) : null),
           el('td', { class: 'mono where' }, t.aliases.join(', ')),
           el('td', {}, ...t.clauses.map((c) => el('span', { class: 'sm-kind TABLE sm-use' }, TABLE_CLAUSE_LABEL[c] ?? c))),
           el('td', { class: 'arrow' }, (hasDataset && t.mapped) || t.variantOf ? '→' : ''),

@@ -326,8 +326,8 @@
 .gnode.table .tobj-head { color: var(--node-table-fg); }
 /* A dynamic table name: one slot, every table a condition can put there (조건부 _RBK, 분기 n/m). */
 .gnode.tobj.dyn { border-style: dashed; border-top-style: solid; }
-.tobj > .tobj-head .tchoices { display: flex; flex-direction: column; gap: 0.15rem; white-space: normal; }
-.tobj > .tobj-head .tchoice { display: flex; align-items: center; gap: 0.35rem; }
+.tobj > .tobj-head .tchoices { display: flex; flex-direction: column; gap: 0.15rem; white-space: normal; overflow: visible; min-width: 0; }
+.tobj > .tobj-head .tchoice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.35rem; }
 .tobj > .tobj-head .ttag {
   font-size: 0.56rem; font-weight: 700; padding: 0.02rem 0.3rem; border-radius: 3px; white-space: nowrap;
   margin-left: 0.3rem;

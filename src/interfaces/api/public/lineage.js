@@ -270,6 +270,23 @@ function statBox(label, value, className = '') {
   return el('div', { class: `stat ${className}`.trim() }, el('div', { class: 'k' }, label), el('div', { class: 'v' }, String(value)));
 }
 
+/**
+ * 테이블 = how many tables the statement reads at runtime. A dynamic table name is ONE of
+ * them (TB_ORDER or TB_ORDER_RBK; one branch of the alternatives), however many candidates
+ * it has — those are counted next to it.
+ */
+function tableStat(tables) {
+  const slots = new Set(tables.map((t) => t.choice?.group ?? `t:${String(t.name).toUpperCase()}`)).size;
+  return statBox(slots === tables.length ? '테이블' : `테이블 · 동적 후보 ${tables.length}`, slots);
+}
+
+/** joins at runtime: ORDERS JOIN C and ORDERS_RBK JOIN C (one dynamic table slot) are one join */
+function joinCount(analysis) {
+  const slotOf = new Map(analysis.tables.map((t) => [String(t.name).toUpperCase(), t.choice?.group ?? String(t.name).toUpperCase()]));
+  const slot = (name) => slotOf.get(String(name).toUpperCase()) ?? String(name).toUpperCase();
+  return new Set(analysis.joins.map((j) => `${j.type}|${slot(j.leftTable)}|${slot(j.rightTable)}`)).size;
+}
+
 function renderDashStats() {
   const host = document.getElementById('dashStats');
   const { analysis, stmtEl, sourceFile } = lineageState;
@@ -293,11 +310,11 @@ function renderDashStats() {
     ),
     statBox('XML 라인 수', lines.toLocaleString()),
     statBox('SELECT 구문', counts.selects),
-    statBox('테이블', analysis.tables.filter((t) => !t.derived).length), // subqueries / CTEs aren't tables
+    tableStat(analysis.tables.filter((t) => !t.derived)), // subqueries / CTEs aren't tables
     // Joins come from the lineage tree, which also sees the joins inside
     // subqueries and onto derived tables that the flat table analysis
     // reports against no named table.
-    statBox('조인', Math.max(analysis.joins.length, counts.joins ?? 0)),
+    statBox('조인', Math.max(joinCount(analysis), counts.joins ?? 0)),
     statBox('서브쿼리', counts.subqueries),
     statBox('UNION', counts.unions),
     analysis.warnings.length
@@ -629,10 +646,12 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   for (const t of select.tables) {
     if (!t.choice || t.choice.label.endsWith('없을 때')) continue;
     const wanted = normalizeSql(t.choice.kind === 'SUFFIX' ? t.choice.suffix : t.name);
-    const guard = guards.find((g) => !g.used && g.sql && (t.choice.kind === 'SUFFIX' ? g.sql === wanted : g.sql.startsWith(wanted)));
-    if (!guard) continue;
-    guard.used = true;
-    guardByChoice.set(t.name, guard);
+    // every tag of a nested chain (<isPropertyAvailable><isEqual>_RBK</isEqual></isPropertyAvailable>), outermost first
+    const chain = guards.filter((g) => !g.used && g.sql && (t.choice.kind === 'SUFFIX' ? g.sql === wanted : g.sql.startsWith(wanted)));
+    const nestedChain = chain.filter((g, i) => i === 0 || chain[i - 1].element.contains(g.element));
+    if (!nestedChain.length) continue;
+    for (const g of nestedChain) g.used = true;
+    guardByChoice.set(t.name, nestedChain);
   }
 
   /* Every box on screen is a TABLE OBJECT: its inside is its own
@@ -673,10 +692,14 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   const fromLinesOf = (table) => (table.choices ?? [table]).map((t) => {
     const line = sqlLine(`${t.name}${table.alias ? ` ${table.alias}` : ''}`);
     if (!t.choice) return line;
-    const guard = guardByChoice.get(t.name);
-    if (!guard) return line;
-    return el('div', { class: 'cond-stack' }, line, el('div', { class: 'cond-children' },
-      gnode(`dyntbl:${select.id}:${t.name}`, 'dynamic', el('div', { class: 'title' }, guard.label))));
+    const chain = guardByChoice.get(t.name);
+    if (!chain) return line;
+    // one depth per tag: the outer one under the line, each inner one under it
+    const nest = (i) => el('div', { class: 'cond-children' },
+      el('div', { class: 'cond-stack' },
+        gnode(`dyntbl:${select.id}:${t.name}:${i}`, 'dynamic', el('div', { class: 'title' }, chain[i].label)),
+        i + 1 < chain.length ? nest(i + 1) : null));
+    return el('div', { class: 'cond-stack' }, line, nest(0));
   });
   const collapseChoices = (tables) => {
     const out = [];

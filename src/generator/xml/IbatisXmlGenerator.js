@@ -1,6 +1,6 @@
 import { layoutSqlText } from './layoutSqlText.js';
 import { CONDITION_TAG_MAP } from '../../ast/ibatis/enums.js';
-import { renderGlued, inlineBody } from './inlineGlue.js';
+import { renderGlued, inlineTagText } from './inlineGlue.js';
 
 /**
  * Renders `ast/ibatis` nodes back to iBATIS 2.x sqlMap XML — used to show a
@@ -34,12 +34,12 @@ function attrs(pairs) {
 
 /** `<isEqual …>_RBK</isEqual>` on one line, for a tag glued to the SQL around it (inlineGlue.js) */
 function inlineTag(node) {
-  // prepend / open / close add text (with spaces) of their own: never glued
-  if (node.type !== 'Conditional' || node.prepend || node.open || node.close) return null;
-  const body = inlineBody(node);
-  if (body === null) return null;
-  const tag = CONDITION_TAG[node.conditionType] ?? 'isNotNull';
-  return `<${tag}${conditionAttrs(node)}>${escapeText(body)}</${tag}>`;
+  return inlineTagText(node, (n) => {
+    // prepend / open / close add text (with spaces) of their own: never glued
+    if (n.type !== 'Conditional' || n.prepend || n.open || n.close) return null;
+    const tag = CONDITION_TAG[n.conditionType] ?? 'isNotNull';
+    return [`<${tag}${conditionAttrs(n)}>`, `</${tag}>`];
+  }, escapeText);
 }
 
 function conditionAttrs(node) {

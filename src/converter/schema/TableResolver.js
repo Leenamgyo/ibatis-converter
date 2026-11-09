@@ -150,6 +150,8 @@ export class TableRef {
     this.suffix = suffix;
     this.sourceToken = sourceToken;
     this.variants = [];
+    /** set when this table is one of `<if>` alternatives filling one slot (see marker()): the group, its `tables` */
+    this.choiceGroup = null;
     this.name = name;
     this.schema = schema;
     this.alias = alias;
@@ -313,17 +315,23 @@ class Scan {
         i++;
         continue;
       }
-      // <if>PIECES</if>: a conditional suffix
+      // <if>PIECES</if>: a conditional suffix — also nested,
+      // <isPropertyAvailable><isEqual>_RBK</isEqual></isPropertyAvailable>
       if (token?.kind === TokenKind.MARKER && token.value === MarkerKind.BRANCH_START) {
-        let j = i + 1;
+        const isMarker = (t, kind) => t?.kind === TokenKind.MARKER && t.value === kind;
+        let j = i;
+        let depth = 0;
+        while (isMarker(this.tokens[j], MarkerKind.BRANCH_START)) { depth++; j++; }
         let text = '';
         while (piece(this.tokens[j])) text += this.tokens[j++].text;
-        const close = this.tokens[j];
-        if (!text || close?.kind !== TokenKind.MARKER || close.value !== MarkerKind.BRANCH_END) break;
+        const last = j - 1;
+        let closed = 0;
+        while (closed < depth && isMarker(this.tokens[j], MarkerKind.BRANCH_END)) { closed++; j++; }
+        if (!text || closed !== depth) break;
         result.suffixes.push(text);
-        result.end = j - 1; // the suffix's last piece (significant); the closing marker is skipped below
-        this.consumedMarkers = j;
-        i = j + 1;
+        result.end = last; // the suffix's last piece (significant); the closing markers are skipped below
+        this.consumedMarkers = j - 1;
+        i = j;
         continue;
       }
       break;
@@ -387,7 +395,11 @@ class Scan {
       assigned = this.sig[consumedTo];
       k = consumedTo;
     }
-    for (let i = assigned + 1; i < this.tokens.length; i++) this.tokenScopes[i] = this.scope;
+    // trailing whitespace / markers: a fragment can end in `ORDERS</isNotEqual>`, so close those branches too
+    for (let i = assigned + 1; i < this.tokens.length; i++) {
+      if (this.tokens[i].kind === TokenKind.MARKER && i > this.consumedMarkers) this.marker(this.tokens[i]);
+      this.tokenScopes[i] = this.scope;
+    }
 
     return new SqlResolution({
       tokens: this.tokens,
@@ -413,7 +425,8 @@ class Scan {
   marker(token) {
     const scope = this.scope;
     if (token.value === MarkerKind.BRANCH_START) {
-      const inherited = this.lastBranch?.scope === scope && this.lastBranch.expectTable;
+      // compared with the scope the previous branch ENDED in: reading its table can have opened a query scope
+      const inherited = (this.lastBranch?.endScope ?? this.lastBranch?.scope) === scope && this.lastBranch.expectTable;
       if (inherited) scope.expectTable = true;
       // the tables the alternatives supply, shared by the consecutive branches of one group
       const group = inherited ? this.lastBranch.group : { scope, tables: [] };
@@ -422,9 +435,13 @@ class Scan {
       this.closedAlternatives = null;
     } else if (token.value === MarkerKind.BRANCH_END) {
       const branch = this.branches.pop() ?? null;
+      if (branch) branch.endScope = scope;
       this.lastBranch = branch;
       if (branch?.expectTable && branch.scope === scope) {
-        branch.group.tables.push(...this.tableRefs.slice(branch.firstTable).filter((t) => t.scope === scope));
+        const taken = this.tableRefs.slice(branch.firstTable).filter((t) => t.scope === scope && !t.variantOf);
+        // the alternatives fill one slot: at runtime exactly one of them is read
+        for (const t of taken) t.choiceGroup = branch.group;
+        branch.group.tables.push(...taken);
         this.closedAlternatives = branch.group;
       } else {
         this.closedAlternatives = null;

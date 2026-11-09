@@ -78,6 +78,12 @@ renames only.
   shows the name it gets at runtime, with MANUAL when the mapping says
   otherwise. A table name given as a variable (`$tableName$`,
   `TB_ORD_$yyyymm$`) is shown as written and tagged "변수".
+  The header counts tables at runtime: one dynamic table name is one table
+  (`slot`), so `FROM <include refid>` with `_RBK` plus a JOIN reads
+  "2개 (동적 테이블 후보 포함 3개)". Every candidate carries its condition
+  tag (`_RBK 없을 때` / `조건부 _RBK` / `분기 n/m`). The suffix may sit behind
+  nested conditions (`isPropertyAvailable` > `isEqual`), and the fragment may
+  end right after them.
 - **Refids are merged into the statement (the user's rule).** A statement is
   one query with its refids merged, never "the query" plus "its refids". So:
   - **refid 쿼리에 통합** is on by default (it is remembered once turned off).

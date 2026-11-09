@@ -330,3 +330,34 @@ test('a table name given as a variable is listed as written and never renamed', 
   ]);
   assert.equal(mapper.statements[2].children[0].text, 'SELECT * FROM ${tableName} T, TB_ORD_${yyyymm} M WHERE T.ID = M.ID');
 });
+
+test('FROM <include refid> whose fragment adds _RBK behind nested conditions: one slot, two candidates', () => {
+  const mapper = new MapperNode({ namespace: 'rbk' });
+  const nested = withChildren(new IfNode({ test: 'rbkYn != null' }), [
+    withChildren(new IfNode({ test: "rbkYn == 'Y'" }), [new TextSqlNode({ text: '_RBK' })]),
+  ]);
+  // the fragment ENDS with the conditions (its last branch markers close after the last token)
+  mapper.sqlFragments = [withChildren(new SqlFragmentNode({ id: 'orderTable' }), [new TextSqlNode({ text: 'TB_ORDER' }), nested])];
+  mapper.statements = [
+    withChildren(new StatementNode({ id: 's', statementType: 'SELECT' }), [
+      new TextSqlNode({ text: 'SELECT A.ORD_NO FROM ' }), new IncludeNode({ refid: 'orderTable' }),
+      new TextSqlNode({ text: ' A JOIN TB_CUST C ON C.CUST_NO = A.CUST_NO' }),
+    ]),
+  ];
+  const [{ tables }] = new SqlSchemaMigrationConverter({}).convertMappers([mapper]);
+  const rows = (id) => tables.get(id).map((t) => [t.table, t.aliases.join(), t.slot, t.choiceLabel ?? '']);
+  assert.deepEqual(rows('s'), [
+    ['TB_ORDER', 'A', 'TB_ORDER', '_RBK 없을 때'],
+    ['TB_ORDER_RBK', 'A', 'TB_ORDER', '조건부 _RBK'],
+    ['TB_CUST', 'C', 'TB_CUST', ''],
+  ]);
+  assert.equal(new Set(tables.get('s').map((t) => t.slot)).size, 2); // 2 tables at runtime
+  assert.deepEqual(rows('orderTable').map((r) => r[0]), ['TB_ORDER', 'TB_ORDER_RBK']);
+});
+
+test('<if> alternatives that end a FROM fragment are one slot (the last branch closes at the end of the text)', () => {
+  const [{ tables }] = new SqlSchemaMigrationConverter({}).convertMappers([tableChoiceMapper()]);
+  const fragment = tables.get('table');
+  assert.deepEqual(fragment.map((t) => [t.table, t.choiceLabel]), [['TB_A', '분기 1/3'], ['TB_B', '분기 2/3'], ['TB_C', '분기 3/3']]);
+  assert.equal(new Set(fragment.map((t) => t.slot)).size, 1);
+});

@@ -444,7 +444,10 @@ test('scenario 9: dynamic table names are analyzed as every table they can be', 
   assert.deepEqual(names('frag.tableChosenByRefid'), ['ARCHIVED_ORDER', 'ORDERS']);
   assert.deepEqual(names('edge.rollbackTableSuffix'), ['ORDERS', 'ORDERS_RBK']);
   assert.deepEqual(analysis('edge.rollbackTableSuffix').tables.map((t) => t.choice.label), ['_RBK 없을 때', '조건부 _RBK']);
-  assert.deepEqual(names('frag.rollbackTableViaRefid'), ['ORDERS', 'ORDERS_RBK']);
+  // isPropertyAvailable > isEqual > _RBK inside the FROM's refid, plus a JOIN: 3 candidates, 2 tables at runtime
+  const viaRefid = analysis('frag.rollbackTableViaRefid').tables;
+  assert.deepEqual(viaRefid.map((t) => t.name), ['ORDERS', 'ORDERS_RBK', 'CUSTOMER']);
+  assert.equal(new Set(viaRefid.map((t) => t.choice?.group ?? t.name)).size, 2);
   // a variable table name is kept as written
   assert.deepEqual(analysis('edge.dynamicTableName').tables.map((t) => [t.name, t.variable]), [['$tableName$', true]]);
   assert.deepEqual(analysis('edge.monthlyTableName').tables.map((t) => [t.name, t.alias, t.variable]), [['ORDERS_$yyyymm$', 'M', true]]);

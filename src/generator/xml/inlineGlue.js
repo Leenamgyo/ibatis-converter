@@ -17,6 +17,23 @@ export function inlineBody(node) {
   return text;
 }
 
+/**
+ * The tag on one line, nested tags included — `<isPropertyAvailable …><isEqual …>_RBK</isEqual>
+ * </isPropertyAvailable>` — or null. `tagOf(node)` gives a node's [open, close] tag text, or
+ * null if that kind of node can't sit inline.
+ */
+export function inlineTagText(node, tagOf, escapeText) {
+  const tag = tagOf(node);
+  if (!tag) return null;
+  const children = node.children ?? [];
+  if (children.length === 1 && children[0].type !== 'TextSql') {
+    const inner = inlineTagText(children[0], tagOf, escapeText);
+    return inner === null ? null : `${tag[0]}${inner}${tag[1]}`;
+  }
+  const body = inlineBody(node);
+  return body === null ? null : `${tag[0]}${escapeText(body)}${tag[1]}`;
+}
+
 /** does text end / start with no whitespace (so a tag next to it is glued to it)? */
 export const endsGlued = (text) => typeof text === 'string' && /\S$/.test(text);
 export const startsGlued = (text) => typeof text === 'string' && /^\S/.test(text);
