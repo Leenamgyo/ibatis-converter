@@ -35,8 +35,8 @@ const schemaState = {
   datasetId: readStored('schema.datasetId'),
   preserveResultColumnNames: readStored('schema.preserve') === 'true',
   formatSql: readStored('schema.formatSql') === 'true',
-  // refid: below the query (default) or spliced into it under each <include> line
-  inlineRefid: readStored('schema.inlineRefid') === 'true', // "쿼리 정렬": pretty-print each SQL block (server-side, MyBatis-aware)
+  // refid: spliced into the query (default — a statement is read with its refids merged) or listed below it
+  inlineRefid: readStored('schema.inlineRefid') !== 'false',
   mybatis: readStored('schema.mybatis') === 'true', // the syntax-conversion toggle
   scope: 'statement', // 'statement' | 'file'
   onlyChanged: false,
@@ -256,7 +256,8 @@ function drawSchemaView(pane, result) {
           pairView(f, { compact: true }),
         )))
       : null,
-    changeTable(schemaEvents, included.length > 0),
+    // one statement = one query with its refids merged: a rename is one row, whichever <sql> it sits in
+    changeTable(schemaEvents, false),
     schemaState.mybatis ? conversionList(conversionEvents) : null,
   ].filter(Boolean));
 }
@@ -576,7 +577,7 @@ function tableUsage(list, scopeLabel = 'statement') {
     rows.length
       ? el('table', { class: 'data sm-changes sm-tables' },
         el('thead', {}, el('tr', {},
-          el('th', {}, '테이블'), el('th', {}, '별칭'), el('th', {}, '용도'), el('th', {}, '출처'), el('th', {}), el('th', {}, '신규'))),
+          el('th', {}, '테이블'), el('th', {}, '별칭'), el('th', {}, '용도'), el('th', {}), el('th', {}, '신규'))),
         el('tbody', {}, ...rows.map((t) => el('tr', { class: t.mapped ? 'mapped' : '' },
           el('td', {},
             el('span', { class: `mono${t.mapped && t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase() ? ' old' : ''}` }, t.table),
@@ -584,7 +585,6 @@ function tableUsage(list, scopeLabel = 'statement') {
             t.variantOf ? el('span', { class: 'sm-tag cond', title: `${t.variantOf}에 조건(isXxx/if)이 ${t.suffix}를 붙일 때` }, `조건부 ${t.suffix}`) : null),
           el('td', { class: 'mono where' }, t.aliases.join(', ')),
           el('td', {}, ...t.clauses.map((c) => el('span', { class: 'sm-kind TABLE sm-use' }, TABLE_CLAUSE_LABEL[c] ?? c))),
-          el('td', { class: 'reason' }, t.viaRefid ? 'refid' : '쿼리'),
           el('td', { class: 'arrow' }, (hasDataset && t.mapped) || t.variantOf ? '→' : ''),
           verdict(t),
         ))),

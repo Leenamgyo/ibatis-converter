@@ -66,8 +66,7 @@ renames only.
   `tables` per statement and fragment), so it is exactly the tables the
   renames were resolved against. CTE names, subqueries and Oracle's `DUAL`
   are left out. Per table: its aliases, its use (조회 / INSERT / UPDATE /
-  DELETE / USING), its source (쿼리, or refid when it only comes from an
-  included `<sql>`), and what the dataset does to it: the new name, "이름
+  DELETE / USING), and what the dataset does to it: the new name, "이름
   유지 · 컬럼 n개 매핑", or "매핑 없음 — 그대로". 파일 전체 merges the file's
   statements and fragments by table name.
   A table chosen by `<if>` / `<isEqual>` branches — usually a `<sql>`
@@ -79,7 +78,13 @@ renames only.
   shows the name it gets at runtime, with MANUAL when the mapping says
   otherwise. A table name given as a variable (`$tableName$`,
   `TB_ORD_$yyyymm$`) is shown as written and tagged "변수".
-- **`<include refid>` expanded in place, every depth.** Right under each
+- **Refids are merged into the statement (the user's rule).** A statement is
+  one query with its refids merged, never "the query" plus "its refids". So:
+  - **refid 쿼리에 통합** is on by default (it is remembered once turned off).
+  - 사용 테이블 has no 쿼리 / refid source column.
+  - The change list has one row per rename, not one per `<sql>` it occurs in.
+    Only 파일 전체 shows where, since there "where" means which statement.
+- **`<include refid>` expanded in place, every depth** (통합 off). Right under each
   `<include>` line, the fragment it brings in is shown as its own pair view.
   That fragment's own includes are expanded under it, down to the last
   depth (8 in the generated corpus).
@@ -94,7 +99,8 @@ renames only.
     projects.
   - The whole-project API has no `includeTree`. There, the old flat
     "포함된 `<sql>` fragment" list is shown instead.
-- **컬럼·테이블명 변경 목록.** One row per distinct rename. Clicking a row
+- **컬럼·테이블명 변경 목록.** One row per distinct rename (refids merged, see
+  above). Clicking a row
   flashes those green tokens.
 - **MyBatis 문법 변환 내역** (switch on). Every syntax decision with its
   grade and location.
