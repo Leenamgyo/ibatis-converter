@@ -83,6 +83,15 @@
     WHERE O.CUSTOMER_ID = #customerId#
   </select>
 
+  <!-- The same rollback suffix, inside the fragment that names the table. -->
+  <sql id="orderTableWithRollback">ORDERS<isEqual property="rbkYn" compareValue="Y">_RBK</isEqual></sql>
+
+  <select id="rollbackTableViaRefid" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID
+    FROM <include refid="orderTableWithRollback"/> O
+    WHERE O.STATUS = #status#
+  </select>
+
   <!-- Deliberately broken: refid points at nothing. Must surface as a
        diagnostic + an UnresolvedInclude node, never as a thrown error. -->
   <select id="missingRefid" parameterClass="map" resultClass="map">

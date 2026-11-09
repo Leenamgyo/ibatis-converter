@@ -66,6 +66,7 @@ const SCHEMA_CODE_LABEL = {
   HINT_NOT_MIGRATED: '힌트 미변환',
   FRAGMENT_CONTEXT_INFERRED: 'fragment 문맥 추론',
   FRAGMENT_CONTEXT_CONFLICT: 'fragment 문맥 충돌',
+  CONDITIONAL_TABLE_SUFFIX: '조건부 테이블 접미사',
   // iBATIS -> MyBatis syntax conversion (converter/mybatis)
   HASH_PARAMETER: '#x# → #{x}',
   RAW_SQL_SUBSTITUTION: '$x$ → ${x}',
@@ -551,6 +552,15 @@ function tableUsage(list, scopeLabel = 'statement') {
   const hasDataset = Boolean(schemaState.datasetId);
   const mappedCount = rows.filter((t) => t.mapped).length;
   const verdict = (t) => {
+    if (t.dynamic) return el('td', { class: 'reason' }, '변수 — 실행 시 결정, 변환 안 함');
+    if (t.variantOf) {
+      // only the base is a token: at runtime this table is (the base's new name) + the suffix
+      const renamed = t.runtimeTable.toUpperCase() !== t.table.toUpperCase();
+      return el('td', {},
+        el('span', { class: `mono${renamed ? ' new' : ''}` }, t.runtimeTable),
+        el('span', { class: 'reason' }, ' 실행 시'),
+        hasDataset && !t.runtimeMatches ? [' ', el('span', { class: 'badge MANUAL' }, 'MANUAL'), el('span', { class: 'reason' }, t.mapped ? ` 매핑은 ${t.targetTable ?? t.table}` : ` 매핑에 ${t.table} 없음 — 이름 확인 필요`)] : null);
+    }
     if (!hasDataset) return el('td', { class: 'reason' }, '—');
     if (!t.mapped) return el('td', { class: 'reason' }, '매핑 없음 — 그대로');
     if (t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase()) {
@@ -568,11 +578,14 @@ function tableUsage(list, scopeLabel = 'statement') {
         el('thead', {}, el('tr', {},
           el('th', {}, '테이블'), el('th', {}, '별칭'), el('th', {}, '용도'), el('th', {}, '출처'), el('th', {}), el('th', {}, '신규'))),
         el('tbody', {}, ...rows.map((t) => el('tr', { class: t.mapped ? 'mapped' : '' },
-          el('td', { class: `mono${t.mapped && t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase() ? ' old' : ''}` }, t.table),
+          el('td', {},
+            el('span', { class: `mono${t.mapped && t.targetTable && t.targetTable.toUpperCase() !== t.table.toUpperCase() ? ' old' : ''}` }, t.table),
+            t.dynamic ? el('span', { class: 'sm-tag dyn', title: '테이블명이 변수로 들어갑니다' }, '변수') : null,
+            t.variantOf ? el('span', { class: 'sm-tag cond', title: `${t.variantOf}에 조건(isXxx/if)이 ${t.suffix}를 붙일 때` }, `조건부 ${t.suffix}`) : null),
           el('td', { class: 'mono where' }, t.aliases.join(', ')),
           el('td', {}, ...t.clauses.map((c) => el('span', { class: 'sm-kind TABLE sm-use' }, TABLE_CLAUSE_LABEL[c] ?? c))),
           el('td', { class: 'reason' }, t.viaRefid ? 'refid' : '쿼리'),
-          el('td', { class: 'arrow' }, hasDataset && t.mapped ? '→' : ''),
+          el('td', { class: 'arrow' }, (hasDataset && t.mapped) || t.variantOf ? '→' : ''),
           verdict(t),
         ))),
       )

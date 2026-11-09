@@ -184,6 +184,9 @@ main#app[hidden] { display: none; }
 .sm-kind.TABLE { background: var(--table-tint); color: var(--table-fg); }
 .sm-kind.COLUMN { background: var(--column-tint); color: var(--column-fg); }
 .sm-tables .sm-use + .sm-use { margin-left: 0.25rem; }
+.sm-tag { margin-left: 0.4rem; font-size: 0.62rem; font-weight: 700; padding: 0.05rem 0.35rem; border-radius: 3px; border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+.sm-tag.dyn { color: var(--warning); border-color: var(--warning-soft); background: var(--warning-soft); }
+.sm-tag.cond { color: var(--manual); border-color: var(--manual-soft); background: var(--manual-soft); }
 .sm-tables tr:not(.mapped) td.mono:first-child { color: var(--text); }
 
 /* -------- tree badges -------- */

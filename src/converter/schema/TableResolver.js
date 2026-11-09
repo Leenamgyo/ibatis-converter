@@ -1,4 +1,4 @@
-import { TokenKind } from './SqlLexer.js';
+import { TokenKind, ParamStyle } from './SqlLexer.js';
 
 /**
  * Step 1 of schema migration: read a token stream and work out, *before
@@ -137,8 +137,19 @@ export class Scope {
 }
 
 export class TableRef {
-  constructor({ kind, name = null, schema = null, alias = null, nameToken = null, schemaTokens = [], aliasToken = null, scope, body = null, hasColumnList = false, clause = null }) {
+  constructor({ kind, name = null, schema = null, alias = null, nameToken = null, schemaTokens = [], aliasToken = null, scope, body = null, hasColumnList = false, clause = null, dynamic = false, variantOf = null, suffix = null, sourceToken = null }) {
     this.kind = kind;
+    /** the name is built at runtime from a `$var$` / `${var}`: `name` is the text as written, never renamed */
+    this.dynamic = dynamic;
+    /**
+     * `TB_ORDER<isEqual>_RBK</isEqual>`: the table this conditional suffix makes (TB_ORDER_RBK) is a
+     * ref of its own — no token of its own (nameToken null), the base ref in `variantOf`, the
+     * suffix in `suffix`, and the base's name token in `sourceToken`. The base lists them in `variants`.
+     */
+    this.variantOf = variantOf;
+    this.suffix = suffix;
+    this.sourceToken = sourceToken;
+    this.variants = [];
     this.name = name;
     this.schema = schema;
     this.alias = alias;
@@ -241,6 +252,8 @@ class Scan {
     this.lastBranch = null;
     /** alternative `<if>` branches that each just supplied a table, closed right before this token (see marker()) */
     this.closedAlternatives = null;
+    /** raw index up to which `<if>` markers were consumed as part of a table name (gluedName) */
+    this.consumedMarkers = -1;
   }
 
   newScope(kind, parent, statement = null) {
@@ -278,10 +291,60 @@ class Scan {
     return token.kind === TokenKind.QUOTED_IDENTIFIER || !RESERVED.has(token.keyword);
   }
 
+  /**
+   * What is glued (no whitespace) to the table name token at raw index `from`: plain words and
+   * `$var$` / `${var}` (part of the name, `dynamic` if any is a variable), and groups of `<if>`s
+   * whose whole body is one glued piece — `TB_ORDER<isEqual property="rbk">_RBK</isEqual>` —
+   * each an optional suffix (consecutive ones are alternatives).
+   * Their `<if>` markers are part of the name: they are never seen by marker() (`consumedMarkers`).
+   * @returns {{ text: string, dynamic: boolean, suffixes: string[], end: number|null }} end: raw index of the last piece consumed
+   */
+  gluedName(from) {
+    const result = { text: '', dynamic: false, suffixes: [], end: null };
+    const piece = (t) => t && (t.kind === TokenKind.WORD || t.kind === TokenKind.NUMBER || (t.kind === TokenKind.PARAM && isSubstitution(t)));
+    let i = from + 1;
+    for (;;) {
+      const token = this.tokens[i];
+      if (piece(token)) {
+        if (result.suffixes.length) break; // TB<if>_RBK</if>X: not a shape to guess at
+        result.text += token.text;
+        if (token.kind === TokenKind.PARAM) result.dynamic = true;
+        result.end = i;
+        i++;
+        continue;
+      }
+      // <if>PIECES</if>: a conditional suffix
+      if (token?.kind === TokenKind.MARKER && token.value === MarkerKind.BRANCH_START) {
+        let j = i + 1;
+        let text = '';
+        while (piece(this.tokens[j])) text += this.tokens[j++].text;
+        const close = this.tokens[j];
+        if (!text || close?.kind !== TokenKind.MARKER || close.value !== MarkerKind.BRANCH_END) break;
+        result.suffixes.push(text);
+        result.end = j - 1; // the suffix's last piece (significant); the closing marker is skipped below
+        this.consumedMarkers = j;
+        i = j + 1;
+        continue;
+      }
+      break;
+    }
+    return result;
+  }
+
+  /** the sig position of raw token index i (i must be significant) */
+  sigIndexOf(i) {
+    if (!this.sigPos) {
+      this.sigPos = new Map();
+      this.sig.forEach((raw, k) => this.sigPos.set(raw, k));
+    }
+    return this.sigPos.get(i);
+  }
+
   /** is there an `<if>` (or iBATIS conditional) start / end between sig positions a and b? */
   crossesBranch(a, b) {
     for (let i = this.sig[a] + 1; i < this.sig[b]; i++) {
       const token = this.tokens[i];
+      if (i <= this.consumedMarkers) continue; // part of a table name: TB_ORDER<if>_RBK</if> A
       if (token.kind === TokenKind.MARKER && (token.value === MarkerKind.BRANCH_START || token.value === MarkerKind.BRANCH_END)) return true;
     }
     return false;
@@ -303,7 +366,7 @@ class Scan {
     for (let k = 0; k < this.sig.length; k++) {
       // whitespace / comments / markers before a token belong to the scope current before it
       for (let i = assigned + 1; i < this.sig[k]; i++) {
-        if (this.tokens[i].kind === TokenKind.MARKER) this.marker(this.tokens[i]);
+        if (this.tokens[i].kind === TokenKind.MARKER && i > this.consumedMarkers) this.marker(this.tokens[i]);
         this.tokenScopes[i] = this.scope;
       }
       const before = this.scope;
@@ -443,6 +506,8 @@ class Scan {
       return k;
     }
     if (!token.isIdentifier) {
+      // FROM $tableName$ T / FROM ${table}: a table whose name the caller passes
+      if (token.kind === TokenKind.PARAM && scope.expectTable && isSubstitution(token)) return this.tableReference(k, scope);
       if (token.kind === TokenKind.PARAM && scope.expectTable) scope.expectTable = false;
       return k;
     }
@@ -575,7 +640,9 @@ class Scan {
 
   tableReference(k, scope) {
     scope.expectTable = false;
-    const { parts, end } = this.readChain(k);
+    const chain = this.readChain(k);
+    const { parts } = chain;
+    let { end } = chain;
     if (this.tok(end + 1)?.is('(') && (scope.clause === 'FROM' || scope.clause === 'USING')) {
       // FROM TABLE(fn(...)), FROM generate_series(...): a table function, not a table
       // (INSERT INTO T (a, b) is a column list, so this only applies to FROM / USING)
@@ -586,7 +653,12 @@ class Scan {
     const nameToken = this.tokens[nameIndex];
     const schemaTokens = parts.slice(0, -1);
     const schema = schemaTokens.length ? schemaTokens.map((i) => this.tokens[i].value).join('.') : null;
-    const cte = schema ? null : scope.findCte(nameToken.value);
+    // pieces glued to the name: `TB_ORD_$yyyymm$`, `TB_ORDER<isEqual ...>_RBK</isEqual>`
+    const glued = this.gluedName(nameIndex);
+    const dynamic = glued.dynamic || isSubstitution(nameToken);
+    const name = dynamic ? `${nameToken.text}${glued.text}` : `${nameToken.value}${glued.text}`;
+    const cte = schema || dynamic || glued.text || glued.suffixes.length ? null : scope.findCte(nameToken.value);
+    if (glued.end !== null) end = this.sigIndexOf(glued.end);
 
     let last = end;
     let alias = null;
@@ -607,19 +679,30 @@ class Scan {
 
     for (const index of schemaTokens) this.roles.set(index, TokenRole.TABLE_SCHEMA);
     this.roles.set(nameIndex, TokenRole.TABLE_NAME);
-    this.addTable(new TableRef({
+    const ref = new TableRef({
       kind: cte ? TableRefKind.CTE : TableRefKind.TABLE,
       clause: scope.clause,
       body: cte?.body ?? null,
       hasColumnList: cte?.hasColumnList ?? false,
-      name: nameToken.value,
+      name,
       schema,
       alias,
       nameToken: nameIndex,
       schemaTokens,
       aliasToken,
       scope,
-    }));
+      dynamic,
+    });
+    this.addTable(ref);
+    // each conditional suffix makes another table, with the same alias (its columns resolve against both)
+    for (const suffix of dynamic ? [] : glued.suffixes) {
+      const variant = new TableRef({
+        kind: TableRefKind.TABLE, clause: scope.clause, name: `${name}${suffix}`, schema, alias, aliasToken, scope,
+        variantOf: ref, suffix, sourceToken: nameIndex,
+      });
+      ref.variants.push(variant);
+      this.addTable(variant);
+    }
     return last;
   }
 
@@ -697,6 +780,10 @@ class Scan {
     ref.scope.tables.push(ref);
     this.tableRefs.push(ref);
   }
+}
+
+function isSubstitution(token) {
+  return token?.kind === TokenKind.PARAM && (token.style === ParamStyle.IBATIS_SUBSTITUTION || token.style === ParamStyle.MYBATIS_SUBSTITUTION);
 }
 
 /**

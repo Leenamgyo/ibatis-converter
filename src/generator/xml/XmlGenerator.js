@@ -1,4 +1,5 @@
 import { layoutSqlText } from './layoutSqlText.js';
+import { renderGlued, inlineBody } from './inlineGlue.js';
 
 const STATEMENT_TAG = Object.freeze({ SELECT: 'select', INSERT: 'insert', UPDATE: 'update', DELETE: 'delete' });
 
@@ -17,8 +18,14 @@ function attrsString(pairs) {
     .join('');
 }
 
+/** `<if test="x">_RBK</if>` on one line, for a tag glued to the SQL around it (inlineGlue.js) */
+function inlineTag(node) {
+  const body = node.type === 'If' ? inlineBody(node) : null;
+  return body === null ? null : `<if${attrsString([['test', node.test]])}>${escapeText(body)}</if>`;
+}
+
 function renderChildren(nodes, level, lines, opts) {
-  for (const node of nodes) renderNode(node, level, lines, opts);
+  renderGlued(nodes, lines, inlineTag, (node) => renderNode(node, level, lines, opts), '  '.repeat(level));
 }
 
 function renderNode(node, level, lines, opts = {}) {

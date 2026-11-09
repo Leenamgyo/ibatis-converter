@@ -80,12 +80,33 @@ Such a fragment's own table list comes from its FROM include sites, so
 the 변환 view's 사용 테이블 shows every table it can choose
 (sample: `frag.tableChosenByRefid`).
 
+A table name can also be built from pieces glued to it (no whitespace):
+
+- **A conditional suffix**, as in `TB_ORDER<isEqual property="rbkYn">_RBK</isEqual> A`.
+  - TB_ORDER and TB_ORDER_RBK are both tables, each with alias `A`.
+    TB_ORDER_RBK is a ref without a token of its own (`variantOf`), so `A.COL`
+    resolves against both.
+  - Only the base token is renamed. At runtime, the suffixed table becomes
+    (the base's new name) + `_RBK`. `CONDITIONAL_TABLE_SUFFIX` is SAFE when
+    that is what the mapping wants for TB_ORDER_RBK, and MANUAL otherwise.
+  - This works inline or inside the `<sql>` that names the table (samples:
+    `edge.rollbackTableSuffix`, `frag.rollbackTableViaRefid`).
+  - The XML generators (`generator/xml/inlineGlue.js`, both iBATIS and
+    MyBatis) write such a glued tag inline:
+    `FROM SALES_ORDER<if test="…">_RBK</if> O`. Putting it on its own line, as
+    for every other tag, would insert whitespace and turn `_RBK` into an
+    alias in the converted mapper.
+- **A variable**: `FROM $tableName$ T`, `TB_ORD_$yyyymm$ M`, `${t}`.
+  - The table is listed as written (`dynamic`) and is never renamed.
+  - `RUNTIME_SUBSTITUTION` / `DYNAMIC_IDENTIFIER` still flag it.
+
 ## Grading (`SchemaMigrationEvent`, same SAFE/WARNING/MANUAL vocabulary)
 
 | Code | Grade | When |
 |---|---|---|
 | `TABLE_RENAMED`, `COLUMN_RENAMED` | SAFE | resolved unambiguously |
 | `COLUMN_ASSUMED` | WARNING | renamed, but an unmapped table shares the scope |
+| `CONDITIONAL_TABLE_SUFFIX` | SAFE / MANUAL | `TB<if>_RBK</if>`: the base's new name + suffix is / isn't what the mapping says the suffixed table becomes |
 | `COLUMN_AMBIGUOUS` | MANUAL | two tables in scope (or one alias declared by alternative branches) map it differently — left as is |
 | `NO_TABLE_CONTEXT` | WARNING | unqualified legacy column with no table anywhere in scope — an un-included fragment, or `convert()` without `contextTable` |
 | `UNRESOLVED_QUALIFIER` | WARNING | `x.COL`, `x` not in scope, `COL` is a legacy column somewhere |

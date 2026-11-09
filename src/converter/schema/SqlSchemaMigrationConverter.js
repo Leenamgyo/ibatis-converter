@@ -488,7 +488,7 @@ function qualify(namespace, id) {
  * The real tables (not CTEs, not subqueries) one statement or fragment
  * touches, as the TableResolver read them, each with what the mapping says
  * about it: `{ table, schema, name, aliases, clauses, viaRefid, mapped,
- * targetTable, mappedColumns }`. `viaRefid` is true when every occurrence
+ * targetTable, mappedColumns, dynamic, variantOf?, suffix? }`. `viaRefid` is true when every occurrence
  * comes from an included `<sql>` fragment. Source order; Oracle's DUAL is left out.
  */
 class TableUsage {
@@ -502,13 +502,14 @@ class TableUsage {
     const own = [];
     for (const segment of segments) for (let i = 0; i < segment.tokens.length; i++) own.push(segment.writable);
     for (const ref of resolution.tableRefs) {
-      if (ref.kind !== 'TABLE' || !ref.name || ref.nameToken === null) continue;
+      // nameToken null: a context table from elsewhere — unless it is a conditional-suffix variant
+      if (ref.kind !== 'TABLE' || !ref.name || (ref.nameToken === null && !ref.variantOf)) continue;
       if (!ref.schema && ref.name.toUpperCase() === 'DUAL') continue; // Oracle's one-row dummy, not a table to migrate
       const table = ref.schema ? `${ref.schema}.${ref.name}` : ref.name;
       const key = table.toUpperCase();
       let entry = this.byKey.get(key);
       if (!entry) {
-        const mapped = this.mapping.table(ref.name, ref.schema);
+        const mapped = ref.dynamic ? null : this.mapping.table(ref.name, ref.schema);
         entry = {
           table,
           schema: ref.schema ?? null,
@@ -519,17 +520,30 @@ class TableUsage {
           mapped: Boolean(mapped),
           targetTable: mapped?.targetTable ?? null,
           mappedColumns: mapped ? mapped.columns.size : 0,
+          // the name is built at runtime from a variable: shown as written
+          dynamic: ref.dynamic,
+          // TB_ORDER<isEqual>_RBK</isEqual>: this table exists only when the condition adds the suffix
+          ...(ref.variantOf ? this.#variant(ref) : {}),
         };
         this.byKey.set(key, entry);
       }
       if (ref.alias && ref.alias.toUpperCase() !== ref.name.toUpperCase() && !entry.aliases.includes(ref.alias)) entry.aliases.push(ref.alias);
       if (ref.clause && !entry.clauses.includes(ref.clause)) entry.clauses.push(ref.clause);
-      if (own[ref.nameToken]) entry.viaRefid = false;
+      if (own[ref.nameToken ?? ref.sourceToken]) entry.viaRefid = false;
     }
   }
 
   list() {
     return [...this.byKey.values()];
+  }
+
+  /** the suffixed table's runtime name: the base's new name + the suffix, and whether the mapping agrees */
+  #variant(ref) {
+    const bare = (name) => String(name).split('.').pop();
+    const base = this.mapping.table(ref.variantOf.name, ref.schema)?.targetTable ?? ref.variantOf.name;
+    const runtimeTable = `${bare(base)}${ref.suffix}`;
+    const wanted = this.mapping.table(ref.name, ref.schema)?.targetTable ?? ref.name;
+    return { variantOf: ref.variantOf.name, suffix: ref.suffix, runtimeTable, runtimeMatches: runtimeTable.toUpperCase() === bare(wanted).toUpperCase() };
   }
 }
 

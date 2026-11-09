@@ -21,6 +21,24 @@
     WHERE STATUS = #status#
   </select>
 
+  <!-- The month table: a fixed prefix with a variable glued to it. The
+       변환 view lists it as written, ORDERS_$yyyymm$, and renames nothing. -->
+  <select id="monthlyTableName" parameterClass="map" resultClass="map">
+    SELECT M.ORDER_ID, M.TOTAL_AMOUNT
+    FROM ORDERS_$yyyymm$ M
+    WHERE M.CUSTOMER_ID = #customerId#
+  </select>
+
+  <!-- The rollback table: a condition glues _RBK onto the name. Both
+       ORDERS and ORDERS_RBK are tables this statement uses, and renaming
+       ORDERS also renames the rollback table at runtime (SALES_ORDER_RBK):
+       the 변환 view checks that against the mapping. -->
+  <select id="rollbackTableSuffix" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, O.STATUS
+    FROM ORDERS<isEqual property="rbkYn" compareValue="Y">_RBK</isEqual> O
+    WHERE O.CUSTOMER_ID = #customerId#
+  </select>
+
   <!-- Two mutually exclusive branches both supplying the FROM table:
        SqlFlattener has no runtime values, keeps both, and the result
        ("FROM ARCHIVED_ORDER O ORDERS O") can't parse. -->

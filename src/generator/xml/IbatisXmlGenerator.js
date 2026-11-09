@@ -1,5 +1,6 @@
 import { layoutSqlText } from './layoutSqlText.js';
 import { CONDITION_TAG_MAP } from '../../ast/ibatis/enums.js';
+import { renderGlued, inlineBody } from './inlineGlue.js';
 
 /**
  * Renders `ast/ibatis` nodes back to iBATIS 2.x sqlMap XML — used to show a
@@ -31,11 +32,34 @@ function attrs(pairs) {
     .join('');
 }
 
+/** `<isEqual …>_RBK</isEqual>` on one line, for a tag glued to the SQL around it (inlineGlue.js) */
+function inlineTag(node) {
+  // prepend / open / close add text (with spaces) of their own: never glued
+  if (node.type !== 'Conditional' || node.prepend || node.open || node.close) return null;
+  const body = inlineBody(node);
+  if (body === null) return null;
+  const tag = CONDITION_TAG[node.conditionType] ?? 'isNotNull';
+  return `<${tag}${conditionAttrs(node)}>${escapeText(body)}</${tag}>`;
+}
+
+function conditionAttrs(node) {
+  return attrs([
+    ['property', node.property],
+    ['compareProperty', node.compareProperty],
+    ['compareValue', node.compareValue],
+    ['prepend', node.prepend],
+    ['open', node.open],
+    ['close', node.close],
+    ['removeFirstPrepend', node.removeFirstPrepend ? 'true' : null],
+  ]);
+}
+
 function render(node, level, lines, opts = {}) {
   const pad = '  '.repeat(level);
   const block = (tag, attributes) => {
-    lines.push(`${pad}<${tag}${attrs(attributes)}>`);
-    for (const child of node.children ?? []) render(child, level + 1, lines, opts);
+    lines.push(`${pad}<${tag}${typeof attributes === 'string' ? attributes : attrs(attributes)}>`);
+    const childPad = '  '.repeat(level + 1);
+    renderGlued(node.children ?? [], lines, inlineTag, (child) => render(child, level + 1, lines, opts), childPad);
     lines.push(`${pad}</${tag}>`);
   };
   switch (node.type) {
@@ -50,15 +74,7 @@ function render(node, level, lines, opts = {}) {
       block('dynamic', [['prepend', node.prepend], ['open', node.open], ['close', node.close]]);
       break;
     case 'Conditional':
-      block(CONDITION_TAG[node.conditionType] ?? 'isNotNull', [
-        ['property', node.property],
-        ['compareProperty', node.compareProperty],
-        ['compareValue', node.compareValue],
-        ['prepend', node.prepend],
-        ['open', node.open],
-        ['close', node.close],
-        ['removeFirstPrepend', node.removeFirstPrepend ? 'true' : null],
-      ]);
+      block(CONDITION_TAG[node.conditionType] ?? 'isNotNull', conditionAttrs(node));
       break;
     case 'Iterate':
       block('iterate', [['property', node.property], ['prepend', node.prepend], ['open', node.open], ['close', node.close], ['conjunction', node.conjunction]]);
@@ -80,7 +96,7 @@ function render(node, level, lines, opts = {}) {
       ]);
       break;
     default:
-      for (const child of node.children ?? []) render(child, level, lines, opts);
+      renderGlued(node.children ?? [], lines, inlineTag, (child) => render(child, level, lines, opts), pad);
   }
 }
 

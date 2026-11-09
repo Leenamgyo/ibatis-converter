@@ -43,6 +43,7 @@ const warningCodes = (id) => analysis(id).warnings.map((w) => w.code);
 const EXPECTED_SQL_PARSE_FAILURES = new Set([
   'edge.rawSubstitutionOrderBy',        // ORDER BY $a$ $b$ -> "ORDER BY ? ?"
   'edge.dynamicTableName',              // FROM $tableName$ -> "FROM ?" is not a table
+  'edge.monthlyTableName',              // FROM ORDERS_$yyyymm$ -> "FROM ORDERS_?" likewise
   'edge.mutuallyExclusiveFromBranches', // both branches kept -> two FROM tables
   'frag.tableChosenByRefid',            // same, the branches live in the FROM's <sql> fragment
   'frag.missingRefid',                  // the fragment never resolved, so nothing to parse

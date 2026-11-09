@@ -47,7 +47,9 @@ export class TableConverter {
     };
 
     for (const table of resolution.tableRefs) {
-      if (table.kind !== TableRefKind.TABLE) continue;
+      // a name built at runtime ($var$) or completed by a conditional suffix (no token of its own) is never edited
+      if (table.kind !== TableRefKind.TABLE || table.dynamic || table.variantOf) continue;
+      if (table.variants.length) events.push(...this.#suffixEvents(table, mapping, tokens));
       const targetTable = mapping.table(table.name, table.schema)?.targetTable;
       if (!targetTable || targetTable.toUpperCase() === table.name.toUpperCase()) continue;
       renameReference(table.nameToken, table.schemaTokens, table, targetTable);
@@ -63,7 +65,7 @@ export class TableConverter {
     }
 
     for (const { columnRef, table, by } of bindings) {
-      if (by !== 'name' || table.kind !== TableRefKind.TABLE) continue;
+      if (by !== 'name' || table.kind !== TableRefKind.TABLE || table.dynamic || table.variantOf) continue;
       const targetTable = mapping.table(table.name, table.schema)?.targetTable;
       if (!targetTable || targetTable.toUpperCase() === table.name.toUpperCase()) continue;
       const qualifier = columnRef.qualifierTokens;
@@ -72,6 +74,37 @@ export class TableConverter {
 
     events.push(...this.#hintWarnings(tokens, mapping));
     return { edits, events };
+  }
+
+  /**
+   * `TB_ORDER<isEqual>_RBK</isEqual>`: only TB_ORDER is a token, so the runtime name of the
+   * suffixed table is (TB_ORDER's new name) + `_RBK`. That has to be what the mapping says
+   * TB_ORDER_RBK becomes; if not, the suffix logic needs a human.
+   */
+  #suffixEvents(base, mapping, tokens) {
+    const newName = (name) => {
+      const target = mapping.table(name, base.schema)?.targetTable;
+      return target ? splitQualifiedName(target) : { schema: null, name };
+    };
+    const renamedBase = newName(base.name);
+    const written = tokens.slice(base.nameToken, (base.variants.at(-1).aliasToken ?? base.nameToken) + 1)
+      .filter((t) => t.kind !== TokenKind.MARKER).map((t) => t.text).join('');
+    return base.variants.map((variant) => {
+      const runtime = `${renamedBase.name}${variant.suffix}`;
+      const wanted = newName(variant.name);
+      const ok = runtime.toUpperCase() === wanted.name.toUpperCase() && (wanted.schema ?? renamedBase.schema ?? '').toUpperCase() === (renamedBase.schema ?? wanted.schema ?? '').toUpperCase();
+      const mapped = Boolean(mapping.table(variant.name, variant.schema));
+      return new SchemaMigrationEvent({
+        grade: ok ? SchemaMigrationGrade.SAFE : SchemaMigrationGrade.MANUAL,
+        code: SchemaMigrationCode.CONDITIONAL_TABLE_SUFFIX,
+        message: ok
+          ? `${base.name} + conditional ${variant.suffix} = ${variant.name} -> ${runtime} at runtime${mapped ? ', as the mapping says' : ' (not in the mapping, follows the base)'}`
+          : `${base.name} + conditional ${variant.suffix} = ${variant.name}: renaming ${base.name} -> ${renamedBase.name} makes it ${runtime} at runtime, but the mapping wants ${wanted.schema ? `${wanted.schema}.` : ''}${wanted.name} — rewrite the suffix logic by hand`,
+        original: written.trim() || base.name,
+        tokenIndex: base.nameToken,
+        table: variant.name,
+      });
+    });
   }
 
   /** `/*+ INDEX(OLD_COUNTRY IDX_X) *\/` is a comment, so it is never rewritten — but it should be looked at. */

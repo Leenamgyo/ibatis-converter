@@ -74,6 +74,11 @@ renames only.
   fragment holding the table-choice logic, `FROM <include refid="table"/> O`
   — lists every branch's table, each with the alias written after the
   include (see schema-migration.md).
+  A conditional suffix (`TB_ORDER<isEqual>_RBK</isEqual>`) lists both
+  tables. The suffixed one is tagged "조건부 _RBK", and its new-name column
+  shows the name it gets at runtime, with MANUAL when the mapping says
+  otherwise. A table name given as a variable (`$tableName$`,
+  `TB_ORD_$yyyymm$`) is shown as written and tagged "변수".
 - **`<include refid>` expanded in place, every depth.** Right under each
   `<include>` line, the fragment it brings in is shown as its own pair view.
   That fragment's own includes are expanded under it, down to the last

@@ -76,3 +76,32 @@ test('round-trips a dynamic WHERE + nested iterate + selectKey mapper end to end
   assert.ok(where);
   assert.equal(where.elementChildren('if').length, 2);
 });
+
+test('a tag glued to the SQL around it stays inline, so the runtime SQL is unchanged (TB_ORDER<if>_RBK</if>)', async () => {
+  const { parseIbatisMapperSource } = await import('../../src/parser/ibatis/IbatisMapperParser.js');
+  const { parseMyBatisMapperSource } = await import('../../src/parser/mybatis/MyBatisMapperParser.js');
+  const { IbatisXmlGenerator } = await import('../../src/generator/xml/IbatisXmlGenerator.js');
+  const source = `<sqlMap namespace="rbk">
+  <select id="s" parameterClass="map" resultClass="map">
+    SELECT A.ORD_NO FROM TB_ORDER<isEqual property="rbk" compareValue="Y">_RBK</isEqual><isEqual property="his" compareValue="Y">_HIS</isEqual>X A
+    <isNotEmpty property="no" prepend="AND">A.ORD_NO = #no#</isNotEmpty>
+  </select>
+</sqlMap>`;
+  const { sqlMap } = parseIbatisMapperSource(source, 'rbk.xml');
+  const statement = converter.convertStatement(sqlMap.statements[0]).node;
+  // the text each runtime branch produces: every glued piece concatenated with no whitespace added
+  const runtime = (nodes) => nodes.map((n) => (n.type === 'TextSql' ? n.text : runtime(n.children ?? []))).join('');
+
+  for (const formatSql of [false, true]) {
+    const mybatis = new XmlGenerator({ formatSql }).generateNode(statement);
+    assert.match(mybatis, /FROM TB_ORDER<if test="[^"]*">_RBK<\/if><if test="[^"]*">_HIS<\/if>X A/, mybatis);
+    assert.match(mybatis, /\n {2}<if test="no != null and no != ''">\n/); // a tag with spaces around it keeps its own lines
+    const reparsed = parseMyBatisMapperSource(`<mapper namespace="rbk">${mybatis}</mapper>`, 'rbk.xml').mapper.statements[0];
+    assert.match(runtime(reparsed.children), /TB_ORDER_RBK_HISX A/);
+
+    const ibatis = new IbatisXmlGenerator({ formatSql }).generateNode(sqlMap.statements[0]);
+    assert.match(ibatis, /FROM TB_ORDER<isEqual property="rbk" compareValue="Y">_RBK<\/isEqual><isEqual property="his" compareValue="Y">_HIS<\/isEqual>X A/, ibatis);
+    // the two sides keep the same line structure (the 변환 view pairs them line by line)
+    assert.equal(ibatis.split('\n').length, mybatis.split('\n').length);
+  }
+});

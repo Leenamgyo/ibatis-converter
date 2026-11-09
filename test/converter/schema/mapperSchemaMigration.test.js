@@ -274,3 +274,59 @@ test('alternatives that map the aliased column differently are MANUAL, never sil
   const [{ events }] = new SqlSchemaMigrationConverter(mapping).convertMappers([tableChoiceMapper()]);
   assert.ok(events.some((e) => e.statementId === 'viaRefid' && e.code === SchemaMigrationCode.COLUMN_AMBIGUOUS && e.grade === SchemaMigrationGrade.MANUAL));
 });
+
+/** iBATIS shapes for a table name: a conditional `_RBK` suffix glued on, a variable glued on, a variable alone */
+function suffixAndVariableMapper() {
+  const mapper = new MapperNode({ namespace: 'rbk' });
+  const rbk = () => withChildren(new IfNode({ test: "rbkYn == 'Y'" }), [new TextSqlNode({ text: '_RBK' })]);
+  mapper.sqlFragments = [withChildren(new SqlFragmentNode({ id: 'orderTable' }), [new TextSqlNode({ text: 'TB_ORDER' }), rbk()])];
+  mapper.statements = [
+    withChildren(new StatementNode({ id: 'suffix', statementType: 'SELECT' }), [
+      new TextSqlNode({ text: 'SELECT A.ORD_NO FROM TB_ORDER' }), rbk(), new TextSqlNode({ text: ' A WHERE A.ORD_NO = #{ordNo}' }),
+    ]),
+    withChildren(new StatementNode({ id: 'suffixRefid', statementType: 'SELECT' }), [
+      new TextSqlNode({ text: 'SELECT A.ORD_NO FROM ' }), new IncludeNode({ refid: 'orderTable' }), new TextSqlNode({ text: ' A' }),
+    ]),
+    withChildren(new StatementNode({ id: 'variable', statementType: 'SELECT' }), [
+      new TextSqlNode({ text: 'SELECT * FROM ${tableName} T, TB_ORD_${yyyymm} M WHERE T.ID = M.ID' }),
+    ]),
+  ];
+  return mapper;
+}
+
+test('TB_ORDER<if>_RBK</if> A: both tables listed with the alias; the runtime name is checked against the mapping', () => {
+  const agree = {
+    TB_ORDER: { targetTable: 'ORDERS', columns: { ORD_NO: 'ORDER_ID' } },
+    TB_ORDER_RBK: { targetTable: 'ORDERS_RBK', columns: { ORD_NO: 'ORDER_ID' } },
+  };
+  const [{ mapper, events, tables }] = new SqlSchemaMigrationConverter(agree).convertMappers([suffixAndVariableMapper()]);
+  for (const id of ['suffix', 'suffixRefid']) {
+    assert.deepEqual(tables.get(id).map((t) => [t.table, t.aliases.join()]), [['TB_ORDER', 'A'], ['TB_ORDER_RBK', 'A']], id);
+  }
+  const variant = tables.get('suffix')[1];
+  assert.deepEqual([variant.variantOf, variant.suffix, variant.runtimeTable, variant.runtimeMatches], ['TB_ORDER', '_RBK', 'ORDERS_RBK', true]);
+  assert.deepEqual(tables.get('orderTable').map((t) => t.table), ['TB_ORDER', 'TB_ORDER_RBK']);
+  // only the base token changes; the suffix stays inside its <if>; A.ORD_NO maps alike in both
+  const suffix = mapper.statements[0].children;
+  assert.equal(suffix[0].text, 'SELECT A.ORDER_ID FROM ORDERS');
+  assert.equal(suffix[1].children[0].text, '_RBK');
+  assert.ok(events.some((e) => e.statementId === 'suffix' && e.code === SchemaMigrationCode.CONDITIONAL_TABLE_SUFFIX && e.grade === SchemaMigrationGrade.SAFE));
+  assert.ok(!events.some((e) => e.code === SchemaMigrationCode.UNRESOLVED_QUALIFIER));
+
+  // the mapping wants another name for the rollback table: renaming the base would get it wrong
+  const disagree = { ...agree, TB_ORDER_RBK: { targetTable: 'ORDER_ROLLBACK', columns: { ORD_NO: 'ORDER_ID' } } };
+  const [other] = new SqlSchemaMigrationConverter(disagree).convertMappers([suffixAndVariableMapper()]);
+  const manual = other.events.find((e) => e.statementId === 'suffix' && e.code === SchemaMigrationCode.CONDITIONAL_TABLE_SUFFIX);
+  assert.equal(manual.grade, SchemaMigrationGrade.MANUAL);
+  assert.match(manual.message, /ORDERS_RBK at runtime, but the mapping wants ORDER_ROLLBACK/);
+  assert.equal(other.tables.get('suffix')[1].runtimeMatches, false);
+});
+
+test('a table name given as a variable is listed as written and never renamed', () => {
+  const [{ mapper, tables }] = new SqlSchemaMigrationConverter({ TB_ORD_: { targetTable: 'X', columns: {} } }).convertMappers([suffixAndVariableMapper()]);
+  assert.deepEqual(tables.get('variable').map((t) => [t.table, t.aliases.join(), t.dynamic, t.mapped]), [
+    ['${tableName}', 'T', true, false],
+    ['TB_ORD_${yyyymm}', 'M', true, false],
+  ]);
+  assert.equal(mapper.statements[2].children[0].text, 'SELECT * FROM ${tableName} T, TB_ORD_${yyyymm} M WHERE T.ID = M.ID');
+});

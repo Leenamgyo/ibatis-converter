@@ -656,7 +656,7 @@ export class ProjectSession {
         events.push({ grade: 'WARNING', code: 'FRAGMENT_CONTEXT_SAMPLED', message: ProjectSession.sampledMessage(this.schemaSites, sampled.get(qid)), statementId: loc.localId });
       }
       const conversion = kind === 'statement' ? r.conversion.statements.get(qid) : r.conversion.fragments.get(qid);
-      return { sourceFile: loc.sourceFile, ...texts, tables: r.mybatis.tables?.get(loc.localId) ?? [], events, conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null };
+      return { sourceFile: loc.sourceFile, ...texts, tables: r.ibatis.tables?.get(loc.localId) ?? [], events, conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null };
     };
     const fragments = {};
     for (const fid of fragmentIds) if (this.meta.locate(fid)) fragments[fid] = { id: this.meta.locate(fid).localId, ...pick(fid, 'fragment') };

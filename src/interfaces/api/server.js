@@ -587,8 +587,9 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
         // scoped: every fragment it includes, transitively, as resolved; whole project: as written
         includes: project ? project.includedFragments(qualifiedId) : collectIncludes(statement, namespace),
         ...(project ? { includeTree: project.includeTree(qualifiedId) } : {}),
-        // every table its SQL touches (its refids' included), with the mapping's verdict
-        tables: result.mybatis.tables?.get(statement.id) ?? [],
+        // every table its SQL touches (its refids' included), with the mapping's verdict — read from
+        // the file's own syntax, so a variable table shows as written ($tableName$, not ${tableName})
+        tables: result.ibatis.tables?.get(statement.id) ?? [],
         events: own,
         summary: tally(own),
         conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null,
@@ -612,7 +613,7 @@ function shapeSchemaMigration(results, { files: onlyFiles = null, fragments: onl
           ? { renamed: ibatisXml.generateNode(sqlMap.sqlFragments[i]) !== ibatisXml.generateNode(ibatisMigrated.sqlFragments[i]) }
           : texts(sqlMap.sqlFragments[i], ibatisMigrated.sqlFragments[i], fragment, migrated.sqlFragments[i], result.syntax, namespace, qualifiedId)),
         syntax: result.syntax ?? 'ibatis',
-        tables: result.mybatis.tables?.get(fragment.id) ?? [],
+        tables: result.ibatis.tables?.get(fragment.id) ?? [],
         events: own,
         summary: tally(own),
         conversion: conversion ? { events: conversion.events, summary: conversion.safetySummary } : null,

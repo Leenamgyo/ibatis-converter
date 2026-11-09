@@ -32,6 +32,11 @@ export const SchemaMigrationCode = Object.freeze({
   RUNTIME_SUBSTITUTION: 'RUNTIME_SUBSTITUTION',
   /** `${}` glued to an identifier (`TB_ORD_H_${yyyymm}`): a name built at runtime; MANUAL when it is a mapped legacy table's */
   DYNAMIC_IDENTIFIER: 'DYNAMIC_IDENTIFIER',
+  /**
+   * `TB_ORDER<isEqual>_RBK</isEqual>`: a table name completed by a conditional suffix. SAFE when
+   * renaming the base gives the name the mapping wants for the suffixed table too; MANUAL when not
+   */
+  CONDITIONAL_TABLE_SUFFIX: 'CONDITIONAL_TABLE_SUFFIX',
   /** an optimizer hint comment mentions a renamed table */
   HINT_NOT_MIGRATED: 'HINT_NOT_MIGRATED',
   /** a fragment's tables were taken from the statements that include it */
