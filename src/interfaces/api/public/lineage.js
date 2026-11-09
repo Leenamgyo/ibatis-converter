@@ -623,6 +623,17 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
     guard.used = true;
     guardByTable.set(target.right, guard);
   }
+  // the tag that picks a dynamic table name's candidate (`<isEqual …>_RBK</isEqual>`, or a
+  // branch holding a table): claimed here, drawn under that candidate's FROM line
+  const guardByChoice = new Map();
+  for (const t of select.tables) {
+    if (!t.choice || t.choice.label.endsWith('없을 때')) continue;
+    const wanted = normalizeSql(t.choice.kind === 'SUFFIX' ? t.choice.suffix : t.name);
+    const guard = guards.find((g) => !g.used && g.sql && (t.choice.kind === 'SUFFIX' ? g.sql === wanted : g.sql.startsWith(wanted)));
+    if (!guard) continue;
+    guard.used = true;
+    guardByChoice.set(t.name, guard);
+  }
 
   /* Every box on screen is a TABLE OBJECT: its inside is its own
      FROM / WHERE / SELECT, and nothing else. A table has no join among its
@@ -640,18 +651,56 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   const sqlLine = (text) => el('div', { class: 'sql' }, text);
   const tableObject = (nodeId, kind, name, alias, ...sections) => gnode(nodeId, `tobj ${kind}`,
     el('div', { class: 'tobj-head' },
-      el('span', { class: 'badge' }, 'TABLE'),
-      el('span', { class: 'tname' }, name),
+      el('span', { class: 'badge' }, typeof name === 'string' ? 'TABLE' : '동적 TABLE'),
+      typeof name === 'string' ? el('span', { class: 'tname' }, name) : name,
       alias ? el('span', { class: 'alias' }, `(${alias})`) : null,
     ),
     ...sections.filter(Boolean),
   );
+  /* A dynamic table name — `TB_ORDER<isEqual>_RBK</isEqual>`, or a condition choosing between
+     tables (also inside a refid) — is one slot the analysis filled with every table it can be
+     (`choice.group`): drawn as ONE table box listing each candidate with its condition. A
+     table named by a variable (`$tableName$`) says so. */
+  const tableTitle = (table) => (table.choices
+    ? el('span', { class: 'tname tchoices' }, ...table.choices.map((t) => el('span', { class: 'tchoice' },
+      el('span', {}, t.name), el('span', { class: 'ttag cond' }, t.choice.label))))
+    : table.variable
+      ? el('span', { class: 'tname' }, table.name, el('span', { class: 'ttag var' }, '변수'))
+      : table.name);
+  const fromText = (table) => `${table.choices ? table.choices.map((t) => t.name).join(' | ') : table.name}${table.alias ? ` ${table.alias}` : ''}`;
+  // the condition that picks a candidate is its own object under that candidate's FROM line
+  // (like a join's guard), not a stray one under WHERE
+  const fromLinesOf = (table) => (table.choices ?? [table]).map((t) => {
+    const line = sqlLine(`${t.name}${table.alias ? ` ${table.alias}` : ''}`);
+    if (!t.choice) return line;
+    const guard = guardByChoice.get(t.name);
+    if (!guard) return line;
+    return el('div', { class: 'cond-stack' }, line, el('div', { class: 'cond-children' },
+      gnode(`dyntbl:${select.id}:${t.name}`, 'dynamic', el('div', { class: 'title' }, guard.label))));
+  });
+  const collapseChoices = (tables) => {
+    const out = [];
+    const groups = new Map();
+    for (const t of tables) {
+      const group = t.choice?.group;
+      if (!group) { out.push(t); continue; }
+      if (!groups.has(group)) {
+        const slot = { ...t, choices: [] };
+        groups.set(group, slot);
+        out.push(slot);
+      }
+      groups.get(group).choices.push(t);
+    }
+    // a group with one member is just that table
+    return out.map((t) => (t.choices?.length === 1 ? t.choices[0] : t));
+  };
 
   const columnsByTable = new Map();
   for (const column of analysis.columns ?? []) {
     if (!columnsByTable.has(column.table)) columnsByTable.set(column.table, new Set());
     columnsByTable.get(column.table).add(column.column);
   }
+  const columnsOf = (table) => [...new Set((table.choices ?? [table]).flatMap((t) => [...(columnsByTable.get(t.name) ?? [])]))];
 
   /* 3 - every WHERE condition is an object, with the dynamic tag that
      guards it as its own object one depth below. Built here, then placed
@@ -742,14 +791,14 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
   ];
 
   /* 1 + 2 - one box per table, and the joins make one more table. */
-  const physical = select.tables.filter((t) => !t.derived);
+  const physical = collapseChoices(select.tables.filter((t) => !t.derived));
   const sourceCount = physical.length + inlineViews.length;
   const needsResultTable = joinWiring.length > 0 || sourceCount !== 1;
 
   const sourceObject = (table) => {
-    const used = [...(columnsByTable.get(table.name) ?? [])];
-    return tableObject(tableNodeId(labelOf(table)), 'table', table.name, table.alias,
-      section('FROM', sqlLine(`${table.name}${table.alias ? ` ${table.alias}` : ''}`)),
+    const used = columnsOf(table);
+    return tableObject(tableNodeId(labelOf(table)), `table${table.choices ? ' dyn' : ''}`, tableTitle(table), table.alias,
+      section('FROM', ...fromLinesOf(table)),
       used.length ? section('SELECT', columnList(used, 6)) : null,
     );
   };
@@ -770,8 +819,8 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
     const only = physical[0];
     body.appendChild(el('div', { class: 'lane-col result' },
       only
-        ? tableObject(tableNodeId(labelOf(only)), `table${wide ? ' wide' : ''}`, only.name, only.alias,
-            section('FROM', sqlLine(`${only.name}${only.alias ? ` ${only.alias}` : ''}`)),
+        ? tableObject(tableNodeId(labelOf(only)), `table${wide ? ' wide' : ''}${only.choices ? ' dyn' : ''}`, tableTitle(only), only.alias,
+            section('FROM', ...fromLinesOf(only)),
             ...resultSections())
         : slotObject(inlineViews[0], ...resultSections()),
     ));
@@ -791,7 +840,7 @@ function buildSelectCluster(select, byParent, analysis, isMain) {
     const fromLines = [];
     const fromAnchor = new Map(); // feeder box -> its row in this table's FROM
     if (baseTable) {
-      const line = sqlLine(`${baseTable.name}${baseTable.alias ? ` ${baseTable.alias}` : ''}`);
+      const line = sqlLine(fromText(baseTable));
       fromLines.push(line);
       fromAnchor.set(startId, line);
     }

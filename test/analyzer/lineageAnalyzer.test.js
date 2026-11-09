@@ -97,7 +97,7 @@ test('names a WITH CTE and keeps it as a child of the SELECT that reads it', () 
 
 test('degrades to an empty lineage instead of throwing when the SQL never parsed', () => {
   const result = analyzeFixture('dynamic-from-and-subquery.xml');
-  const analysis = result.statementAnalyses.get('edge.mutuallyExclusiveFromBranches');
+  const analysis = result.statementAnalyses.get('edge.unparseableConnectBy');
   assert.equal(analysis.warnings[0].code, 'SQL_PARSE_FAILED');
   assert.deepEqual(analysis.lineage.selects, []);
   assert.deepEqual(analysis.lineage.columnLineage, []);

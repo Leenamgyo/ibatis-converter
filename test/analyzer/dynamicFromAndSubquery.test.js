@@ -50,13 +50,20 @@ test('a UNION branch supplied by a conditional tag contributes its table too', (
   assert.deepEqual(warningCodes(analysis), []);
 });
 
-test('two mutually exclusive branches supplying the FROM table degrade to SQL_PARSE_FAILED instead of throwing', () => {
-  // SqlFlattener has no parameter values, so it keeps both branches and
-  // produces "FROM ARCHIVED_ORDERS O ORDERS O". This is the known limit of
-  // flattening exclusive branches; the statement still parses, resolves
-  // and converts — only table/column/join analysis is unavailable.
-  const analyses = analyze();
-  const analysis = analyses.get('edge.mutuallyExclusiveFromBranches');
+test('two mutually exclusive branches supplying the FROM table: a dynamic table name, both tables reported', () => {
+  // Keeping both branches would give "FROM ARCHIVED_ORDERS O ORDERS O"; each branch is
+  // flattened on its own instead (SqlFlattener#tableChoices) and the results merged.
+  const analysis = analyze().get('edge.mutuallyExclusiveFromBranches');
+  assert.deepEqual(warningCodes(analysis), []);
+  assert.deepEqual(tableNames(analysis), ['ARCHIVED_ORDERS', 'ORDERS']);
+  assert.deepEqual(analysis.tables.map((t) => [t.alias, t.choice.group, t.choice.label]), [['O', 'choice0', '분기 1/2'], ['O', 'choice0', '분기 2/2']]);
+  assert.deepEqual(analysis.columns.map((c) => `${c.table}.${c.column}`).sort(), ['ARCHIVED_ORDERS.ORDER_ID', 'ARCHIVED_ORDERS.STATUS', 'ORDERS.ORDER_ID', 'ORDERS.STATUS']);
+  // the lineage SELECT reads both, so the graph can draw them as one dynamic table
+  assert.deepEqual(analysis.lineage.selects[0].tables.map((t) => t.name), ['ARCHIVED_ORDERS', 'ORDERS']);
+});
+
+test('genuinely unparseable SQL degrades to SQL_PARSE_FAILED instead of throwing', () => {
+  const analysis = analyze().get('edge.unparseableConnectBy');
   assert.deepEqual(warningCodes(analysis), ['SQL_PARSE_FAILED']);
   assert.deepEqual(analysis.tables, []);
   assert.deepEqual(analysis.joins, []);
@@ -64,7 +71,7 @@ test('two mutually exclusive branches supplying the FROM table degrade to SQL_PA
 
 test('the unparseable statement does not stop the other statements in the same file from being analyzed', () => {
   const analyses = analyze();
-  assert.equal(analyses.size, 6);
+  assert.equal(analyses.size, 7);
   const withWarnings = [...analyses.entries()].filter(([, a]) => (a.warnings ?? []).length).map(([id]) => id);
-  assert.deepEqual(withWarnings, ['edge.mutuallyExclusiveFromBranches']);
+  assert.deepEqual(withWarnings, ['edge.unparseableConnectBy']);
 });

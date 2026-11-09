@@ -167,6 +167,22 @@ A label pinned to a line's midpoint lands on top of whatever box the line
 happens to cross. Anything that needs naming goes on a node instead — the
 join chip on the joined table, the guard as its own object.
 
+## Dynamic table names
+
+A table chosen by iBATIS dynamic SQL is **one table object** (dashed outline,
+badge `동적 TABLE`) that lists every table the condition can put in that slot.
+For example:
+
+- `ORDERS` "_RBK 없을 때" / `ORDERS_RBK` "조건부 _RBK"
+- `ARCHIVED_ORDER` "분기 1/2" / `ORDERS` "분기 2/2"
+
+Its FROM section has one line per candidate. The tag that picks a candidate
+(`<isEqual property="rbkYn" compareValue="Y">`) is drawn as a dynamic
+object under that line, like a join's guard, never under WHERE. The tables
+come from the analysis (`choice.group`, see ARCHITECTURE.md "Dynamic table
+names"). A table named by a variable (`$tableName$`, `ORDERS_$yyyymm$`) is
+shown as written, with a `변수` tag.
+
 ## Known limits
 
 - Obstacle avoidance looks at table objects only, and at one detour (over

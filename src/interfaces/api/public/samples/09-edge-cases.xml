@@ -39,9 +39,10 @@
     WHERE O.CUSTOMER_ID = #customerId#
   </select>
 
-  <!-- Two mutually exclusive branches both supplying the FROM table:
-       SqlFlattener has no runtime values, keeps both, and the result
-       ("FROM ARCHIVED_ORDER O ORDERS O") can't parse. -->
+  <!-- Two mutually exclusive branches both supplying the FROM table: a
+       dynamic table name. Keeping both would give the unparseable
+       "FROM ARCHIVED_ORDER O ORDERS O", so each branch is analyzed on its
+       own and both tables are reported (and drawn as one dynamic table). -->
   <select id="mutuallyExclusiveFromBranches" parameterClass="map" resultClass="map">
     SELECT O.ORDER_ID
     FROM

@@ -44,11 +44,10 @@
     </isNotNull>
   </select>
 
-  <!-- The one that can't flatten: two mutually exclusive branches each
-       supplying the FROM table. SqlFlattener keeps every branch (it has
-       no runtime parameter values to choose with), so this flattens to
-       "FROM ARCHIVED_ORDERS O ORDERS O" - not parseable, and reported as
-       a SQL_PARSE_FAILED warning rather than a thrown error. -->
+  <!-- Two mutually exclusive branches each supplying the FROM table: a
+       dynamic table name. Keeping every branch would give the unparseable
+       "FROM ARCHIVED_ORDERS O ORDERS O", so SqlFlattener#tableChoices
+       flattens it once per branch and the analysis reports both tables. -->
   <select id="mutuallyExclusiveFromBranches" parameterClass="map" resultClass="map">
     SELECT O.ORDER_ID
     FROM
@@ -59,6 +58,12 @@
       ORDERS O
     </isNotEqual>
     WHERE O.STATUS = #status#
+  </select>
+
+  <!-- Genuinely unparseable (Oracle hierarchical query; no parser dialect
+       has CONNECT BY): reported as SQL_PARSE_FAILED, never thrown. -->
+  <select id="unparseableConnectBy" parameterClass="map" resultClass="map">
+    SELECT ID FROM ORG START WITH PARENT_ID IS NULL CONNECT BY PRIOR ID = PARENT_ID
   </select>
 
 </sqlMap>

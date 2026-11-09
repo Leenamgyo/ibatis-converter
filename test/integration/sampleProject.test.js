@@ -42,10 +42,6 @@ const warningCodes = (id) => analysis(id).warnings.map((w) => w.code);
  */
 const EXPECTED_SQL_PARSE_FAILURES = new Set([
   'edge.rawSubstitutionOrderBy',        // ORDER BY $a$ $b$ -> "ORDER BY ? ?"
-  'edge.dynamicTableName',              // FROM $tableName$ -> "FROM ?" is not a table
-  'edge.monthlyTableName',              // FROM ORDERS_$yyyymm$ -> "FROM ORDERS_?" likewise
-  'edge.mutuallyExclusiveFromBranches', // both branches kept -> two FROM tables
-  'frag.tableChosenByRefid',            // same, the branches live in the FROM's <sql> fragment
   'frag.missingRefid',                  // the fragment never resolved, so nothing to parse
   'frag.circularRefid',                 // ditto, chain broken at the cycle
 ]);
@@ -442,8 +438,20 @@ test('scenario 9: an Oracle (+) comma join is analysed as the outer join it is',
   assert.equal(a.lineage.selects[0].joins[0].type, 'LEFT_JOIN');
 });
 
+test('scenario 9: dynamic table names are analyzed as every table they can be', () => {
+  const names = (id) => analysis(id).tables.map((t) => t.name);
+  assert.deepEqual(names('edge.mutuallyExclusiveFromBranches'), ['ARCHIVED_ORDER', 'ORDERS']);
+  assert.deepEqual(names('frag.tableChosenByRefid'), ['ARCHIVED_ORDER', 'ORDERS']);
+  assert.deepEqual(names('edge.rollbackTableSuffix'), ['ORDERS', 'ORDERS_RBK']);
+  assert.deepEqual(analysis('edge.rollbackTableSuffix').tables.map((t) => t.choice.label), ['_RBK 없을 때', '조건부 _RBK']);
+  assert.deepEqual(names('frag.rollbackTableViaRefid'), ['ORDERS', 'ORDERS_RBK']);
+  // a variable table name is kept as written
+  assert.deepEqual(analysis('edge.dynamicTableName').tables.map((t) => [t.name, t.variable]), [['$tableName$', true]]);
+  assert.deepEqual(analysis('edge.monthlyTableName').tables.map((t) => [t.name, t.alias, t.variable]), [['ORDERS_$yyyymm$', 'M', true]]);
+});
+
 test('scenario 9: unparseable SQL degrades to an empty analysis + a warning, and still converts', () => {
-  for (const id of ['edge.mutuallyExclusiveFromBranches']) {
+  for (const id of ['edge.rawSubstitutionOrderBy']) {
     const a = analysis(id);
     assert.ok(warningCodes(id).includes('SQL_PARSE_FAILED'));
     assert.deepEqual(a.tables, []);

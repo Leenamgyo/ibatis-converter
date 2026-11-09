@@ -1,5 +1,5 @@
 import pkg from 'node-sql-parser';
-import { flattenToSql } from './SqlFlattener.js';
+import { flattenToSql, tableChoices, tableVariants } from './SqlFlattener.js';
 
 const { Parser } = pkg;
 
@@ -156,5 +156,20 @@ export class SqlAnalyzer {
     const sql = flattenToSql(resolvedStatementTree);
     const { ast, error } = this.parse(sql, dialect);
     return { sql, ast, error };
+  }
+
+  /**
+   * Dynamic table names (SqlFlattener#tableChoices): one flattened SQL per combination of
+   * table choices, each parsed on its own. Without choice points it is analyzeStatement's
+   * single SQL.
+   * @returns {{ points: object[], variants: { sql: string, ast: object[]|null, error: string|null, picks: object[] }[] }}
+   */
+  analyzeVariants(resolvedStatementTree, dialect = 'mysql') {
+    const points = tableChoices(resolvedStatementTree);
+    const variants = tableVariants(resolvedStatementTree, points).map(({ omit, picks }) => {
+      const sql = flattenToSql(resolvedStatementTree, { omit });
+      return { sql, picks, ...this.parse(sql, dialect) };
+    });
+    return { points, variants };
   }
 }

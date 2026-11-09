@@ -307,6 +307,36 @@ flattened as its own independent scope rather than participating in the
 *surrounding* scope's suppression accounting — see the doc comment at the
 top of `SqlFlattener.js` for the case this doesn't handle correctly.
 
+## Dynamic table names: one flattening per table choice
+
+"Every branch present" is a superset for columns and conditions, but it is
+wrong where a condition decides **which table** is read:
+
+- `TB_ORDER<isEqual>_RBK</isEqual>` would only ever read as TB_ORDER_RBK,
+  and TB_ORDER would be lost.
+- `FROM <isEqual>A</isEqual><isNotEqual>B</isNotEqual>` would read as
+  `FROM A B`, which doesn't parse.
+
+`SqlFlattener#tableChoices` finds these choice points:
+
+- **SUFFIX**: a glued suffix, with it or without it.
+- **ALTERNATIVES**: two or more prepend-less conditionals right after
+  FROM / JOIN / INTO / UPDATE, also through `<include refid>`. Exactly one
+  of them is taken.
+
+`tableVariants` builds every combination (at most 16), and `SqlAnalyzer#analyzeVariants`
+flattens and parses each variant. `StatementAnalyzer` then merges the
+results:
+
+- tables, columns and joins: the union of all variants;
+- WHERE and the lineage structure: the first variant, with each SELECT's
+  tables completed from the other variants.
+
+A table that only some variants read carries `choice: { group, kind, label }`;
+the lineage graph draws one `group` as a single "동적 TABLE" box. A
+`$var$` / `${var}` at a table position is kept as a quoted name, so
+`FROM $tableName$` parses, and the table is reported with `variable: true`.
+
 ## StatementAnalyzer's degrade-not-throw contract
 
 `analyzer/statement/StatementAnalyzer.js` (section 11) is the one place
