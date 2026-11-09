@@ -70,6 +70,10 @@ renames only.
   included `<sql>`), and what the dataset does to it: the new name, "이름
   유지 · 컬럼 n개 매핑", or "매핑 없음 — 그대로". 파일 전체 merges the file's
   statements and fragments by table name.
+  A table chosen by `<if>` / `<isEqual>` branches — usually a `<sql>`
+  fragment holding the table-choice logic, `FROM <include refid="table"/> O`
+  — lists every branch's table, each with the alias written after the
+  include (see schema-migration.md).
 - **`<include refid>` expanded in place, every depth.** Right under each
   `<include>` line, the fragment it brings in is shown as its own pair view.
   That fragment's own includes are expanded under it, down to the last

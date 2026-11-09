@@ -70,6 +70,15 @@ included in a FROM clause (`FROM <include refid="tables"/>`,
 clause state at each include marker). If two include sites would convert it differently, it is left alone and
 flagged as MANUAL. Consecutive `<if>`s
 at a table position are treated as alternatives (`FROM <if>A</if><if>B</if>`).
+Each alternative is its own table. The word after one alternative's
+`</if>` is never read as its alias: it is the next alternative. A word
+right after the whole group is the alias of every alternative
+(`FROM <include refid="table"/> O`, where the fragment is the
+table-choice logic). `O.COL` then maps cleanly only if every alternative
+maps `COL` the same way; otherwise it is `COLUMN_AMBIGUOUS` (MANUAL).
+Such a fragment's own table list comes from its FROM include sites, so
+the 변환 view's 사용 테이블 shows every table it can choose
+(sample: `frag.tableChosenByRefid`).
 
 ## Grading (`SchemaMigrationEvent`, same SAFE/WARNING/MANUAL vocabulary)
 

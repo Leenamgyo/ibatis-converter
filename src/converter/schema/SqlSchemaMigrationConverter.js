@@ -193,23 +193,26 @@ export class SqlSchemaMigrationConverter {
     if (!sites.length) return standalone;
 
     const candidates = sites.map(({ scope, start }) => this.#convertTree(fragment, namespace, project, scope, [qualifiedId], { record: false, start }));
+    // a fragment included as `FROM <include/>` is the table-choice logic: its tables only read as
+    // tables at those sites, so the list is every site's (every <if> alternative included)
+    const tables = mergeTables([standalone.tables, ...candidates.map((c) => c.tables)]);
     const signature = (result) => JSON.stringify([...result.overrides].map(([, value]) => value));
     const distinct = new Set(candidates.map(signature));
     if (distinct.size === 1) {
       const [chosen] = candidates;
-      if (signature(chosen) === signature(standalone)) return standalone;
-      const tables = [...new Set(sites.flatMap(({ scope }) => visibleTables(scope)))];
+      if (signature(chosen) === signature(standalone)) return { ...standalone, tables };
+      const contextTables = [...new Set(sites.flatMap(({ scope }) => visibleTables(scope)))];
       const asFromList = sites.every(({ start }) => start);
       return {
         overrides: chosen.overrides,
-        tables: standalone.tables,
+        tables,
         events: [
           new SchemaMigrationEvent({
             grade: SchemaMigrationGrade.SAFE,
             code: SchemaMigrationCode.FRAGMENT_CONTEXT_INFERRED,
             message: asFromList
               ? `<sql id="${fragment.id}"> is included in a FROM clause at all ${sites.length} site(s): read as its table list`
-              : `<sql id="${fragment.id}"> has no table of its own; resolved against ${tables.join(', ')} from its ${sites.length} include site(s)`,
+              : `<sql id="${fragment.id}"> has no table of its own; resolved against ${contextTables.join(', ')} from its ${sites.length} include site(s)`,
           }),
           ...chosen.events,
         ],
@@ -217,7 +220,7 @@ export class SqlSchemaMigrationConverter {
     }
     return {
       overrides: standalone.overrides,
-      tables: standalone.tables,
+      tables,
       events: [
         new SchemaMigrationEvent({
           grade: SchemaMigrationGrade.MANUAL,
@@ -528,6 +531,25 @@ class TableUsage {
   list() {
     return [...this.byKey.values()];
   }
+}
+
+/** TableUsage lists of the same node read in several contexts, merged by table name */
+function mergeTables(lists) {
+  const byKey = new Map();
+  for (const list of lists) {
+    for (const t of list) {
+      const key = t.table.toUpperCase();
+      const m = byKey.get(key);
+      if (!m) {
+        byKey.set(key, { ...t, aliases: [...t.aliases], clauses: [...t.clauses] });
+        continue;
+      }
+      for (const a of t.aliases) if (!m.aliases.includes(a)) m.aliases.push(a);
+      for (const c of t.clauses) if (!m.clauses.includes(c)) m.clauses.push(c);
+      m.viaRefid = m.viaRefid && t.viaRefid;
+    }
+  }
+  return [...byKey.values()];
 }
 
 function tag(events, statementId) {

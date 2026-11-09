@@ -211,3 +211,66 @@ test('IbatisXmlGenerator output parses back to the same statement structure', as
   });
   assert.deepEqual(again.statements.map(shape), sqlMap.statements.map(shape));
 });
+
+/** FROM <include refid="table"/> O — the fragment is the table-choice logic, one table per <if> */
+function tableChoiceMapper() {
+  const mapper = new MapperNode({ namespace: 'pick' });
+  mapper.sqlFragments = [
+    withChildren(new SqlFragmentNode({ id: 'table' }), [
+      withChildren(new IfNode({ test: "scope == 'A'" }), [new TextSqlNode({ text: ' TB_A ' })]),
+      withChildren(new IfNode({ test: "scope == 'B'" }), [new TextSqlNode({ text: ' TB_B ' })]),
+      withChildren(new IfNode({ test: "scope == 'C'" }), [new TextSqlNode({ text: ' TB_C ' })]),
+    ]),
+  ];
+  mapper.statements = [
+    withChildren(new StatementNode({ id: 'viaRefid', statementType: 'SELECT' }), [
+      new TextSqlNode({ text: 'SELECT O.SAME_COL FROM ' }),
+      new IncludeNode({ refid: 'table' }),
+      new TextSqlNode({ text: ' O WHERE O.ID = #{id}' }),
+    ]),
+    withChildren(new StatementNode({ id: 'inline', statementType: 'SELECT' }), [
+      new TextSqlNode({ text: 'SELECT O.SAME_COL FROM ' }),
+      withChildren(new IfNode({ test: 'a' }), [new TextSqlNode({ text: ' TB_A ' })]),
+      withChildren(new IfNode({ test: 'b' }), [new TextSqlNode({ text: ' TB_B ' })]),
+      new TextSqlNode({ text: ' O WHERE O.ID = 1' }),
+    ]),
+  ];
+  return mapper;
+}
+
+const TABLE_CHOICE_MAPPING = {
+  TB_A: { targetTable: 'A2', columns: { SAME_COL: 'NEW_COL' } },
+  TB_B: { targetTable: 'B2', columns: { SAME_COL: 'NEW_COL' } },
+};
+
+test('a table chosen by <if> alternatives (inline or in a FROM <include>): every alternative is a table, renamed, listed', () => {
+  const [{ mapper, events, tables }] = new SqlSchemaMigrationConverter(TABLE_CHOICE_MAPPING).convertMappers([tableChoiceMapper()]);
+  const names = (id) => tables.get(id).map((t) => t.table);
+
+  // the next alternative is never read as the previous one's alias
+  assert.deepEqual(names('inline'), ['TB_A', 'TB_B']);
+  const inline = mapper.statements[1].children;
+  assert.equal(inline[1].children[0].text, ' A2 ');
+  assert.equal(inline[2].children[0].text, ' B2 ');
+  // the alias after the alternatives is each one's; both map SAME_COL alike -> renamed
+  assert.equal(inline[0].text, 'SELECT O.NEW_COL FROM ');
+
+  // through the fragment: all three, the alias written after the include belongs to each
+  assert.deepEqual(names('viaRefid'), ['TB_A', 'TB_B', 'TB_C']);
+  assert.ok(tables.get('viaRefid').every((t) => t.viaRefid && t.aliases[0] === 'O'));
+  assert.deepEqual(tables.get('viaRefid').map((t) => [t.mapped, t.targetTable]), [[true, 'A2'], [true, 'B2'], [false, null]]);
+  // TB_C has no mapping, so under it O.SAME_COL keeps its name: a real ambiguity, left for a human
+  assert.equal(mapper.statements[0].children[0].text, 'SELECT O.SAME_COL FROM ');
+  assert.ok(events.some((e) => e.statementId === 'viaRefid' && e.code === SchemaMigrationCode.COLUMN_AMBIGUOUS && /TB_C O/.test(e.message)));
+  assert.ok(!events.some((e) => e.code === 'UNRESOLVED_QUALIFIER'), JSON.stringify(events));
+
+  // the fragment itself lists the tables it chooses between
+  assert.deepEqual(names('table'), ['TB_A', 'TB_B', 'TB_C']);
+  assert.deepEqual(mapper.sqlFragments[0].children.map((c) => c.children[0].text), [' A2 ', ' B2 ', ' TB_C ']);
+});
+
+test('alternatives that map the aliased column differently are MANUAL, never silently picked', () => {
+  const mapping = { TB_A: { targetTable: 'A2', columns: { SAME_COL: 'COL_A' } }, TB_B: { targetTable: 'B2', columns: { SAME_COL: 'COL_B' } } };
+  const [{ events }] = new SqlSchemaMigrationConverter(mapping).convertMappers([tableChoiceMapper()]);
+  assert.ok(events.some((e) => e.statementId === 'viaRefid' && e.code === SchemaMigrationCode.COLUMN_AMBIGUOUS && e.grade === SchemaMigrationGrade.MANUAL));
+});

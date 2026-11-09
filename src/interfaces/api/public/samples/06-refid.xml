@@ -65,6 +65,24 @@
     </dynamic>
   </select>
 
+  <!-- The table itself comes from a fragment: the <sql> is the table-choice
+       logic, one table per branch, and the alias is written after the
+       include. Every alternative is a table this statement uses. -->
+  <sql id="orderSourceTable">
+    <isEqual property="scope" compareValue="ARCHIVE">
+      ARCHIVED_ORDER
+    </isEqual>
+    <isNotEqual property="scope" compareValue="ARCHIVE">
+      ORDERS
+    </isNotEqual>
+  </sql>
+
+  <select id="tableChosenByRefid" parameterClass="map" resultClass="map">
+    SELECT O.ORDER_ID, O.ORDER_DATE
+    FROM <include refid="orderSourceTable"/> O
+    WHERE O.CUSTOMER_ID = #customerId#
+  </select>
+
   <!-- Deliberately broken: refid points at nothing. Must surface as a
        diagnostic + an UnresolvedInclude node, never as a thrown error. -->
   <select id="missingRefid" parameterClass="map" resultClass="map">

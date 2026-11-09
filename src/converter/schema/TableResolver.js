@@ -239,6 +239,8 @@ class Scan {
     /** open `<if>` branches and the one that just closed (see marker()) */
     this.branches = [];
     this.lastBranch = null;
+    /** alternative `<if>` branches that each just supplied a table, closed right before this token (see marker()) */
+    this.closedAlternatives = null;
   }
 
   newScope(kind, parent, statement = null) {
@@ -276,7 +278,16 @@ class Scan {
     return token.kind === TokenKind.QUOTED_IDENTIFIER || !RESERVED.has(token.keyword);
   }
 
-  /** a dotted chain starting at sig position k: `a`, `a.b`, `a.b.c`, `a.*` */
+  /** is there an `<if>` (or iBATIS conditional) start / end between sig positions a and b? */
+  crossesBranch(a, b) {
+    for (let i = this.sig[a] + 1; i < this.sig[b]; i++) {
+      const token = this.tokens[i];
+      if (token.kind === TokenKind.MARKER && (token.value === MarkerKind.BRANCH_START || token.value === MarkerKind.BRANCH_END)) return true;
+    }
+    return false;
+  }
+
+    /** a dotted chain starting at sig position k: `a`, `a.b`, `a.b.c`, `a.*` */
   readChain(k) {
     const parts = [this.sig[k]];
     let end = k;
@@ -297,6 +308,14 @@ class Scan {
       }
       const before = this.scope;
       this.lastBranch = null;
+      const aliasEnd = this.groupAlias(k);
+      if (aliasEnd !== -1) {
+        for (let i = assigned + 1; i <= this.sig[aliasEnd]; i++) this.tokenScopes[i] = before;
+        assigned = this.sig[aliasEnd];
+        k = aliasEnd;
+        continue;
+      }
+      this.closedAlternatives = null;
       const opensStatement = STATEMENT_KEYWORDS.has(this.kw(k));
       const consumedTo = this.step(k);
       // a SELECT/INSERT/... keyword belongs to the query it opens
@@ -333,16 +352,48 @@ class Scan {
     if (token.value === MarkerKind.BRANCH_START) {
       const inherited = this.lastBranch?.scope === scope && this.lastBranch.expectTable;
       if (inherited) scope.expectTable = true;
-      this.branches.push({ scope, expectTable: scope.expectTable });
+      // the tables the alternatives supply, shared by the consecutive branches of one group
+      const group = inherited ? this.lastBranch.group : { scope, tables: [] };
+      this.branches.push({ scope, expectTable: scope.expectTable, firstTable: this.tableRefs.length, group });
       this.lastBranch = null;
+      this.closedAlternatives = null;
     } else if (token.value === MarkerKind.BRANCH_END) {
-      this.lastBranch = this.branches.pop() ?? null;
+      const branch = this.branches.pop() ?? null;
+      this.lastBranch = branch;
+      if (branch?.expectTable && branch.scope === scope) {
+        branch.group.tables.push(...this.tableRefs.slice(branch.firstTable).filter((t) => t.scope === scope));
+        this.closedAlternatives = branch.group;
+      } else {
+        this.closedAlternatives = null;
+      }
     } else if (token.value === MarkerKind.INCLUDE) {
       this.markerStates.set(token, {
         clause: scope.depth === 0 ? scope.clause : null,
         expectTable: scope.depth === 0 && scope.expectTable,
       });
     }
+  }
+
+  /**
+   * `FROM <isEqual>TB_A</isEqual><isEqual>TB_B</isEqual> O` — the table-choice logic
+   * (often a `<sql>` fragment: `FROM <include refid="table"/> O`) with the alias written
+   * after it: that word is the alias of every alternative. If sig position k is
+   * consumed as such, it returns the last sig position consumed (`AS` included), else -1.
+   */
+  groupAlias(k) {
+    const group = this.closedAlternatives;
+    if (!group || group.scope !== this.scope || !group.tables.length) return -1;
+    if (group.tables.some((t) => t.alias || t.kind === TableRefKind.DERIVED)) return -1;
+    const at = this.tok(k)?.keyword === 'AS' && !this.crossesBranch(k, k + 1) ? k + 1 : k;
+    if (!this.isPlainIdentifier(this.tok(at))) return -1;
+    const aliasToken = this.sig[at];
+    for (const table of group.tables) {
+      table.alias = this.tokens[aliasToken].value;
+      table.aliasToken = aliasToken;
+    }
+    this.roles.set(aliasToken, TokenRole.TABLE_ALIAS);
+    this.closedAlternatives = null;
+    return at;
   }
 
   /** handles sig position k, returns the last sig position it consumed */
@@ -541,9 +592,11 @@ class Scan {
     let alias = null;
     let aliasToken = null;
     const afterName = this.tok(end + 1);
-    if (afterName?.keyword === 'AS' && this.isPlainIdentifier(this.tok(end + 2))) {
+    // `FROM <isEqual>TB_A</isEqual><isEqual>TB_B</isEqual>`: the next word past an `<if>`
+    // boundary is the alternative table, never this one's alias
+    if (afterName?.keyword === 'AS' && this.isPlainIdentifier(this.tok(end + 2)) && !this.crossesBranch(end, end + 2)) {
       last = end + 2;
-    } else if (this.isPlainIdentifier(afterName)) {
+    } else if (this.isPlainIdentifier(afterName) && !this.crossesBranch(end, end + 1)) {
       last = end + 1;
     }
     if (last !== end) {
